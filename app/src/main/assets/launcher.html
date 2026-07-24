@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<!-- X3F TV launcher — bubbly game-style home. Self-contained: own D-pad nav (window.__x3fNav),
+     live force meter (window.__x3fForce fed by native), bar status (window.__x3fSetBar),
+     update flow (X3F.checkUpdate / window.__x3fUpdate). Navigates to a game via location.href. -->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>X3F</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#05030f;--txt:#eee9ff;--dim:#a99fd6;--accent:#8f7dff;--cyan:#37e6ff;--mint:#39f5c4;--gold:#ffd23f;--hot:#ff5d78;
+ --d:'Fredoka',system-ui,sans-serif;--n:'Space Grotesk',system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none;-webkit-user-select:none}
+#bgcv{position:fixed;inset:0;width:100%;height:100%;z-index:0}
+.wrap{position:relative;z-index:1;height:100dvh;display:flex;flex-direction:column;padding:3.2vh 4vw}
+.top{display:flex;align-items:center;gap:16px}
+.logo{height:12vh;max-height:96px;width:auto;filter:drop-shadow(0 6px 24px rgba(143,125,255,.45))}
+.spacer{flex:1}
+.status{display:inline-flex;align-items:center;gap:9px;padding:10px 18px;border-radius:100px;background:rgba(20,14,44,.6);border:1px solid rgba(160,140,255,.25);font-family:var(--n);font-weight:600;font-size:2.1vh;color:var(--dim);backdrop-filter:blur(8px)}
+.dot{width:11px;height:11px;border-radius:50%;background:var(--hot)}
+.dot.on{background:var(--mint);box-shadow:0 0 14px var(--mint)}
+.dot.wait{background:var(--gold);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.meterwrap{display:flex;align-items:center;gap:14px;margin:2.4vh 0 1vh}
+.meterlabel{font-family:var(--n);font-size:1.9vh;letter-spacing:2px;text-transform:uppercase;color:var(--dim);white-space:nowrap}
+.meter{flex:1;height:2.4vh;min-height:16px;border-radius:100px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(160,140,255,.2)}
+.mfill{height:100%;width:0;border-radius:100px;background:linear-gradient(90deg,var(--cyan),var(--mint));box-shadow:0 0 18px var(--mint);transition:width .04s linear}
+.mval{font-family:var(--n);font-weight:700;font-size:2.4vh;color:var(--mint);min-width:2.6em;text-align:right;font-variant-numeric:tabular-nums}
+.bandrow{display:flex;gap:1.1vw;margin-bottom:2vh;flex-wrap:wrap}
+.pill{font-family:var(--d);font-weight:600;font-size:2vh;padding:1vh 2vw;border-radius:100px;background:rgba(20,14,44,.55);border:2px solid rgba(160,140,255,.22);color:var(--dim);cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s}
+.pill.sel{color:#0c0722;background:linear-gradient(180deg,var(--accent),#6f5ae0);border-color:transparent}
+.grid{flex:1;display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:1fr;gap:1.6vw;min-height:0}
+.card{position:relative;border-radius:22px;background:linear-gradient(165deg,rgba(30,20,60,.9),rgba(12,8,28,.9));border:2px solid rgba(160,140,255,.16);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1vh;cursor:pointer;overflow:hidden;transition:transform .14s cubic-bezier(.2,.9,.3,1.3),box-shadow .14s,border-color .14s}
+.card .ic{font-size:6.4vh;line-height:1;filter:drop-shadow(0 4px 14px rgba(0,0,0,.5))}
+.card .nm{font-family:var(--d);font-weight:700;font-size:2.5vh;letter-spacing:.5px}
+.card .tag{font-family:var(--n);font-size:1.6vh;color:var(--dim)}
+.card .glow{position:absolute;inset:-40% -40% auto -40%;height:120%;background:radial-gradient(closest-side,var(--c,#8f7dff),transparent);opacity:.16;pointer-events:none}
+.foc{outline:none}
+.card.foc{transform:scale(1.075) translateY(-2px);border-color:var(--c,#8f7dff);box-shadow:0 0 0 3px rgba(255,255,255,.08),0 18px 44px rgba(0,0,0,.55),0 0 34px var(--c,#8f7dff)}
+.pill.foc{transform:scale(1.09);border-color:#fff;box-shadow:0 0 22px rgba(143,125,255,.7)}
+.updrow{display:flex;align-items:center;gap:14px;margin-top:2vh}
+.upd{font-family:var(--d);font-weight:600;font-size:2vh;padding:1.2vh 2.4vw;border-radius:100px;background:rgba(20,14,44,.55);border:2px solid rgba(160,140,255,.3);color:var(--txt);cursor:pointer;transition:transform .12s,box-shadow .12s}
+.upd.foc{transform:scale(1.06);border-color:#fff;box-shadow:0 0 22px rgba(57,245,196,.6)}
+.updmsg{font-family:var(--n);font-size:1.9vh;color:var(--dim)}
+.hint{font-family:var(--n);font-size:1.7vh;color:#6f6790}
+</style></head>
+<body>
+<canvas id="bgcv"></canvas>
+<div class="wrap">
+  <div class="top">
+    <img class="logo" src="logo.png" alt="X3 Force Bar Games" onerror="this.style.display='none'">
+    <div class="spacer"></div>
+    <div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Connecting…</span></div>
+  </div>
+
+  <div class="meterwrap">
+    <span class="meterlabel">Pull to test</span>
+    <div class="meter"><div class="mfill" id="mfill"></div></div>
+    <span class="mval" id="mval">0</span>
+  </div>
+
+  <div class="bandrow" id="bandrow"></div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="updrow">
+    <button class="upd nav" id="updBtn" data-act="update">⟳ Check for updates</button>
+    <span class="updmsg" id="updMsg"></span>
+    <span class="spacer"></span>
+    <span class="hint" id="verHint"></span>
+  </div>
+</div>
+<script>
+"use strict";
+window.__x3fLauncher=true;
+const $=id=>document.getElementById(id);
+function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
+function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
+const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
+const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
+let band=xget('band','White'); if(BANDS.indexOf(band)<0)band='White';
+let bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
+function ref(){return Math.max(60,bandMax[band]||BAND_DEF[band]||130)}
+
+const GAMES=[
+ {nm:'Nova',      f:'nova.html',      ic:'🚀', c:'#8f7dff', tag:'space defense'},
+ {nm:'Splash',    f:'splash.html',    ic:'🌊', c:'#37c8ff', tag:'underwater'},
+ {nm:'Bloom',     f:'bloom.html',     ic:'🌸', c:'#ff9ecf', tag:'rep garden'},
+ {nm:'Flow',      f:'flow.html',      ic:'〰️', c:'#39f5c4', tag:'trace the wave'},
+ {nm:'Arena',     f:'arena.html',     ic:'⚔️', c:'#ff8a5c', tag:'survive'},
+ {nm:'Duel',      f:'duel.html',      ic:'⚡', c:'#ff5d78', tag:'head to head'},
+ {nm:'Rhythm',    f:'rhythm.html',    ic:'🎵', c:'#ffd23f', tag:'hit the beat'},
+ {nm:'Calibrate', f:'calibrate.html', ic:'🎯', c:'#8fe0c4', tag:'set your bands'},
+];
+
+// ---- band pills ----
+const bandrow=$('bandrow');
+BANDS.forEach(b=>{const el=document.createElement('button');el.className='pill nav'+(b===band?' sel':'');el.dataset.band=b;el.textContent=b;
+  el.onclick=()=>selectBand(b);bandrow.appendChild(el);});
+function selectBand(b){band=b;xset('band',b);[...bandrow.children].forEach(p=>p.classList.toggle('sel',p.dataset.band===b));}
+
+// ---- game cards ----
+const grid=$('grid');
+GAMES.forEach(g=>{const el=document.createElement('div');el.className='card nav';el.style.setProperty('--c',g.c);el.dataset.f=g.f;
+  el.innerHTML='<div class="glow" style="--c:'+g.c+'"></div><div class="ic">'+g.ic+'</div><div class="nm">'+g.nm+'</div><div class="tag">'+g.tag+'</div>';
+  el.onclick=()=>{try{xset('band',band);}catch(e){} location.href=g.f;};
+  grid.appendChild(el);});
+
+// ---- update button ----
+$('updBtn').onclick=()=>{ try{ if(window.X3F&&X3F.checkUpdate){ $('updMsg').textContent='Checking…'; X3F.checkUpdate(); } else { $('updMsg').textContent='Updates only in the TV app'; } }catch(e){ $('updMsg').textContent='Update error'; } };
+window.__x3fUpdate=function(msg){ try{ $('updMsg').textContent=msg||''; }catch(e){} };
+window.__x3fVersion=function(v){ try{ $('verHint').textContent=v?('v'+v):''; }catch(e){} };
+
+// ---- bar status (native calls this) ----
+window.__x3fSetBar=function(state,txt){ try{ $('dot').className='dot'+(state?(' '+state):''); $('statusTxt').textContent=txt||''; }catch(e){} };
+
+// ---- D-pad spatial nav ----
+const navEls=()=>[...document.querySelectorAll('.nav')].filter(el=>el.offsetParent!==null);
+let cur=null;
+function setFoc(el){ if(cur)cur.classList.remove('foc'); cur=el; if(el){el.classList.add('foc'); try{el.scrollIntoView({block:'nearest'});}catch(e){}} }
+function ctr(el){const r=el.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2};}
+window.__x3fNav=function(dir){
+  const list=navEls(); if(!list.length)return;
+  if(!cur||!list.includes(cur)){setFoc(list[0]);return;}
+  if(dir==='enter'){cur.click();return;}
+  const c=ctr(cur);let best=null,bd=1e12;
+  for(const el of list){ if(el===cur)continue; const e=ctr(el),dx=e.x-c.x,dy=e.y-c.y;
+    const ok=(dir==='left'&&dx<-4)||(dir==='right'&&dx>4)||(dir==='up'&&dy<-4)||(dir==='down'&&dy>4); if(!ok)continue;
+    const along=(dir==='left'||dir==='right')?Math.abs(dx):Math.abs(dy),perp=(dir==='left'||dir==='right')?Math.abs(dy):Math.abs(dx);
+    const d=along+perp*2.2; if(d<bd){bd=d;best=el;} }
+  if(best)setFoc(best);
+};
+// initial focus: first game card
+setTimeout(()=>{ const cards=[...grid.children]; setFoc(cards[0]||navEls()[0]||null); },120);
+
+// ---- live force meter ----
+const mfill=$('mfill'),mval=$('mval');
+function meter(){ let f=+window.__x3fForce||0; const pct=Math.max(0,Math.min(100,f/ref()*100));
+  mfill.style.width=pct+'%'; mval.textContent=Math.round(f); requestAnimationFrame(meter); }
+requestAnimationFrame(meter);
+
+// ---- bubbly background ----
+const cv=$('bgcv'),ctx=cv.getContext('2d');let W,H,bub=[];
+function rs(){W=cv.width=innerWidth;H=cv.height=innerHeight; bub=[]; const n=Math.round(W*H/48000);
+  for(let i=0;i<n;i++)bub.push({x:Math.random()*W,y:Math.random()*H,r:6+Math.random()*30,s:.2+Math.random()*.5,h:Math.random()});}
+addEventListener('resize',rs);rs();
+function bg(){ ctx.clearRect(0,0,W,H);
+  const g=ctx.createLinearGradient(0,0,W,H); g.addColorStop(0,'#0a0620');g.addColorStop(.5,'#0f0a26');g.addColorStop(1,'#08061a');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const rg=ctx.createRadialGradient(W*.8,H*-.1,0,W*.8,H*-.1,Math.max(W,H)*.7); rg.addColorStop(0,'rgba(143,125,255,.16)');rg.addColorStop(1,'rgba(143,125,255,0)');
+  ctx.fillStyle=rg;ctx.fillRect(0,0,W,H);
+  for(const b of bub){ b.y-=b.s; if(b.y<-b.r){b.y=H+b.r;b.x=Math.random()*W;}
+    const col=b.h<.5?'55,230,255':'57,245,196';
+    ctx.fillStyle='rgba('+col+','+(.05+ .06*Math.sin(b.y*.02))+')'; ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.fill();
+    ctx.strokeStyle='rgba('+col+',.10)';ctx.lineWidth=1;ctx.stroke(); }
+  requestAnimationFrame(bg); }
+requestAnimationFrame(bg);
+</script>
+</body></html>

@@ -45,14 +45,15 @@ jobs:
           name: X3F TV — latest build
           files: x3f-tv.apk
           body: >
-            Auto-built X3F TV APK. Download `x3f-tv.apk` below and sideload it on the
-            Google TV (Downloader app -> this file's URL, or Send Files to TV).
+            Auto-built X3F TV APK. In-app updater checks version.txt on the dist branch.
 
-      - name: Mirror APK to dist branch (git-fetchable)
+      - name: Mirror APK + version to dist branch (git-fetchable + updater source)
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
+          grep -m1 versionCode app/build.gradle | grep -o '[0-9]\+' > version.txt
+          echo "published versionCode: $(cat version.txt)"
           git checkout -B dist
-          git add -f x3f-tv.apk
-          git commit -m "APK ${GITHUB_SHA}" || echo "no change"
+          git add -f x3f-tv.apk version.txt
+          git commit -m "APK + version ${GITHUB_SHA}" || echo "no change"
           git push -f origin dist
