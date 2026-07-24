@@ -22,14 +22,18 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelUuid;
-import android.view.Gravity;
+import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.ArrayAdapter;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import java.nio.ByteBuffer;
@@ -39,10 +43,10 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * X3F Bar Probe — a TV-native app that auto-connects to the X3 Force bar over BLE
- * and shows the live force. Same protocol as the web games:
- *   service e3458900 / force char e3458901 (float64, little-endian), tared to a baseline.
- * This is step one of the full app: once the number moves on the TV, we add the games.
+ * X3F TV v0.2 — auto-connects to the X3 Force bar over BLE and runs Nova on the TV,
+ * feeding live force straight into the game via a WebView (no phone, no relay).
+ * BLE: service e3458900 / char e3458901 (float64 LE), tared to a baseline, then
+ * injected as window.__x3fForce; the game reads it when window.__x3fNative is set.
  */
 public class MainActivity extends Activity {
 
@@ -50,30 +54,34 @@ public class MainActivity extends Activity {
     private static final UUID CH_FORCE = UUID.fromString("e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6");
     private static final UUID CCCD     = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final int  REQ_PERMS = 42;
+    private static final String GAME_URL = "file:///android_asset/nova-native.html";
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private BluetoothAdapter adapter;
     private BluetoothLeScanner scanner;
     private BluetoothGatt gatt;
 
-    private boolean scanning = false;
-    private boolean connecting = false;
-    private boolean connected = false;
+    private boolean scanning = false, connecting = false, connected = false;
     private String targetAddress = null;
     private double baseline = 0;
     private boolean haveBaseline = false;
-    private double peak = 60;
 
-    private TextView tvStatus, tvForce, tvHint, tvDev;
-    private ProgressBar bar;
+    private FrameLayout root;
+    private LinearLayout overlay;
+    private TextView tvStatus, tvDev;
     private ListView list;
     private ArrayAdapter<String> listAdapter;
     private final List<BluetoothDevice> found = new ArrayList<>();
     private final List<String> labels = new ArrayList<>();
 
+    private WebView web;
+    private boolean gameLoaded = false;
+    private long lastInject = 0;
+
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         buildUi();
         BluetoothManager mgr = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         adapter = (mgr != null) ? mgr.getAdapter() : null;
@@ -104,7 +112,7 @@ public class MainActivity extends Activity {
         boolean ok = res.length > 0;
         for (int r : res) if (r != PackageManager.PERMISSION_GRANTED) ok = false;
         if (ok) startScan();
-        else setStatus("Bluetooth permission denied — allow it to scan the bar", 0xFFFF5D78);
+        else setStatus("Bluetooth permission denied — allow it to reach the bar", 0xFFFF5D78);
     }
 
     // ---------- scanning ----------
@@ -115,14 +123,8 @@ public class MainActivity extends Activity {
             if (scanner == null) { setStatus("Bluetooth is off", 0xFFFFD23F); return; }
             found.clear();
             labels.clear();
-            ui.post(() -> {
-                listAdapter.notifyDataSetChanged();
-                list.setVisibility(View.VISIBLE);
-                tvForce.setVisibility(View.GONE);
-                bar.setVisibility(View.GONE);
-            });
-            ScanSettings s = new ScanSettings.Builder()
-                    .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
+            ui.post(() -> { listAdapter.notifyDataSetChanged(); showOverlay(true); });
+            ScanSettings s = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
             scanner.startScan(null, s, scanCb);
             scanning = true;
             setStatus("Scanning for the bar…", 0xFFFFD23F);
@@ -176,7 +178,7 @@ public class MainActivity extends Activity {
         connecting = true;
         targetAddress = d.getAddress();
         stopScan();
-        setStatus("Connecting to " + targetAddress + "…", 0xFFFFD23F);
+        setStatus("Connecting to bar…", 0xFFFFD23F);
         try {
             gatt = d.connectGatt(this, false, gattCb, BluetoothDevice.TRANSPORT_LE);
         } catch (SecurityException e) {
@@ -191,7 +193,7 @@ public class MainActivity extends Activity {
             try {
                 BluetoothDevice d = adapter.getRemoteDevice(targetAddress);
                 connecting = true;
-                setStatus("Reconnecting to " + targetAddress + "…", 0xFFFFD23F);
+                setStatus("Reconnecting…", 0xFFFFD23F);
                 gatt = d.connectGatt(this, true, gattCb, BluetoothDevice.TRANSPORT_LE);
             } catch (Exception e) { startScan(); }
         } else startScan();
@@ -209,8 +211,8 @@ public class MainActivity extends Activity {
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 connected = false;
                 connecting = false;
-                setStatus("Disconnected — reconnecting…", 0xFFFF5D78);
-                ui.post(() -> { tvForce.setVisibility(View.GONE); bar.setVisibility(View.GONE); });
+                setStatus("Bar disconnected — reconnecting…", 0xFFFF5D78);
+                ui.post(() -> { if (web != null && gameLoaded) { try { web.evaluateJavascript("window.__x3fForce=0;", null); } catch (Exception ignored) {} } });
                 closeGatt();
                 ui.postDelayed(MainActivity.this::reconnect, 1200);
             }
@@ -219,13 +221,13 @@ public class MainActivity extends Activity {
         @Override public void onServicesDiscovered(BluetoothGatt g, int status) {
             BluetoothGattService svc = g.getService(SERVICE);
             if (svc == null) {
-                setStatus("Connected, but no force service — not the bar. Pick another below.", 0xFFFF5D78);
+                setStatus("Not the bar (no force service) — scanning…", 0xFFFF5D78);
                 connecting = false; connected = false; closeGatt();
                 ui.postDelayed(MainActivity.this::startScan, 800);
                 return;
             }
             BluetoothGattCharacteristic ch = svc.getCharacteristic(CH_FORCE);
-            if (ch == null) { setStatus("Force channel not found on the bar", 0xFFFF5D78); return; }
+            if (ch == null) { setStatus("Force channel not found", 0xFFFF5D78); return; }
             try {
                 g.setCharacteristicNotification(ch, true);
                 BluetoothGattDescriptor cccd = ch.getDescriptor(CCCD);
@@ -233,15 +235,9 @@ public class MainActivity extends Activity {
                     cccd.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
                     g.writeDescriptor(cccd);
                 }
-                connected = true; connecting = false; haveBaseline = false; peak = 60;
-                setStatus("LIVE — pull the bar", 0xFF39F5C4);
-                ui.post(() -> {
-                    list.setVisibility(View.GONE);
-                    tvForce.setVisibility(View.VISIBLE);
-                    bar.setVisibility(View.VISIBLE);
-                    tvDev.setText("Bar: " + targetAddress + "     ·     press OK to re-zero");
-                    tvHint.setText("This confirms the TV reads the bar directly. Next build drops your games on top.");
-                });
+                connected = true; connecting = false; haveBaseline = false;
+                setStatus("LIVE", 0xFF39F5C4);
+                ui.post(MainActivity.this::launchGame);
             } catch (SecurityException e) {
                 setStatus("Missing BLUETOOTH_CONNECT permission", 0xFFFF5D78);
             }
@@ -260,22 +256,38 @@ public class MainActivity extends Activity {
         if (v == null || v.length < 8) return;
         double rawd = ByteBuffer.wrap(v).order(ByteOrder.LITTLE_ENDIAN).getDouble();
         if (!haveBaseline) { baseline = rawd; haveBaseline = true; }
-        final double force = Math.max(0, rawd - baseline);
-        if (force > peak) peak = force;
-        ui.post(() -> {
-            tvForce.setText(String.valueOf(Math.round(force)));
-            bar.setProgress((int) Math.max(0, Math.min(1000, force / Math.max(50, peak) * 1000)));
-        });
+        injectForce(Math.max(0, rawd - baseline));
     }
 
-    // ---------- remote keys ----------
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent e) {
-        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER
-                || keyCode == KeyEvent.KEYCODE_BUTTON_A) {
-            if (connected) { haveBaseline = false; peak = 60; return true; }
+    // ---------- game / webview ----------
+    private void launchGame() {
+        showOverlay(false);
+        if (web != null) {
+            web.setVisibility(View.VISIBLE);
+            if (!gameLoaded) web.loadUrl(GAME_URL); // onPageFinished flips gameLoaded + native flag
         }
-        return super.onKeyDown(keyCode, e);
+    }
+
+    private void injectForce(double force) {
+        if (!gameLoaded || web == null) return;
+        long now = SystemClock.uptimeMillis();
+        if (now - lastInject < 16) return;   // cap ~60 Hz
+        lastInject = now;
+        final String js = "window.__x3fForce=" + (Math.round(force * 100) / 100.0) + ";";
+        web.post(() -> { try { web.evaluateJavascript(js, null); } catch (Exception ignored) {} });
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent e) {
+        if (e.getAction() == KeyEvent.ACTION_DOWN) {
+            int k = e.getKeyCode();
+            if ((k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_BUTTON_A)
+                    && connected && gameLoaded) {
+                haveBaseline = false;   // OK re-zeros the bar
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(e);
     }
 
     @Override
@@ -283,55 +295,39 @@ public class MainActivity extends Activity {
         super.onDestroy();
         stopScan();
         closeGatt();
+        if (web != null) { web.destroy(); web = null; }
     }
 
     // ---------- UI ----------
     private void buildUi() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
+        root = new FrameLayout(this);
         root.setBackgroundColor(0xFF05030F);
+
+        overlay = new LinearLayout(this);
+        overlay.setOrientation(LinearLayout.VERTICAL);
+        overlay.setBackgroundColor(0xFF05030F);
         int pad = dp(28);
-        root.setPadding(pad, pad, pad, pad);
+        overlay.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("X3F  ·  BAR PROBE");
+        title.setText("X3F  ·  NOVA");
         title.setTextColor(0xFF8F7DFF);
         title.setTextSize(26);
-        root.addView(title);
+        overlay.addView(title);
 
         tvStatus = new TextView(this);
         tvStatus.setText("Starting…");
         tvStatus.setTextColor(0xFFA99FD6);
         tvStatus.setTextSize(18);
         tvStatus.setPadding(0, dp(6), 0, dp(10));
-        root.addView(tvStatus);
-
-        tvForce = new TextView(this);
-        tvForce.setText("—");
-        tvForce.setTextColor(0xFF39F5C4);
-        tvForce.setTextSize(110);
-        tvForce.setGravity(Gravity.CENTER);
-        tvForce.setVisibility(View.GONE);
-        root.addView(tvForce, weight(1f));
-
-        bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        bar.setMax(1000);
-        bar.setVisibility(View.GONE);
-        root.addView(bar, fixedH(dp(18)));
-
-        tvHint = new TextView(this);
-        tvHint.setText("");
-        tvHint.setTextColor(0xFF6F6790);
-        tvHint.setTextSize(14);
-        tvHint.setPadding(0, dp(8), 0, 0);
-        root.addView(tvHint);
+        overlay.addView(tvStatus);
 
         tvDev = new TextView(this);
         tvDev.setText("Scanning…");
         tvDev.setTextColor(0xFFA99FD6);
         tvDev.setTextSize(15);
         tvDev.setPadding(0, dp(10), 0, dp(4));
-        root.addView(tvDev);
+        overlay.addView(tvDev);
 
         list = new ListView(this);
         listAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels) {
@@ -347,24 +343,37 @@ public class MainActivity extends Activity {
         list.setOnItemClickListener((parent, view, pos, id) -> {
             if (pos >= 0 && pos < found.size()) { haveBaseline = false; connectTo(found.get(pos)); }
         });
-        root.addView(list, weight(2f));
+        overlay.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
+        web = new WebView(this);
+        WebSettings ws = web.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);   // localStorage persistence for scores/history
+        ws.setMediaPlaybackRequiresUserGesture(false);
+        web.setBackgroundColor(0xFF05030F);
+        web.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView v, String url) {
+                v.evaluateJavascript("window.__x3fNative=true;", null);
+                gameLoaded = true;
+            }
+        });
+        web.setVisibility(View.GONE);
+
+        root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
     }
 
+    private void showOverlay(boolean show) {
+        if (overlay != null) overlay.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (web != null && show) web.setVisibility(View.GONE);
+    }
+
     private void setStatus(String t, int color) {
-        ui.post(() -> { tvStatus.setText(t); tvStatus.setTextColor(color); });
+        ui.post(() -> { if (tvStatus != null) { tvStatus.setText(t); tvStatus.setTextColor(color); } });
     }
 
     private int dp(int v) {
         return Math.round(v * getResources().getDisplayMetrics().density);
-    }
-
-    private LinearLayout.LayoutParams weight(float w) {
-        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, w);
-    }
-
-    private LinearLayout.LayoutParams fixedH(int h) {
-        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, h);
     }
 }
