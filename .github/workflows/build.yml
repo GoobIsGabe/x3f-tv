@@ -1,0 +1,58 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Stage APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk x3f-tv.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: x3f-tv-apk
+          path: x3f-tv.apk
+
+      - name: Publish to "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: X3F TV — latest build
+          files: x3f-tv.apk
+          body: >
+            Auto-built X3F TV APK. Download `x3f-tv.apk` below and sideload it on the
+            Google TV (Downloader app -> this file's URL, or Send Files to TV).
+
+      - name: Mirror APK to dist branch (git-fetchable)
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git checkout -B dist
+          git add -f x3f-tv.apk
+          git commit -m "APK ${GITHUB_SHA}" || echo "no change"
+          git push -f origin dist
