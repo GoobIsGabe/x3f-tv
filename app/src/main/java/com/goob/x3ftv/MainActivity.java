@@ -35,6 +35,7 @@ import android.webkit.WebViewClient;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -336,11 +337,11 @@ public class MainActivity extends Activity {
         int pad = dp(32);
         launcher.setPadding(pad, pad, pad, pad);
 
-        TextView title = new TextView(this);
-        title.setText("X3F  ·  FORCE BAR GAMES");
-        title.setTextColor(0xFF8F7DFF);
-        title.setTextSize(30);
-        launcher.addView(title);
+        ImageView logoView = new ImageView(this);
+        logoView.setImageResource(R.drawable.logo);
+        logoView.setAdjustViewBounds(true);
+        logoView.setScaleType(ImageView.ScaleType.FIT_START);
+        launcher.addView(logoView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(140)));
 
         tvStatus = new TextView(this);
         tvStatus.setText("Bar: starting…");
@@ -431,7 +432,7 @@ public class MainActivity extends Activity {
   if(!window.__x3fNav){
    var cur=null, lastScope=null;
    function scope(){ var m=document.querySelectorAll('.scrim.show,.modal.show'); if(m&&m.length)return m[m.length-1]; return document; }
-   function vis(el){ try{ if(!el||el.disabled)return false; if(el.tagName!=='BODY'&&el.offsetParent===null)return false; var r=el.getBoundingClientRect(); return r.width>4&&r.height>4&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth; }catch(e){return false;} }
+   function vis(el){ try{ if(!el||el.disabled)return false; if(el.tagName!=='BODY'&&el.offsetParent===null)return false; var r=el.getBoundingClientRect(); if(r.width<4||r.height<4)return false; var sc=el.closest&&el.closest('.scrim'); if(sc&&!sc.classList.contains('show'))return false; var cs=getComputedStyle(el); if(cs&&(cs.visibility==='hidden'||cs.display==='none'))return false; return true; }catch(e){return false;} }
    function items(){ var rootEl=scope(); var q=rootEl.querySelectorAll('button,select,input,a[href],.cta,.buy,.mini,.iconbtn,[role=button],[onclick]'); var a=[]; for(var i=0;i<q.length;i++) if(vis(q[i])) a.push(q[i]); return a; }
    function clear(){ if(cur){ cur.classList.remove('x3f-focus'); } cur=null; }
    function setFocus(el){ if(cur)cur.classList.remove('x3f-focus'); cur=el; if(cur){ cur.classList.add('x3f-focus'); try{cur.scrollIntoView({block:'nearest'});}catch(e){} try{cur.focus({preventScroll:true});}catch(e){} } }
