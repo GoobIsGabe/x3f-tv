@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<!-- X3F CALIBRATE - guided per-band max-pull capture. Sets x3f_bandMax[band]. -->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>X3F Calibrate</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--hot:#ff5d78;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--d);color:var(--txt);background:radial-gradient(120vw 60vh at 80% -10%,rgba(47,240,176,.09),transparent 60%),var(--bg);-webkit-user-select:none;user-select:none}
+.app{height:100dvh;max-width:560px;margin:0 auto;display:flex;flex-direction:column;padding:calc(14px + var(--sat)) 16px calc(18px + var(--sab))}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.brand{font-weight:800;font-size:18px;letter-spacing:2px}.brand b{color:var(--accent)}
+.spacer{flex:1}
+a.home{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 13px}
+.status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);font-size:12px;color:var(--dim);font-family:var(--n)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--hot)}.dot.on{background:var(--accent);box-shadow:0 0 12px var(--accent)}.dot.wait{background:var(--gold)}
+.mid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;min-height:0}
+.eyebrow{font-family:var(--n);font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--dim)}
+.big{font-family:var(--n);font-weight:700;font-variant-numeric:tabular-nums;font-size:clamp(3.6rem,20vw,7rem);line-height:.95}
+.big.hot{color:var(--hot)}.big.accent{color:var(--accent)}
+.sub{color:var(--dim);font-size:14px;max-width:340px;line-height:1.5}
+.rowsel{display:flex;gap:8px;align-items:center;width:100%;margin-bottom:10px}
+select{flex:1;font-family:var(--n);font-weight:700;font-size:14px;background:var(--bg2);color:var(--txt);border:1px solid var(--brd2);border-radius:12px;padding:11px}
+.cta{font-family:var(--d);font-weight:700;font-size:16px;border:none;border-radius:14px;padding:15px;cursor:pointer;width:100%;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;transition:transform .07s,filter .15s}
+.cta:active{transform:translateY(1px)}.cta.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--brd2)}
+.cta:disabled{opacity:.4}
+.stored{font-family:var(--n);font-size:12.5px;color:var(--dim);text-align:center;margin-top:10px;line-height:1.6}
+.stored b{color:var(--txt)}
+.btnrow{display:flex;gap:8px}
+.scrim{position:fixed;inset:0;background:rgba(4,6,11,.74);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:20;opacity:0;pointer-events:none;transition:opacity .25s;padding:24px}
+.scrim.show{opacity:1;pointer-events:auto}
+.card{width:100%;max-width:400px;text-align:center;display:flex;flex-direction:column;gap:13px}
+.card h1{font-size:26px;font-weight:800}.card h1 b{color:var(--accent)}.card p{color:var(--dim);font-size:14px;line-height:1.55}
+</style></head>
+<body>
+<div class="app">
+<div class="top"><div class="brand">X3F <b>CALIBRATE</b></div><div class="spacer"></div>
+<div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
+<a class="home" href="index.html">Home</a></div>
+<div class="rowsel"><select id="bandSel"></select></div>
+<div class="mid">
+<div class="eyebrow" id="eye">Live Force</div>
+<div class="big" id="big">0</div>
+<div class="sub" id="sub">Pick your band, then capture a true all-out pull to calibrate its max.</div>
+</div>
+<div class="stored" id="stored"></div>
+<div class="btnrow" style="margin-top:12px"><button class="cta ghost" id="zeroBtn" style="flex:1">Re-Zero</button><button class="cta" id="calBtn" style="flex:2">Calibrate</button></div>
+</div>
+<div class="scrim show" id="firstrun"><div class="card">
+<h1>X3F <b>CALIBRATE</b></h1>
+<p>Dial in each band's real max. Connect, choose a band, and pull as hard as you can for the capture window - every game then scales to that number.</p>
+<button class="cta" id="frConnect">Connect Bar</button>
+<button class="cta ghost" id="frDemo">Try Demo (hold to pull)</button>
+</div></div>
+<script>
+"use strict";
+const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6';
+const $=id=>document.getElementById(id);
+function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
+function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
+const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
+const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
+let band=xget('band','White'),bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
+const bandSel=$('bandSel');
+BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSel.appendChild(o)});
+bandSel.onchange=()=>{band=bandSel.value;xset('band',band);showStored()};
+function showStored(){$('stored').innerHTML=BANDS.map(b=>`${b}: <b>${Math.round(bandMax[b]||0)}</b>`).join(' &nbsp;·&nbsp; ')}
+showStored();
+
+let device=null,connected=false,demo=false,raw=0,baseline=null,taring=false,tSamp=[],tStart=0,tEnd=0,force=0;
+function setStatus(t,c){$('statusTxt').textContent=t;$('dot').className='dot'+(c?' '+c:'')}
+async function connect(){
+  if(!navigator.bluetooth){setStatus('No Web Bluetooth','');alert('Bluetooth needs Chrome on Android, or the free Bluefy browser on iPhone (App Store). Or press Demo to play without the bar.');return;}
+  if(!window.isSecureContext){setStatus('Not secure','');alert('Serve over https or localhost.');return;}
+  try{setStatus('Scanning...','wait');
+    device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE]});
+    device.addEventListener('gattserverdisconnected',()=>{connected=false;setStatus('Disconnected','')});
+    setStatus('Connecting...','wait');
+    const srv=await(await device.gatt.connect()).getPrimaryService(SERVICE);
+    const fc=await srv.getCharacteristic(CH_FORCE);await fc.startNotifications();
+    fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);onSample()});
+    demo=false;connected=true;$('firstrun').classList.remove('show');startTare();
+  }catch(e){console.error(e);if(e.name==='NotFoundError'){setStatus('No bar found','');alert('No device selected, or nothing advertising.')}else{setStatus(e.name,'')}}
+}
+function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
+function onSample(){
+  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
+  if(baseline==null)baseline=raw;force=Math.max(0,raw-baseline);
+}
+let demoF=0,pull=false;
+function startDemo(){demo=true;connected=false;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
+  if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(700,demoF+40);else demoF=Math.max(0,demoF*0.9-3);raw=demoF;onSample()},27)}
+addEventListener('pointerdown',()=>{if(demo)pull=true});addEventListener('pointerup',()=>pull=false);
+addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});addEventListener('keyup',e=>{if(e.code==='Space')pull=false});
+$('frConnect').onclick=connect;$('frDemo').onclick=startDemo;
+$('zeroBtn').onclick=()=>{if(demo){baseline=0}else startTare()};
+
+let beeper=null;function beep(f,d){try{beeper=beeper||new(window.AudioContext||window.webkitAudioContext)();const o=beeper.createOscillator(),g=beeper.createGain();o.frequency.value=f;o.connect(g);g.connect(beeper.destination);g.gain.setValueAtTime(0.001,beeper.currentTime);g.gain.exponentialRampToValueAtTime(0.25,beeper.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.001,beeper.currentTime+d);o.start();o.stop(beeper.currentTime+d+0.03)}catch(e){}}
+let phase='idle',pEnd=0,capMax=0;
+$('calBtn').onclick=()=>{ if(phase!=='idle')return; if(baseline==null&&!demo){alert('Connect and let it zero first.');return;}
+  phase='count';pEnd=performance.now()+3000; };
+function loop(now){
+  if(phase==='count'){const s=Math.ceil((pEnd-now)/1000);$('eye').textContent='Get ready';$('big').className='big';$('big').textContent=s>0?s:'GO';$('sub').textContent='Pull as hard as you can when it says PULL';
+    if(!loop.lastS||loop.lastS!==s){loop.lastS=s;if(s>0)beep(520,0.08);else beep(760,0.12)}
+    if(now>=pEnd){phase='cap';pEnd=now+4000;capMax=0;} }
+  else if(phase==='cap'){$('eye').textContent='PULL MAX';$('big').className='big hot';$('big').textContent=Math.round(force);$('sub').textContent=Math.max(0,(pEnd-now)/1000).toFixed(1)+'s left';
+    if(force>capMax)capMax=force;
+    if(now>=pEnd){phase='done';beep(400,0.2);if(capMax>10){bandMax[band]=Math.round(capMax);xset('bandMax',bandMax);showStored();}} }
+  else if(phase==='done'){$('eye').textContent=band+' calibrated';$('big').className='big accent';$('big').textContent=Math.round(bandMax[band]);$('sub').textContent='Saved. Every game now scales '+band+' to this max. Calibrate another band or head back.';
+    setTimeout(()=>{if(phase==='done')phase='idle'},2600); }
+  else{$('eye').textContent='Live Force';$('big').className='big';$('big').textContent=Math.round(force);}
+  $('calBtn').textContent=phase==='idle'?'Calibrate '+band:'...';
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+</body></html>

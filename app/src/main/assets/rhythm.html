@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<!-- X3F RHYTHM - beat trainer. Hit the target force level on each beat. -->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>X3F Rhythm</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#06080e;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--hot:#ff5d78;--cyan:#37d6ff;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{font-family:var(--d);color:var(--txt);background:var(--bg);-webkit-user-select:none;user-select:none}
+.app{position:relative;height:100dvh;max-width:820px;margin:0 auto;display:flex;flex-direction:column;padding-top:var(--sat)}
+.topbar{display:flex;align-items:center;gap:8px;padding:12px 14px 6px;flex-wrap:wrap}
+.brand{font-weight:800;font-size:17px;letter-spacing:2px}.brand b{color:var(--accent)}
+.spacer{flex:1}
+.status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);font-size:12px;color:var(--dim);font-family:var(--n)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--hot)}.dot.on{background:var(--accent);box-shadow:0 0 12px var(--accent)}.dot.wait{background:var(--gold)}
+select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);color:var(--txt);border:1px solid var(--brd2);border-radius:11px;padding:9px 11px;cursor:pointer}
+.stage{flex:1;min-height:0;position:relative;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.hud{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
+.chip{background:rgba(10,14,22,.66);backdrop-filter:blur(6px);border:1px solid var(--brd);border-radius:14px;padding:8px 13px;min-width:78px}
+.chip .k{font-family:var(--n);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
+.chip .v{font-family:var(--n);font-weight:700;font-size:20px}
+.v.accent{color:var(--accent)}.v.gold{color:var(--gold)}
+.toast{position:absolute;left:0;right:0;top:36%;text-align:center;font-family:var(--n);font-weight:700;font-size:clamp(1.4rem,6vw,2.2rem);opacity:0;transition:opacity .3s;pointer-events:none;text-shadow:0 4px 30px #000}
+.toast.show{opacity:1}
+.ctrl{display:flex;gap:8px;align-items:center;padding:8px 12px calc(8px + var(--sab));border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(0,0,0,.4))}
+.cta{font-family:var(--d);font-weight:700;font-size:16px;border:none;border-radius:14px;padding:14px 18px;cursor:pointer;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c}
+.cta:active{transform:translateY(1px)}.cta.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--brd2)}
+.grow{flex:1}
+.scrim{position:fixed;inset:0;background:rgba(4,6,11,.74);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:30;opacity:0;pointer-events:none;transition:opacity .25s;padding:24px}
+.scrim.show{opacity:1;pointer-events:auto}
+.card{width:100%;max-width:420px;text-align:center;display:flex;flex-direction:column;gap:14px}
+.card h1{font-size:28px;font-weight:800}.card h1 b{color:var(--accent)}.card p{color:var(--dim);font-size:14px;line-height:1.55}
+</style></head>
+<body>
+<div class="app">
+<div class="topbar">
+<button onclick="history.length>1?history.back():location.href='index.html'" aria-label="Back" style="display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:22px;font-weight:700;line-height:1;flex:0 0 auto;cursor:pointer;font-family:inherit">&lsaquo;</button>
+<button onclick="x3tv()" aria-label="TV mode" style="display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 12px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:12px;font-weight:800;letter-spacing:1px;cursor:pointer;font-family:inherit;flex:0 0 auto">TV</button>
+<div class="brand">X3F <b>RHYTHM</b></div><div class="spacer"></div>
+<div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
+<select id="bandSel" title="Band"></select>
+</div>
+<div class="stage" id="stage">
+<canvas id="cv"></canvas>
+<div class="hud">
+<div class="chip"><div class="k">Score</div><div class="v accent" id="hScore">0</div></div>
+<div class="chip"><div class="k">Combo</div><div class="v" id="hCombo">x0</div></div>
+<div class="chip"><div class="k">Best Combo</div><div class="v gold" id="hBest">0</div></div>
+</div>
+<div class="toast" id="toast"></div>
+</div>
+<div class="ctrl">
+<button class="cta ghost" id="zeroBtn">Re-Zero</button>
+<select id="bpmSel"><option value="50">Slow</option><option value="66" selected>Medium</option><option value="84">Fast</option></select>
+<div class="grow"></div>
+<button class="cta" id="startBtn">Start</button>
+</div>
+</div>
+<div class="scrim show" id="firstrun"><div class="card">
+<h1>X3F <b>RHYTHM</b></h1>
+<p>Reps on the beat. Notes fall to the metronome - hit the high notes by pulling to the target, the low notes by releasing. Land them on the beat to build a combo. Controlled, musical time-under-tension.</p>
+<button class="cta" id="frConnect">Connect Bar</button>
+<button class="cta ghost" id="frDemo">Try Demo (hold to pull)</button>
+</div></div>
+<script>
+"use strict";
+const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6';
+const $=id=>document.getElementById(id);
+function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
+function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
+function logSession(o){try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push(Object.assign({t:Date.now(),b:band},o));while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}}
+const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
+const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
+let band=xget('band','White'),bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
+function ref(){return Math.max(60,bandMax[band]||130)}
+let bestCombo=xget('rhythmBest',0);$('hBest').textContent=bestCombo;
+const bandSel=$('bandSel');
+BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSel.appendChild(o)});
+bandSel.onchange=()=>{band=bandSel.value;xset('band',band)};
+(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;xset('band',band);bandSel.value=band;}const bp=p.get('bpm');if(bp){$('bpmSel').value=bp;}})();
+
+let device=null,connected=false,demo=false,raw=0,baseline=null,taring=false,tSamp=[],tStart=0,tEnd=0,force=0;
+function setStatus(t,c){$('statusTxt').textContent=t;$('dot').className='dot'+(c?' '+c:'')}
+async function connect(){
+  if(!navigator.bluetooth){setStatus('No Web Bluetooth','');alert('Bluetooth needs Chrome on Android, or the free Bluefy browser on iPhone (App Store). Or press Demo to play without the bar.');return;}
+  if(!window.isSecureContext){setStatus('Not secure','');alert('Serve over https or localhost.');return;}
+  try{setStatus('Scanning...','wait');
+    device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE]});
+    device.addEventListener('gattserverdisconnected',()=>{connected=false;setStatus('Disconnected','')});
+    setStatus('Connecting...','wait');
+    const srv=await(await device.gatt.connect()).getPrimaryService(SERVICE);
+    const fc=await srv.getCharacteristic(CH_FORCE);await fc.startNotifications();
+    fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);onSample()});
+    demo=false;connected=true;$('firstrun').classList.remove('show');startTare();
+  }catch(e){console.error(e);if(e.name==='NotFoundError'){setStatus('No bar found','');alert('No device selected, or nothing advertising.')}else{setStatus(e.name,'')}}
+}
+function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
+function onSample(){
+  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
+  if(baseline==null)baseline=raw;force=Math.max(0,raw-baseline);
+}
+let demoF=0,pull=false;
+function startDemo(){demo=true;connected=false;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
+  if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(ref()*1.05,demoF+ref()*0.06+2);else demoF=Math.max(0,demoF*0.85-3);raw=demoF;onSample()},27)}
+$('stage').addEventListener('pointerdown',()=>{if(demo)pull=true});addEventListener('pointerup',()=>pull=false);
+addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});addEventListener('keyup',e=>{if(e.code==='Space')pull=false});
+$('frConnect').onclick=connect;$('frDemo').onclick=startDemo;
+$('zeroBtn').onclick=()=>{if(demo){baseline=0}else startTare()};
+
+let ac=null;function beep(f,d){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=f;o.connect(g);g.connect(ac.destination);g.gain.setValueAtTime(0.001,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.22,ac.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+d);o.start();o.stop(ac.currentTime+d+0.03)}catch(e){}}
+function toast(t){$('toast').textContent=t;$('toast').classList.add('show');toast.e=performance.now()+900}
+
+const cv=$('cv'),ctx=cv.getContext('2d');let W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener('resize',resize);
+let running=false,period=909,beats=[],nextBeat=0,idx=0,score=0,combo=0;
+const TRAVEL=2100;
+function hitX(){return W*0.26}
+function mapY(f){const top=58,bot=H-70,R=ref();return bot-(bot-top)*Math.max(0,Math.min(1.05,f/R))}
+$('bpmSel').onchange=()=>{period=60000/ +$('bpmSel').value};
+$('startBtn').onclick=()=>{ if(running){stop();return;}
+  period=60000/ +$('bpmSel').value;running=true;beats=[];idx=0;score=0;combo=0;nextBeat=performance.now()+800;$('startBtn').textContent='Stop';$('hScore').textContent=0;$('hCombo').textContent='x0';toast('GO');beep(660,0.12)}
+function stop(){running=false;$('startBtn').textContent='Start';if(combo>bestCombo){bestCombo=combo;xset('rhythmBest',bestCombo);$('hBest').textContent=bestCombo}logSession({g:'rhythm',combo:bestCombo,score:score})}
+function loop(now){
+  if(!W)resize();
+  const R=ref(),hi=R*0.72,lo=R*0.14,tol=R*0.17;
+  if(running){
+    while(nextBeat<now+TRAVEL){beats.push({time:nextBeat,level:(idx%2===0)?hi:lo,hi:idx%2===0,judged:false});idx++;nextBeat+=period;beep(idx%2?880:880,0.03)}
+    beats.forEach(b=>{if(!b.judged&&now>=b.time){b.judged=true;const good=Math.abs(force-b.level)<tol;
+      if(good){combo++;score+=100+combo*5;b.ok=true;$('hScore').textContent=score;if(combo>bestCombo){bestCombo=combo;xset('rhythmBest',bestCombo);$('hBest').textContent=bestCombo}if(combo%10===0)toast(combo+' combo');beep(1046,0.05);if(navigator.vibrate)navigator.vibrate(20);}
+      else{combo=0;b.ok=false;}
+      $('hCombo').textContent='x'+combo;}});
+    beats=beats.filter(b=>b.time>now-600);
+  }
+  ctx.clearRect(0,0,W,H);
+  // guide lines
+  ctx.strokeStyle='rgba(255,255,255,.06)';ctx.lineWidth=1;
+  [ref()*0.72,ref()*0.14].forEach(l=>{const y=mapY(l);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()});
+  // hit line
+  ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(hitX(),0);ctx.lineTo(hitX(),H);ctx.stroke();
+  // beats
+  const pps=(W-hitX())/(TRAVEL);
+  beats.forEach(b=>{const x=hitX()+(b.time-now)*pps,y=mapY(b.level);
+    ctx.beginPath();ctx.arc(x,y,13,0,7);
+    ctx.fillStyle=b.judged?(b.ok?'#2ff0b0':'#ff5d78'):(b.hi?'rgba(47,240,176,.9)':'rgba(55,214,255,.9)');
+    ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=b.judged?0:12;ctx.fill();ctx.shadowBlur=0;});
+  // marker
+  const my=mapY(force);ctx.fillStyle='#eaf0fa';ctx.shadowColor='#fff';ctx.shadowBlur=10;ctx.beginPath();ctx.arc(hitX(),my,9,0,7);ctx.fill();ctx.shadowBlur=0;
+  ctx.fillStyle='#8593a9';ctx.font="11px 'Space Grotesk'";ctx.fillText('green = pull up   blue = release',12,H-16);
+  if(toast.e&&now>toast.e){$('toast').classList.remove('show');toast.e=0}
+  requestAnimationFrame(loop);
+}
+resize();requestAnimationFrame(loop);
+</script>
+<script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+
+</body></html>

@@ -512,7 +512,6 @@ let lastT=performance.now(),dtGlobal=0.016;
 function loop(now){
   if(!W)resize();
   const dt=Math.min(0.05,(now-lastT)/1000);lastT=now;dtGlobal=dt;
-  if(window.__x3fNative){force=+window.__x3fForce||0;if(scene==='menu'){$('firstrun').classList.remove('show');startRun();}}
   if(scene==='play')update(dt,now);
   draw(now);
   requestAnimationFrame(loop);

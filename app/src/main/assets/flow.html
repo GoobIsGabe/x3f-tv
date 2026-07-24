@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<!-- X3F FLOW - controlled-rep trainer for the X3 Force bar (Web Bluetooth).
+ Trace the moving target ribbon = dynamic reps through full range. Band-aware.
+ Shares band setting with the other games via localStorage (x3f_band/x3f_bandMax). -->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>X3F Flow</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#06080e;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--hot:#ff5d78;--cyan:#37d6ff;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{font-family:var(--d);color:var(--txt);user-select:none;-webkit-user-select:none;background:var(--bg)}
+.app{position:relative;height:100dvh;max-width:820px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;padding-top:var(--sat)}
+.topbar{display:flex;align-items:center;gap:8px;padding:12px 14px 6px;flex-wrap:wrap}
+.brand{font-weight:800;font-size:17px;letter-spacing:2px}.brand b{color:var(--accent)}
+.spacer{flex:1}
+.status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);font-size:12px;color:var(--dim);font-family:var(--n);font-weight:500}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--hot)}.dot.on{background:var(--accent);box-shadow:0 0 12px var(--accent)}.dot.wait{background:var(--gold);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);color:var(--txt);border:1px solid var(--brd2);border-radius:11px;padding:9px 11px;cursor:pointer}
+.stage{flex:1;min-height:0;position:relative;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.hud{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
+.chip{background:rgba(10,14,22,.66);backdrop-filter:blur(6px);border:1px solid var(--brd);border-radius:14px;padding:8px 13px;min-width:82px}
+.chip .k{font-family:var(--n);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
+.chip .v{font-family:var(--n);font-weight:700;font-size:21px;font-variant-numeric:tabular-nums}
+.v.accent{color:var(--accent)}.v.gold{color:var(--gold)}
+.toast{position:absolute;left:0;right:0;top:38%;text-align:center;font-family:var(--n);font-weight:700;font-size:clamp(1.6rem,7vw,2.6rem);opacity:0;transition:opacity .3s;pointer-events:none;text-shadow:0 4px 30px #000}
+.toast.show{opacity:1}
+.ctrl{display:flex;gap:8px;align-items:center;padding:8px 12px calc(8px + var(--sab));border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(0,0,0,.4))}
+.cta{font-family:var(--d);font-weight:700;font-size:16px;border:none;border-radius:14px;padding:14px 18px;cursor:pointer;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;transition:transform .07s,filter .15s}
+.cta:active{transform:translateY(1px)}.cta.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--brd2)}
+.grow{flex:1}
+.scrim{position:fixed;inset:0;background:rgba(4,6,11,.74);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:30;opacity:0;pointer-events:none;transition:opacity .25s;padding:24px}
+.scrim.show{opacity:1;pointer-events:auto}
+.card{width:100%;max-width:420px;text-align:center;display:flex;flex-direction:column;gap:14px}
+.card h1{font-size:28px;font-weight:800}.card h1 b{color:var(--accent)}
+.card p{color:var(--dim);font-size:14px;line-height:1.55}
+</style></head>
+<body>
+<div class="app">
+<div class="topbar">
+<button onclick="history.length>1?history.back():location.href='index.html'" aria-label="Back" style="display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:22px;font-weight:700;line-height:1;flex:0 0 auto;cursor:pointer;font-family:inherit">&lsaquo;</button>
+<button onclick="x3tv()" aria-label="TV mode" style="display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 12px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:12px;font-weight:800;letter-spacing:1px;cursor:pointer;font-family:inherit;flex:0 0 auto">TV</button>
+<div class="brand">X3F <b>FLOW</b></div><div class="spacer"></div>
+<div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
+<select id="bandSel" title="Band"></select>
+<button class="mini" id="cueBtn">Cues on</button>
+</div>
+<div class="stage" id="stage">
+<canvas id="cv"></canvas>
+<div class="hud">
+<div class="chip"><div class="k">Reps</div><div class="v accent" id="hReps">0</div></div>
+<div class="chip"><div class="k">Accuracy</div><div class="v" id="hAcc">-</div></div>
+<div class="chip"><div class="k">Best Set</div><div class="v gold" id="hBest">0</div></div>
+<div class="chip"><div class="k">Force</div><div class="v" id="hForce">0</div></div>
+</div>
+<div class="toast" id="toast"></div>
+</div>
+<div class="ctrl">
+<button class="cta ghost" id="zeroBtn">Re-Zero</button>
+<select id="tempoSel" title="Tempo"><option value="4000">Controlled 4s</option><option value="3000" selected>Standard 3s</option><option value="2000">Brisk 2s</option></select>
+<div class="grow"></div>
+<button class="cta" id="startBtn">Start Set</button>
+</div>
+</div>
+<div class="scrim show" id="firstrun"><div class="card">
+<h1>X3F <b>FLOW</b></h1>
+<p>Controlled reps, the X3 way. Trace the moving ribbon - pull up into each peak, ease down into each trough. Reps count only when you reach the top. When you can't anymore, the set ends. That's your failure point.</p>
+<button class="cta" id="frConnect">Connect Bar</button>
+<button class="cta ghost" id="frDemo">Try Demo (hold to pull)</button>
+</div></div>
+<script>
+"use strict";
+const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_BATT='e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6';
+const $=id=>document.getElementById(id);
+function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
+function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
+const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
+const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
+let band=xget('band','White'), bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
+function ref(){return Math.max(60,bandMax[band]||130)}
+let bestSet=xget('flowBest',0); $('hBest').textContent=bestSet;
+const bandSel=$('bandSel');
+BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSel.appendChild(o)});
+bandSel.onchange=()=>{band=bandSel.value;xset('band',band)};
+function logSession(o){try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push(Object.assign({t:Date.now(),b:band},o));while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}}
+let cues=xget('cues',true);const cueBtn=$('cueBtn');function syncCue(){cueBtn.textContent=cues?'Cues on':'Cues off'}syncCue();
+cueBtn.onclick=()=>{cues=!cues;xset('cues',cues);syncCue()};
+let actx=null;function beep(f,d){if(!cues)return;try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=f;o.connect(g);g.connect(actx.destination);g.gain.setValueAtTime(0.0008,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.22,actx.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.0008,actx.currentTime+d);o.start();o.stop(actx.currentTime+d+0.03)}catch(e){}}
+function cue(peak){if(!cues)return;if(navigator.vibrate)navigator.vibrate(peak?35:15);beep(peak?880:520,0.06)}
+
+let device=null,connected=false,demo=false;
+let raw=0,baseline=null,taring=false,tSamp=[],tStart=0,tEnd=0,force=0;
+function setStatus(t,c){$('statusTxt').textContent=t;$('dot').className='dot'+(c?' '+c:'')}
+async function connect(){
+  if(!navigator.bluetooth){setStatus('No Web Bluetooth','');alert('Bluetooth needs Chrome on Android, or the free Bluefy browser on iPhone (App Store). Or press Demo to play without the bar.');return;}
+  if(!window.isSecureContext){setStatus('Not secure','');alert('Serve over https or localhost (use the deployed link).');return;}
+  try{
+    setStatus('Scanning...','wait');
+    device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE]});
+    device.addEventListener('gattserverdisconnected',()=>{connected=false;setStatus('Disconnected','')});
+    setStatus('Connecting...','wait');
+    const srv=await(await device.gatt.connect()).getPrimaryService(SERVICE);
+    const fc=await srv.getCharacteristic(CH_FORCE);await fc.startNotifications();
+    fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);onSample()});
+    demo=false;connected=true;$('firstrun').classList.remove('show');startTare();
+  }catch(e){console.error(e);if(e.name==='NotFoundError'){setStatus('No bar found','');alert('No device selected, or nothing advertising. Make sure the bar is awake and free from your phone.')}else{setStatus(e.name,'');alert('Bluetooth error: '+e.name)}}
+}
+function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
+function onSample(){
+  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
+  if(baseline==null)baseline=raw;
+  force=Math.max(0,raw-baseline);
+}
+let demoF=0,pull=false;
+function startDemo(){demo=true;connected=false;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
+  if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(ref()*1.05,demoF+ref()*0.06+2);else demoF=Math.max(0,demoF*0.88-2);raw=demoF;onSample()},27)}
+$('stage').addEventListener('pointerdown',()=>{if(demo)pull=true});
+addEventListener('pointerup',()=>pull=false);
+addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});
+addEventListener('keyup',e=>{if(e.code==='Space')pull=false});
+$('frConnect').onclick=connect;$('frDemo').onclick=startDemo;
+$('zeroBtn').onclick=()=>{if(demo){baseline=0}else startTare()};
+
+// ---------- game ----------
+const cv=$('cv'),ctx=cv.getContext('2d');let W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener('resize',resize);
+let running=false,setStart=0,period=3000,reps=0,hitF=0,totF=0;
+let phasePrev=0,repMax=0,repHit=0,repFrames=0,miss=0;
+$('tempoSel').onchange=()=>{period=+$('tempoSel').value};
+(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;xset('band',band);bandSel.value=band;}const tp=p.get('tempo');if(tp){$('tempoSel').value=tp;period=+tp;}})();
+$('startBtn').onclick=()=>{ if(running){endSet(false);return;}
+  running=true;setStart=performance.now();reps=0;hitF=0;totF=0;phasePrev=0;repMax=0;repHit=0;repFrames=0;miss=0;
+  $('startBtn').textContent='Stop Set';toast('GO');beep(660,0.12); };
+function endSet(fail){ running=false;$('startBtn').textContent='Start Set';
+  if(reps>bestSet){bestSet=reps;xset('flowBest',bestSet);$('hBest').textContent=bestSet;}
+  logSession({g:'flow',reps:reps,acc:totF?Math.round(hitF/totF*100):0});cue(false);beep(400,0.18);
+  toast(fail?('Failure - '+reps+' reps'):('Set done - '+reps+' reps')); }
+let toastT=0;
+function toast(t){$('toast').textContent=t;$('toast').classList.add('show');toastT=performance.now()+1400;}
+const NOWX=()=>W*0.3;
+function targetAt(t){const R=ref(),lo=R*0.12,hi=R*0.78;const ph=((t)/period)%1;return lo+(hi-lo)*(0.5-0.5*Math.cos(2*Math.PI*ph));}
+function mapY(f){const top=54,bot=H-70,R=ref();const fr=Math.max(0,Math.min(1.02,f/(R*1.0)));return bot-(bot-top)*fr;}
+function loop(now){
+  if(!W)resize();
+  ctx.clearRect(0,0,W,H);
+  const R=ref(),tol=R*0.14,pps=(W-NOWX())/(period/1000*1.7);
+  // guide lines
+  ctx.strokeStyle='rgba(255,255,255,.06)';ctx.lineWidth=1;
+  [0.12,0.45,0.78].forEach(fr=>{const y=mapY(R*fr);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();});
+  // ribbon
+  const tNow=running?now-setStart:now;
+  ctx.beginPath();for(let x=0;x<=W;x+=6){const t=tNow+(x-NOWX())/pps*1000;const y=mapY(targetAt(t));if(x===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+  ctx.lineWidth=Math.max(16,Math.min(60,(mapY(0)-mapY(tol))*2));
+  ctx.strokeStyle='rgba(55,214,255,.16)';ctx.lineCap='round';ctx.stroke();
+  ctx.lineWidth=2.5;ctx.strokeStyle='rgba(55,214,255,.8)';ctx.stroke();
+  // now line
+  ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(NOWX(),0);ctx.lineTo(NOWX(),H);ctx.stroke();
+  // marker
+  const my=mapY(force),ty=mapY(targetAt(tNow)),onT=Math.abs(force-targetAt(tNow))<tol;
+  ctx.fillStyle=onT?'#2ff0b0':'#ff5d78';ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=18;
+  ctx.beginPath();ctx.arc(NOWX(),my,11,0,7);ctx.fill();ctx.shadowBlur=0;
+  // trail of recent force to the left
+  // scoring
+  if(running){
+    totF++;if(onT)hitF++;repFrames++;if(onT)repHit++;if(force>repMax)repMax=force;
+    const ph=(tNow/period)%1;
+    if(ph<phasePrev){ // rep boundary
+      const R2=ref(),reached=repMax>=R2*0.78*0.72;
+      if(reached){reps++;miss=0;$('hReps').textContent=reps;cue(true);if(reps%5===0)toast(reps+' reps');}
+      else{miss++;if(miss>=2){endSet(true);}}
+      repMax=0;repHit=0;repFrames=0;
+    }
+    phasePrev=ph;
+    $('hAcc').textContent=totF?Math.round(hitF/totF*100)+'%':'-';
+  }
+  $('hForce').textContent=Math.round(force);
+  if(toastT&&now>toastT){$('toast').classList.remove('show');toastT=0;}
+  requestAnimationFrame(loop);
+}
+resize();requestAnimationFrame(loop);
+</script>
+<script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+</body></html>
