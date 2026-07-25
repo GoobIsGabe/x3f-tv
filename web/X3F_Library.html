@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<!-- X3F LIBRARY - the real X3 program: per-exercise setup, coaching cue, and strength-curve note,
+ each paired with the games that train it. Movement data lives in x3f-exercises.js,
+ shared with the guided sessions on X3F_Routine.html. -->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>X3F Library</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--gold:#ffd35c;--cyan:#37d6ff;--violet:#8f7dff;--hot:#ff5d78;--orange:#ff9a5c;--navring:#2ff0b0;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);--e:cubic-bezier(.2,.9,.25,1)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{font-family:var(--d);color:var(--txt);background:radial-gradient(120vw 60vh at 80% -10%,rgba(47,240,176,.08),transparent 60%),var(--bg);min-height:100dvh;padding:calc(16px + var(--sat)) 16px calc(28px + var(--sab));-webkit-user-select:none;user-select:none}
+.wrap{max-width:820px;margin:0 auto}
+.top{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.brand{font-weight:800;font-size:19px;letter-spacing:2px}.brand b{color:var(--accent)}
+.spacer{flex:1}
+a.home{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 14px;transition:border-color .18s}
+a.home:hover{border-color:var(--accent)}
+.method{background:linear-gradient(180deg,rgba(47,240,176,.09),rgba(255,255,255,.03));border:1px solid var(--brd);border-radius:16px;padding:13px 15px;margin-bottom:18px}
+.method h3{font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.method p{font-family:var(--n);font-size:12.5px;color:var(--dim);line-height:1.55}
+.method b{color:var(--txt)}
+.cat{font-family:var(--n);font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--dim);margin:20px 2px 10px;font-weight:700;display:flex;align-items:center;gap:10px}
+.cat:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--brd),transparent)}
+.ex{background:var(--panel);border:1px solid var(--brd);border-radius:16px;padding:14px;margin-bottom:10px;transition:border-color .2s,box-shadow .24s var(--e)}
+.ex:hover{border-color:var(--brd2)}
+.exhead{display:flex;align-items:flex-start;gap:10px;margin-bottom:9px}
+.exname{font-weight:800;font-size:17px;line-height:1.15}
+.muscle{font-family:var(--n);font-size:11.5px;color:var(--dim);margin-top:2px}
+.exhead .r{flex:1}
+select{font-family:var(--n);font-weight:600;font-size:12.5px;background:var(--bg2);color:var(--txt);border:1px solid var(--brd2);border-radius:10px;padding:8px 9px;cursor:pointer;flex:0 0 auto}
+.strong{display:inline-block;font-family:var(--n);font-size:11.5px;font-weight:700;color:var(--gold);background:rgba(255,211,92,.1);border:1px solid rgba(255,211,92,.28);border-radius:8px;padding:4px 9px;margin-bottom:9px}
+.strong.mid{color:var(--orange);background:rgba(255,154,92,.12);border-color:rgba(255,154,92,.35)}
+.detail{font-family:var(--n);font-size:12.5px;line-height:1.5;color:var(--dim);margin-bottom:6px}
+.detail .lbl{display:inline-block;font-weight:700;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--cyan);margin-right:6px;vertical-align:1px}
+.detail.cue .lbl{color:var(--accent)}
+.detail b{color:var(--txt)}
+.games{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+.gm{display:flex;flex-direction:column;gap:2px;text-decoration:none;color:inherit;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:9px 13px;min-width:86px;transition:border-color .15s,transform .1s var(--e)}
+.gm:active{transform:translateY(1px)}.gm:hover{border-color:var(--accent)}
+.gm .gn{font-weight:800;font-size:14px}
+.gm .gu{font-family:var(--n);font-size:10.5px;letter-spacing:.5px;color:var(--dim);text-transform:uppercase}
+.gm.bloom{border-left:3px solid var(--accent)}.gm.max{border-left:3px solid var(--gold)}.gm.zone{border-left:3px solid var(--cyan)}.gm.boss{border-left:3px solid var(--hot)}.gm.duel{border-left:3px solid #ff9a6a}.gm.rhythm{border-left:3px solid var(--violet)}.gm.splash{border-left:3px solid var(--gold)}.gm.nova{border-left:3px solid var(--violet)}
+.note{color:var(--dim);font-size:12.5px;line-height:1.5;margin-top:16px;text-align:center}
+.note a{color:var(--accent)}
+</style></head>
+<body>
+<div class="wrap">
+<div class="top"><div class="brand">X3F <b>LIBRARY</b></div><div class="spacer"></div>
+<a class="home" href="X3F_Routine.html" data-nav>Routines</a>
+<a class="home" href="index.html" data-nav data-nav-back>Home</a></div>
+<div class="method">
+<h3>The X3 way — every movement</h3>
+<p><b>Variable resistance</b> loads you heavy in the strong range, light in the weak range. Keep <b>constant tension</b> — never lock out at the top, never rest at the bottom. Slow &amp; controlled, ~2–3s each way. Do <b>15–40 full reps</b>, then keep going with <b>diminishing range</b> — shorter and shorter partials — to <b>true failure</b>. The goal is exhausting the muscle, not hitting a number. (Bloom's burnout phase is built on exactly this.)</p>
+</div>
+<div id="lib"></div>
+<div class="note">Pick a band, then tap a game to launch it pre-configured. Want the whole day coached end to end? Use <a href="X3F_Routine.html">guided Routines</a>.</div>
+</div>
+<script src="x3f-exercises.js"></script>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
+function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
+const EXD=window.X3FEX, BANDS=EXD.bands;
+let libBand=xget('libBand',{});
+function bandFor(ex){return libBand[ex.slug]||ex.band}
+function opts(sel){return BANDS.map(b=>`<option value="${b}"${b===sel?' selected':''}>${b}</option>`).join('')}
+function render(){
+  $('lib').innerHTML=EXD.groups.map(([cat,slugs])=>`<div class="cat">${cat}</div>`+slugs.map(slug=>{
+    const ex=EXD.get(slug); if(!ex)return '';
+    const bd=bandFor(ex);
+    return`<div class="ex">
+      <div class="exhead"><div class="r"><div class="exname">${ex.name}</div><div class="muscle">${ex.muscle}</div></div>
+        <select data-n="${ex.slug}" data-nav>${opts(bd)}</select></div>
+      <div class="strong${ex.mid?' mid':''}">💪 ${ex.range}</div>
+      <div class="detail"><span class="lbl">Setup</span>${ex.setup}</div>
+      <div class="detail cue"><span class="lbl">Cue</span>${ex.cue}</div>
+      <div class="games">${ex.games.map(g=>{const G=EXD.games[g];
+        return`<a class="gm ${g}" href="${EXD.gameUrl(g,{from:'lib',band:bd,tempo:'3000',ex:ex.slug})}" data-nav><span class="gn">${G.name}</span><span class="gu">${G.sub}</span></a>`}).join('')}</div>
+    </div>`;
+  }).join('')).join('');
+  $('lib').querySelectorAll('select').forEach(s=>s.onchange=()=>{libBand[s.dataset.n]=s.value;xset('libBand',libBand);render()});
+  if(window.X3FNav)X3FNav.refresh();
+}
+render();
+</script>
+<script src="x3f-nav.js"></script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script></body></html>

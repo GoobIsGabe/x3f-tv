@@ -4,12 +4,22 @@
 
 ---
 
-## TL;DR — there are TWO related projects
+## TL;DR — ONE repo, two halves
 
-1. **The web games** (original) — HTML games in `E:\Fun\X3 Bar` (Nova, Splash, Bloom, Flow, Arena, Duel, Rhythm, Calibrate, …). They read the X3 Force bar over **Web Bluetooth** and run on phone / PC / Netlify. This is what your other session has been living in.
-2. **The native TV app** (new — this handoff) — a GitHub repo **`github.com/GoobIsGabe/x3f-tv`** that wraps those games into an **Android TV app** so the bar drives them on the Hisense Google TV with **no phone**. Turn on TV → open app → bar auto-connects → play. **This was NOT in your local filesystem**, which is what caused the confusion.
+As of v0.7.1 there is a single project: **`github.com/GoobIsGabe/x3f-tv`**.
 
-Current status: **v0.7**, working on the TV.
+```
+web/    the browser games (Web Bluetooth) — the source of truth for game code
+app/    the Android TV app that wraps them; its assets are GENERATED from web/
+tools/  sync-from-web.py, which does the generating
+```
+
+- **The web games** — HTML games (Nova, Splash, Bloom, Flow, Arena, Duel, Rhythm, Routine, Library, Progress, Calibrate) that read the X3 Force bar over **Web Bluetooth** and run on phone / PC.
+- **The native TV app** — wraps those same games so the bar drives them on the Hisense Google TV with **no phone**. Turn on TV → open app → bar auto-connects → play.
+
+`E:\Fun\X3 Bar` was the old separate home of the web games. It is **retired** — it had a git remote pointing at this same repo and a DEPLOY.md telling you to force-push, which would have overwritten the Android app. Everything that matters was moved into `web/`. Don't develop there.
+
+Current status: **v0.7**, working on the TV (repo consolidated in v0.7.1 — no app change).
 
 ---
 
@@ -59,7 +69,7 @@ https://github.com/GoobIsGabe/x3f-tv/releases/download/latest/x3f-tv.apk
 
 ## Relationship between the two projects (important)
 
-The TV app **bundles copies** of the web games. Improve a web game in `E:\Fun\X3 Bar`, then re-sync the bundle:
+The TV app's `app/src/main/assets/` is **generated** from `web/` in this same repo. Improve a game in `web/`, then re-sync the bundle:
 
 ```
 python tools/sync-from-web.py            # or: ... "E:\Fun\X3 Bar"
@@ -68,7 +78,7 @@ python tools/sync-from-web.py --check    # report drift without writing
 
 That copies every mapped page, strips the service worker and PWA manifest, rewrites cross-page links to the bundle's lowercase filenames (and "home" to `launcher.html`), and injects the TV block on the menu pages — the `window.X3FFILES` launch map that `x3f-exercises.js` reads, 10-foot type scaling, and initial D-pad focus. Doing it by hand is how a step gets forgotten. Nothing in the TV app changes the original web games. *(Future option: load the games from your Netlify site instead of bundling, so there's one copy.)*
 
-Also: ignore `E:\Fun\X3 Bar\tv-poc\` — that was an **older, superseded** "phone-as-relay" approach. The native TV app replaced it.
+Also: `tv-poc/` (left behind in the retired folder) was an **older, superseded** "phone-as-relay" approach. The native TV app replaced it; it is deliberately not in this repo.
 
 ---
 

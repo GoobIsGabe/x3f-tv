@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>X3F Games</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#06080e;--panel:#141824;--brd:#2a3346;--txt:#eaf2ff;--dim:#8b97ad;--accent:#2ee6a6;--gold:#ffd35c;--navring:#2ee6a6;
+    --d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
+    --sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);--e:cubic-bezier(.2,.9,.25,1)}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html{scroll-behavior:smooth}
+  html,body{min-height:100%}
+  body{font-family:var(--d);background:radial-gradient(1100px 640px at 60% -10%,#161d2e,#080a10) ,var(--bg);color:var(--txt);
+    padding:calc(26px + var(--sat)) 20px calc(34px + var(--sab));-webkit-user-select:none;user-select:none}
+  .wrap{max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  header{text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center}
+  h1{font-size:clamp(26px,7vw,36px);letter-spacing:3px;font-weight:800}
+  h1 b{color:var(--accent)}
+  .lede{color:var(--dim);max-width:520px;line-height:1.55;font-family:var(--n);font-size:14px}
+  .lede b{color:var(--txt)}
+  .sect{font-family:var(--n);font-size:11.5px;font-weight:700;letter-spacing:2.6px;text-transform:uppercase;color:var(--dim);
+    margin:8px 2px -6px;display:flex;align-items:center;gap:10px}
+  .sect:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--brd),transparent)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:14px}
+  a.card{position:relative;display:flex;flex-direction:column;gap:6px;text-decoration:none;color:inherit;
+    background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));border:1px solid var(--brd);
+    border-radius:18px;padding:20px;overflow:hidden;
+    transform:translateZ(0);will-change:transform;
+    transition:transform .18s var(--e),border-color .18s,box-shadow .24s var(--e),background .24s}
+  a.card:before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;
+    background:radial-gradient(120% 90% at 15% 0%,rgba(46,230,166,.13),transparent 60%);transition:opacity .28s}
+  a.card:hover,a.card:focus-visible{transform:translateY(-4px);border-color:var(--accent);box-shadow:0 16px 40px rgba(0,0,0,.45)}
+  a.card:hover:before,a.card:focus-visible:before{opacity:1}
+  a.card:active{transform:translateY(-1px) scale(.994)}
+  .emoji{font-size:34px;line-height:1}
+  .title{font-size:20px;font-weight:800}
+  .desc{color:var(--dim);font-size:13px;line-height:1.5;font-family:var(--n);flex:1}
+  .badge{align-self:flex-start;font-family:var(--n);font-size:10.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;
+    color:var(--accent);border:1px solid var(--brd);border-radius:999px;padding:4px 10px;margin-top:4px}
+  .card.hero{background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02))}
+  .card.hero .badge{color:var(--gold);border-color:rgba(255,211,92,.35)}
+  .note{font-size:12.5px;color:#6f7c92;text-align:center;line-height:1.6;font-family:var(--n);margin-top:6px}
+  .note b{color:var(--dim)}
+  .hint{font-family:var(--n);font-size:11.5px;color:#5d6a80;text-align:center;letter-spacing:.4px}
+  /* staggered entrance - cheap, transform+opacity only */
+  @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  a.card{animation:rise .42s var(--e) both;animation-delay:calc(var(--i,0) * 22ms)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>X3F <b>GAMES</b></h1>
+    <p class="lede">Turn your X3 Force bar into a game controller. Open a game, tap <b>Connect Bar</b>, pick <b>X3F</b> — or hit Demo to play with just your screen.</p>
+  </header>
+
+  <div class="sect">Train the program</div>
+  <div class="cards">
+    <a class="card" href="X3F_Routine.html" style="--i:0;border-color:rgba(46,230,166,.4)" data-nav data-nav-first>
+      <div class="emoji">📋</div>
+      <div class="title">Routines</div>
+      <div class="desc">Guided workout mode. Run a Push or Pull day: setup + cue + a live form guide for every lift, the game skinned to it, then the rest timer.</div>
+      <span class="badge">Guided · Pull / Push</span>
+    </a>
+    <a class="card" href="X3F_Library.html" style="--i:1" data-nav>
+      <div class="emoji">📚</div>
+      <div class="title">Library</div>
+      <div class="desc">Every X3 movement — push, pull, legs, core — with its setup, coaching cue, strength curve and the games that train it best.</div>
+      <span class="badge">By exercise</span>
+    </a>
+    <a class="card" href="X3F_Calibrate.html" style="--i:2" data-nav>
+      <div class="emoji">🎯</div>
+      <div class="title">Calibrate</div>
+      <div class="desc">Dial in each band's true max with a guided all-out pull, so every game scales to you.</div>
+      <span class="badge">Setup</span>
+    </a>
+    <a class="card" href="X3F_Progress.html" style="--i:3" data-nav>
+      <div class="emoji">📈</div>
+      <div class="title">Progress</div>
+      <div class="desc">Your logged sessions charted over time — best reps, peak force, and boss stages by band.</div>
+      <span class="badge">Tracking</span>
+    </a>
+  </div>
+
+  <div class="sect">Showcase games</div>
+  <div class="cards">
+    <a class="card hero" href="X3F_Nova.html" style="--i:0;border-color:rgba(143,125,255,.5)" data-nav>
+      <div class="emoji">🚀</div>
+      <div class="title">Nova</div>
+      <div class="desc">Space-defense arcade-RPG. Your pull powers an auto-aiming energy beam — survive waves, break bosses, grab power-ups, and upgrade your core between sectors.</div>
+      <span class="badge">RPG · Offline</span>
+    </a>
+    <a class="card hero" href="X3F_Splash.html" style="--i:1;border-color:rgba(255,210,63,.45)" data-nav>
+      <div class="emoji">🐬</div>
+      <div class="title">Splash</div>
+      <div class="desc">Bright underwater arcade. Your pull is your swim power — cruise the deep for treasure, breach the surface for gold stars, stack combos.</div>
+      <span class="badge">Arcade · Offline</span>
+    </a>
+    <a class="card hero" href="X3F_Bloom.html" style="--i:2;border-color:rgba(89,245,196,.4)" data-nav>
+      <div class="emoji">🌸</div>
+      <div class="title">Bloom</div>
+      <div class="desc">Controlled reps as a twilight dream garden. Ride the vine, pull into each bloom, ease into each bud — never to rest. Burnout partials built in.</div>
+      <span class="badge">Reps · Offline</span>
+    </a>
+  </div>
+
+  <div class="sect">Arcade &amp; drills</div>
+  <div class="cards">
+    <a class="card" href="X3F_Arena.html" style="--i:0" data-nav>
+      <div class="emoji">⚡</div>
+      <div class="title">Arena</div>
+      <div class="desc">2D training suite: live meter, Hold-the-Zone, Max Effort, and Boss Fights. Works fully offline.</div>
+      <span class="badge">2D · Offline</span>
+    </a>
+    <a class="card" href="X3F_Flow.html" style="--i:1" data-nav>
+      <div class="emoji">🌊</div>
+      <div class="title">Flow</div>
+      <div class="desc">Controlled-rep trainer. Trace the moving ribbon through the full range and push to failure — the X3 way.</div>
+      <span class="badge">Reps · Offline</span>
+    </a>
+    <a class="card" href="X3F_Duel.html" style="--i:2" data-nav>
+      <div class="emoji">🤺</div>
+      <div class="title">Duel</div>
+      <div class="desc">Tug-of-war against the CPU. Out-rep it to drag the rope your way and climb the rounds.</div>
+      <span class="badge">Vs CPU</span>
+    </a>
+    <a class="card" href="X3F_Rhythm.html" style="--i:3" data-nav>
+      <div class="emoji">🎵</div>
+      <div class="title">Rhythm</div>
+      <div class="desc">Reps on the beat. Hit the falling notes in time to build a combo — musical time-under-tension.</div>
+      <span class="badge">On beat</span>
+    </a>
+    <a class="card" href="X3F_Ascent.html" style="--i:4" data-nav>
+      <div class="emoji">🛸</div>
+      <div class="title">Ascent</div>
+      <div class="desc">3D flight game — your pull is thrust. Climb against gravity and fly through energy rings.</div>
+      <span class="badge">3D · Needs Internet</span>
+    </a>
+  </div>
+
+  <p class="note">Tip: use <b>Chrome on Android</b> (Web Bluetooth is on by default). Close nRF Connect and the official X3 app first — the bar only talks to one thing at a time.</p>
+  <p class="hint">Arrow keys, a TV remote D-pad or a gamepad move between cards · Enter opens · Esc goes back</p>
+</div>
+<script src="x3f-nav.js"></script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
+</body>
+</html>

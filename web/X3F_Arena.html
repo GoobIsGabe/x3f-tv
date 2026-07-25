@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<!-- X3F ARENA - mobile-first Web Bluetooth game for the X3 Force bar.
+ Force char e3458901 (LE float64, ~37Hz) on service e3458900. Auto-zeroed. -->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>X3F Arena</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.045);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--hot:#ff5d78;--cyan:#37d6ff;--display:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--num:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-select:none;background:radial-gradient(120vw 60vh at 78% -8%,rgba(47,240,176,.10),transparent 60%),radial-gradient(90vw 50vh at 12% 110%,rgba(143,125,255,.12),transparent 60%),var(--bg)}
+.app{position:relative;height:100dvh;max-width:600px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;padding-top:var(--sat)}
+.topbar{display:flex;align-items:center;gap:10px;padding:14px 16px 8px}
+.brand{font-weight:800;font-size:18px;letter-spacing:2.5px}.brand b{color:var(--accent)}
+.spacer{flex:1}
+.status{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);font-size:12.5px;color:var(--dim);font-family:var(--num);font-weight:500}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--hot)}
+.dot.on{background:var(--accent);box-shadow:0 0 12px var(--accent)}
+.dot.wait{background:var(--gold);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.icbtn{width:40px;height:40px;border-radius:12px;background:var(--panel);border:1px solid var(--brd);display:grid;place-items:center;cursor:pointer;color:var(--txt);flex:0 0 auto}
+.icbtn:active{transform:scale(.94)}.icbtn svg{width:20px;height:20px}
+.stage{flex:1;min-height:0;position:relative;overflow:hidden}
+.view{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:8px 20px 12px;opacity:0;pointer-events:none;transform:translateY(8px) scale(.99);transition:opacity .28s,transform .28s}
+.view.active{opacity:1;pointer-events:auto;transform:none}
+.eyebrow{font-family:var(--num);font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--dim);font-weight:500;text-align:center}
+.huge{font-family:var(--num);font-weight:700;font-variant-numeric:tabular-nums;line-height:.95;font-size:clamp(3.4rem,17vw,6rem);letter-spacing:-1px}
+.unit{font-family:var(--num);color:var(--dim);font-size:15px;letter-spacing:1px;margin-top:2px}
+.chips{display:flex;gap:10px;width:100%;justify-content:center;flex-wrap:wrap}
+.chip{flex:1 1 0;min-width:96px;max-width:170px;background:var(--panel);border:1px solid var(--brd);border-radius:16px;padding:12px 14px;text-align:center}
+.chip .k{font-family:var(--num);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
+.chip .v{font-family:var(--num);font-weight:700;font-size:22px;font-variant-numeric:tabular-nums;margin-top:3px}
+.v.gold{color:var(--gold)}.v.accent{color:var(--accent)}
+.ringwrap{position:relative;flex:1;display:grid;place-items:center;width:100%;min-height:0}
+.ring{width:min(66vw,270px);height:min(66vw,270px);max-height:44vh;transform:rotate(-90deg)}
+.ring .bg{fill:none;stroke:rgba(255,255,255,.06);stroke-width:9}
+.ring .fg{fill:none;stroke:url(#rg);stroke-width:9;stroke-linecap:round;transition:stroke-dashoffset .06s linear}
+.ringcenter{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.cta{display:inline-flex;align-items:center;justify-content:center;gap:9px;font-family:var(--display);font-weight:700;font-size:16px;border:none;border-radius:16px;padding:16px 22px;cursor:pointer;width:100%;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;transition:transform .07s,filter .15s}
+.cta:active{transform:translateY(1px)}.cta:hover{filter:brightness(1.06)}
+.cta.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--brd2)}
+.cta.hot{background:linear-gradient(180deg,#ff6f87,#e63a58);color:#210308}
+.cta.small{width:auto;padding:13px 20px;font-size:15px}
+.track{position:relative;flex:1;width:100%;max-width:340px;border-radius:20px;overflow:hidden;background:var(--panel);border:1px solid var(--brd);margin:6px 0}
+.band{position:absolute;left:0;right:0;background:rgba(55,214,255,.14);border-top:2px dashed var(--cyan);border-bottom:2px dashed var(--cyan)}
+.band .lab{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-family:var(--num);font-size:12px;color:var(--cyan);letter-spacing:1px}
+.mark{position:absolute;left:0;right:0;height:0;border-top:5px solid var(--accent);box-shadow:0 0 16px var(--accent);bottom:0;transition:bottom .05s linear}
+.marklab{position:absolute;left:10px;transform:translateY(-50%);font-family:var(--num);font-weight:700;font-size:14px}
+.orb{width:min(46vw,190px);height:min(46vw,190px);max-height:34vh;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffb3c0,#ff5d78 42%,#7a1730 100%);box-shadow:0 0 60px rgba(255,93,120,.4),inset 0 0 40px rgba(0,0,0,.35);transition:transform .09s}
+.orb.hit{transform:scale(1.07)}
+.orb.dead{background:radial-gradient(circle at 35% 30%,#555,#222 60%,#111);box-shadow:none}
+.hpwrap{width:100%;max-width:340px;height:20px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);overflow:hidden}
+.hp{height:100%;width:100%;background:linear-gradient(90deg,var(--hot),#ff9a6a);transition:width .1s linear}
+.hint{font-size:13px;color:var(--dim);text-align:center;line-height:1.5;max-width:360px}
+.colgap{display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;flex:1;justify-content:center}
+.tabbar{display:flex;gap:6px;padding:8px 12px calc(8px + var(--sab));background:linear-gradient(180deg,transparent,rgba(0,0,0,.35));border-top:1px solid var(--brd)}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 4px;border-radius:14px;background:transparent;border:1px solid transparent;color:var(--dim);cursor:pointer;font-family:var(--display);font-weight:700;font-size:11.5px}
+.tab svg{width:22px;height:22px}
+.tab.active{color:#04120c;background:linear-gradient(180deg,var(--accent),var(--accentD))}
+.tab:not(.active):active{background:var(--panel)}
+.scrim{position:fixed;inset:0;background:rgba(4,6,11,.72);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;z-index:40;opacity:0;pointer-events:none;transition:opacity .25s}
+.scrim.show{opacity:1;pointer-events:auto}
+.firstrun{align-items:center}
+.frcard{width:100%;max-width:440px;margin:auto;padding:34px 26px;text-align:center;display:flex;flex-direction:column;gap:14px}
+.frcard h1{font-size:30px;font-weight:800;letter-spacing:1px}.frcard h1 b{color:var(--accent)}
+.frcard p{color:var(--dim);font-size:14.5px;line-height:1.55}
+.sheet{width:100%;max-width:600px;background:var(--bg2);border:1px solid var(--brd);border-radius:24px 24px 0 0;padding:10px 20px calc(24px + var(--sab));transform:translateY(102%);transition:transform .3s cubic-bezier(.2,.8,.2,1);max-height:88dvh;overflow-y:auto}
+.scrim.show .sheet{transform:translateY(0)}
+.grip{width:44px;height:5px;border-radius:100px;background:var(--brd2);margin:2px auto 16px}
+.sheet h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin:18px 2px 10px;font-weight:700}
+.sheet h2:first-of-type{margin-top:4px}
+.rowbtns{display:flex;gap:10px}
+.field{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--brd);border-radius:14px;padding:10px 12px}
+.field label{font-size:13px;color:var(--dim);flex:1}
+input[type=number],select{font-family:var(--num);background:rgba(0,0,0,.25);color:var(--txt);border:1px solid var(--brd2);border-radius:10px;padding:9px 10px;font-size:15px;width:88px}
+select{width:74px}
+@media(min-width:620px){.huge{font-size:6.4rem}.app{border-left:1px solid var(--brd);border-right:1px solid var(--brd)}}
+@media(orientation:landscape) and (max-height:560px){.huge{font-size:clamp(2.4rem,11vh,4rem)}.ring{max-height:56vh;width:min(40vh,220px);height:min(40vh,220px)}.chip{padding:8px 12px}.view{padding:6px 16px 8px}}</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2ff0b0"/><stop offset="1" stop-color="#37d6ff"/></linearGradient></defs></svg>
+<div class="app">
+<div class="topbar">
+<button onclick="history.length>1?history.back():location.href='index.html'" aria-label="Back" style="display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:22px;font-weight:700;line-height:1;flex:0 0 auto;cursor:pointer;font-family:inherit">&lsaquo;</button>
+<button onclick="x3tv()" aria-label="TV mode" style="display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 12px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:12px;font-weight:800;letter-spacing:1px;cursor:pointer;font-family:inherit;flex:0 0 auto">TV</button>
+<div class="brand">X3F <b>ARENA</b></div><div class="spacer"></div>
+<div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
+<button class="icbtn" id="gearBtn" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.2"/><path d="M4 12h3M17 12h3M12 4v3M12 17v3M6.3 6.3l2.1 2.1M15.6 15.6l2.1 2.1M17.7 6.3l-2.1 2.1M8.4 15.6l-2.1 2.1"/></svg></button>
+</div>
+<div class="stage" id="stage">
+<section class="view active" data-v="meter">
+<div class="ringwrap">
+<svg class="ring" viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"></circle><circle class="fg" id="ringFg" cx="60" cy="60" r="52"></circle></svg>
+<div class="ringcenter"><div class="eyebrow">Live Force</div><div class="huge" id="mLive">0</div><div class="unit" id="mUnit">units</div></div>
+</div>
+<div class="chips"><div class="chip"><div class="k">Peak</div><div class="v gold" id="mPeak">0</div></div><div class="chip"><div class="k">Avg</div><div class="v" id="mAvg">0</div></div><div class="chip"><div class="k">Work</div><div class="v" id="mWork">0</div></div></div>
+</section>
+<section class="view" data-v="zone">
+<div class="chips" style="margin-top:6px"><div class="chip"><div class="k">In Zone</div><div class="v accent" id="zTime">0.0s</div></div><div class="chip"><div class="k">Best Hold</div><div class="v gold" id="zBest">0.0s</div></div><div class="chip"><div class="k">Target</div><div class="v" id="zTarget">-</div></div></div>
+<div class="track" id="zTrack"><div class="band" id="zBand"><span class="lab">TARGET</span></div><div class="mark" id="zMark"><span class="marklab" id="zMarkLab">0</span></div></div>
+<button class="cta" id="zStart">Start 30s Round</button>
+</section>
+<section class="view" data-v="max">
+<div class="colgap"><div class="eyebrow" id="xState">Explode for 5 seconds. Beat your best.</div><div class="huge" id="xNum">0</div>
+<div class="chips"><div class="chip"><div class="k">Attempt</div><div class="v" id="xAttempt">0</div></div><div class="chip"><div class="k">Personal Best</div><div class="v gold" id="xPB">0</div></div></div>
+<button class="cta" id="xStart">Start Max Effort</button></div>
+</section>
+<section class="view" data-v="boss">
+<div class="colgap"><div class="orb" id="bOrb"></div><div class="hpwrap"><div class="hp" id="bHP"></div></div>
+<div class="chips"><div class="chip"><div class="k">Stage</div><div class="v" id="bStage">1</div></div><div class="chip"><div class="k">Best Time</div><div class="v gold" id="bBest">-</div></div><div class="chip"><div class="k">DPS</div><div class="v" id="bDPS">0</div></div></div>
+<button class="cta hot" id="bStart">Fight</button>
+<div class="hint">Sustained force damages the core. Drop below the threshold and it heals. Each win raises the stakes.</div></div>
+</section>
+</div>
+<nav class="tabbar">
+<button class="tab active" data-m="meter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M13 2 4 14h7l-1 8 10-13h-7l0-7z"/></svg>Meter</button>
+<button class="tab" data-m="zone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/></svg>Hold</button>
+<button class="tab" data-m="max"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3v6M12 21v-4M4.2 7l4.3 4.3M15.5 15.5 19.8 20M3 13h5M16 13h5"/></svg>Max</button>
+<button class="tab" data-m="boss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2 4 5v6c0 5 3.4 8.5 8 11 4.6-2.5 8-6 8-11V5l-8-3z"/></svg>Boss</button>
+</nav>
+</div>
+<div class="scrim firstrun show" id="firstrun"><div class="frcard">
+<h1>X3F <b>ARENA</b></h1>
+<p>Turn your X3 Force bar into a game controller. Connect over Bluetooth, or try it now with just your screen - hold anywhere to pull.</p>
+<button class="cta" id="frConnect">Connect Bar</button>
+<button class="cta ghost" id="frDemo">Try Demo</button>
+<p style="font-size:12.5px">Use Chrome on Android. Close nRF Connect / the X3 app first - the bar talks to one device at a time.</p>
+</div></div>
+<div class="scrim" id="sheetScrim"><div class="sheet" id="sheet">
+<div class="grip"></div>
+<h2>Connection</h2>
+<div class="rowbtns"><button class="cta small" id="reconnectBtn" style="flex:1">Connect Bar</button><button class="cta ghost small" id="demoBtn" style="flex:1">Demo</button></div>
+<h2>Band</h2>
+<div class="field"><label>Resistance band in use</label><select id="bandSel"></select></div>
+<div class="field" style="margin-top:10px"><label>Max units on this band</label><input type="number" id="bandMaxInp" step="1" inputmode="numeric"></div>
+<div class="rowbtns" style="margin-top:10px"><button class="cta small" id="bandCap" style="flex:1">Set from hardest pull</button></div>
+<h2>Calibration</h2>
+<div class="rowbtns" style="margin-bottom:10px"><button class="cta ghost small" id="zeroBtn" style="flex:1">Re-Zero (at rest)</button></div>
+<div class="field"><label>Hang a known weight, then capture</label><input type="number" id="calW" value="25" step="0.5" inputmode="decimal"><select id="calU"><option>lb</option><option>kg</option></select></div>
+<div class="rowbtns" style="margin-top:10px"><button class="cta small" id="calBtn" style="flex:1">Capture</button><button class="cta ghost small" id="calClr" style="flex:1">Reset units</button></div>
+<h2>Records</h2>
+<div class="rowbtns"><button class="cta ghost small" id="resetPB" style="flex:1">Reset personal bests</button></div>
+</div></div>
+<script>
+"use strict";
+const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_BATT='e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6';
+const $=id=>document.getElementById(id);
+const store={get(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}};
+const fmt=v=>{v=+v||0;const a=Math.abs(v);return a>=100?String(Math.round(v)):a>=10?v.toFixed(1):v.toFixed(2)};
+let device=null,connected=false,demo=false;
+let raw=0,baseline=null,taring=false,tSamp=[],tStart=0,tEnd=0;
+let force=0,scale=store.get('scale',1),unit=store.get('unit','units');
+let sessionPeak=0,activeSum=0,activeCount=0,totalWork=0,lastT=performance.now();
+let zBest=store.get('zBest',0),xPB=store.get('xPB',0),bBest=store.get('bBest',0),bStageSaved=store.get('bStage',1);
+let mode='meter';
+const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
+const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
+let band=store.get('band','White');
+let bandMax=Object.assign({},BAND_DEF,store.get('bandMax',{}));
+function ref(){return Math.max(20,bandMax[band]||130)}
+function logSession(o){try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push(Object.assign({t:Date.now(),b:band},o));while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}}
+const RC=2*Math.PI*52;$('ringFg').style.strokeDasharray=RC;$('ringFg').style.strokeDashoffset=RC;
+async function connect(){
+  if(!navigator.bluetooth){setStatus('No Web Bluetooth','off');alert('Bluetooth needs Chrome on Android, or the free Bluefy browser on iPhone (App Store). Or press Demo to play without the bar.');return;}
+  if(!window.isSecureContext){setStatus('Not secure','off');alert('This page must be served over https or localhost for Bluetooth. Use the deployed link.');return;}
+  try{
+    setStatus('Scanning...','wait');
+    device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE]});
+    device.addEventListener('gattserverdisconnected',()=>{connected=false;setStatus('Disconnected','off')});
+    setStatus('Connecting...','wait');
+    const srv=await(await device.gatt.connect()).getPrimaryService(SERVICE);
+    const fc=await srv.getCharacteristic(CH_FORCE);await fc.startNotifications();
+    fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);onSample()});
+    try{const bc=await srv.getCharacteristic(CH_BATT);await bc.startNotifications();bc.addEventListener('characteristicvaluechanged',e=>showBatt(e.target.value.getUint16(0,true)))}catch(e){}
+    demo=false;connected=true;hideOverlays();startTare();
+  }catch(e){console.error(e);
+    if(e.name==='NotFoundError'){setStatus('No bar found','off');alert('No device selected, or nothing advertising. Make sure the bar is awake and not connected to your phone.');}
+    else{setStatus(e.name,'off');alert('Bluetooth error: '+e.name+'\n'+(e.message||''));}
+  }
+}
+function setStatus(t,cls){$('statusTxt').textContent=t;$('dot').className='dot'+(cls==='on'?' on':cls==='wait'?' wait':'')}
+function showBatt(mv){const pct=Math.max(0,Math.min(100,Math.round((mv-3300)/900*100)));$('statusTxt').textContent=(connected?'Live':'Demo')+'  '+(mv/1000).toFixed(2)+'V ('+pct+'%)'}
+function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
+function onSample(){
+  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
+  if(baseline==null)baseline=raw;
+  force=Math.max(0,raw-baseline)*scale;
+  if(force>sessionPeak)sessionPeak=force;
+}
+let demoF=0,pull=false;
+function startDemo(){demo=true;connected=false;baseline=0;hideOverlays();setStatus('Demo','on');showBatt(3980);
+  if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(1000,demoF+55+Math.random()*30);else demoF=Math.max(0,demoF*0.86-4);raw=demoF+(Math.random()*2-1);onSample()},27);}
+$('stage').addEventListener('pointerdown',()=>{if(demo)pull=true});
+addEventListener('pointerup',()=>pull=false);
+addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});
+addEventListener('keyup',e=>{if(e.code==='Space')pull=false});
+function calibrate(){const known=parseFloat($('calW').value);if(!known||baseline==null)return;const z=Math.max(0.0001,raw-baseline);scale=known/z;unit=$('calU').value;store.set('scale',scale);store.set('unit',unit);sessionPeak=0;closeSheet();}
+function resetUnits(){scale=1;unit='units';store.set('scale',1);store.set('unit',unit)}
+function hideOverlays(){$('firstrun').classList.remove('show')}
+function openSheet(){$('sheetScrim').classList.add('show')}
+function closeSheet(){$('sheetScrim').classList.remove('show')}
+$('gearBtn').onclick=openSheet;
+$('sheetScrim').onclick=e=>{if(e.target===$('sheetScrim'))closeSheet()};
+$('frConnect').onclick=connect;$('frDemo').onclick=startDemo;
+$('reconnectBtn').onclick=()=>{closeSheet();connect()};$('demoBtn').onclick=()=>{closeSheet();startDemo()};
+$('zeroBtn').onclick=()=>{if(demo){baseline=0;sessionPeak=0}else startTare();closeSheet()};
+$('calBtn').onclick=calibrate;$('calClr').onclick=resetUnits;
+$('resetPB').onclick=()=>{zBest=xPB=bBest=0;bStageSaved=1;['zBest','xPB','bBest'].forEach(k=>store.set(k,0));store.set('bStage',1);closeSheet()};
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{mode=t.dataset.m;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.dataset.v===mode))});
+const bandSel=$('bandSel'),bandMaxInp=$('bandMaxInp');
+BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';bandSel.appendChild(o)});
+function syncBand(){bandSel.value=band;bandMaxInp.value=Math.round(bandMax[band]||130)}
+syncBand();
+(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;store.set('band',band);syncBand();}const m=p.get('mode');if(m){const tb=document.querySelector('.tab[data-m=\"'+m+'\"]');if(tb)tb.click();}})();
+bandSel.onchange=()=>{band=bandSel.value;store.set('band',band);sessionPeak=0;bandMaxInp.value=Math.round(bandMax[band]||130)};
+bandMaxInp.onchange=()=>{const v=parseFloat(bandMaxInp.value);if(v>0){bandMax[band]=v;store.set('bandMax',bandMax)}};
+$('bandCap').onclick=()=>{if(sessionPeak>10){bandMax[band]=Math.round(sessionPeak);store.set('bandMax',bandMax);bandMaxInp.value=bandMax[band]}closeSheet()};
+let zRun=false,zTime=0,zEnd=0;
+$('zStart').onclick=()=>{zRun=true;zTime=0;zEnd=performance.now()+30000};
+let xPhase='idle',xEnd=0,xAttempt=0,xCountEnd=0;
+$('xStart').onclick=()=>{xPhase='count';xCountEnd=performance.now()+3000;xAttempt=0};
+let bFight=false,bHP=0,bMax=0,bStage=bStageSaved,bStart=0,bDmg=0;
+$('bStart').onclick=()=>{bStage=bStageSaved;bMax=ref()*(14+(bStage-1)*7);bHP=bMax;bFight=true;bStart=performance.now();bDmg=0;$('bOrb').classList.remove('dead')};
+function tick(now){
+  const dt=Math.min(0.05,(now-lastT)/1000);lastT=now;
+  if(force>2){activeSum+=force;activeCount++;totalWork+=force*dt}
+  const gMax=Math.max(ref(),force*1.02);
+  $('ringFg').style.strokeDashoffset=RC*(1-Math.min(1,force/gMax));
+  if(mode==='meter'){$('mLive').textContent=fmt(force);$('mUnit').textContent=unit;$('mPeak').textContent=fmt(sessionPeak);$('mAvg').textContent=fmt(activeCount?activeSum/activeCount:0);$('mWork').textContent=fmt(totalWork)}
+  if(mode==='zone'){
+    const R=ref(),target=R*0.55,lo=target*0.82,hi=target*1.25,gm=R*1.15;
+    $('zTarget').textContent=fmt(target);$('zBand').style.bottom=(lo/gm*100)+'%';$('zBand').style.height=((hi-lo)/gm*100)+'%';
+    const inZone=force>=lo&&force<=hi;$('zMark').style.bottom=Math.min(100,force/gm*100)+'%';$('zMarkLab').textContent=fmt(force);$('zMark').style.borderTopColor=inZone?'var(--gold)':'var(--accent)';
+    if(zRun){if(inZone)zTime+=dt;if(now>=zEnd){zRun=false;if(zTime>zBest){zBest=zTime;store.set('zBest',zBest)}}$('zStart').textContent=Math.max(0,(zEnd-now)/1000).toFixed(1)+'s left';}else $('zStart').textContent='Start 30s Round';
+    $('zTime').textContent=zTime.toFixed(1)+'s';$('zBest').textContent=zBest.toFixed(1)+'s';
+  }
+  if(mode==='max'){
+    if(xPhase==='count'){const s=Math.ceil((xCountEnd-now)/1000);$('xState').textContent=s>0?'Get ready...':'GO';$('xNum').textContent=s>0?s:'GO';if(now>=xCountEnd){xPhase='go';xEnd=now+5000;xAttempt=0}}
+    else if(xPhase==='go'){if(force>xAttempt)xAttempt=force;$('xState').textContent='EXPLODE  '+Math.max(0,(xEnd-now)/1000).toFixed(1)+'s';$('xNum').textContent=fmt(force);if(now>=xEnd){xPhase='done';if(xAttempt>xPB){xPB=xAttempt;store.set('xPB',xPB)}logSession({g:'max',peak:Math.round(xAttempt)});}}
+    else if(xPhase==='done'){$('xState').textContent=xAttempt>=xPB?'NEW PERSONAL BEST':'Locked in - beat it next time';$('xNum').textContent=fmt(xAttempt)}
+    else{$('xNum').textContent=fmt(force);$('xState').textContent='Explode for 5 seconds. Beat your best.'}
+    $('xAttempt').textContent=fmt(xAttempt);$('xPB').textContent=fmt(xPB);$('xStart').textContent=(xPhase==='idle'||xPhase==='done')?'Start Max Effort':'In progress...';
+  }
+  if(mode==='boss'){
+    const thr=ref()*0.35;
+    if(bFight){
+      if(force>thr){const d=(force-thr)*dt*1.4;bHP-=d;bDmg+=d;$('bOrb').classList.add('hit')}else{bHP=Math.min(bMax,bHP+bMax*0.04*dt);$('bOrb').classList.remove('hit')}
+      const el=(now-bStart)/1000;$('bDPS').textContent=fmt(bDmg/Math.max(1,el));
+      if(bHP<=0){bFight=false;bHP=0;$('bOrb').classList.add('dead');$('bOrb').classList.remove('hit');if(bBest===0||el<bBest){bBest=el;store.set('bBest',bBest)}bStageSaved=bStage+1;store.set('bStage',bStageSaved);logSession({g:'boss',stage:bStage,time:Math.round(el*10)/10});setTimeout(()=>$('bOrb').classList.remove('dead'),1600)}
+    }
+    $('bHP').style.width=Math.max(0,bHP/Math.max(1,bMax)*100)+'%';$('bStage').textContent=bFight?bStage:bStageSaved;$('bBest').textContent=bBest?bBest.toFixed(1)+'s':'-';$('bStart').textContent=bFight?'Fighting...':'Fight';
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+<script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script></body></html>

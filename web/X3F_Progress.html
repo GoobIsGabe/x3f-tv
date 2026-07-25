@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!-- X3F PROGRESS - reads x3f_history logged by the games and charts your gains. -->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>X3F Progress</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--gold:#ffd35c;--cyan:#37d6ff;--hot:#ff5d78;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--d);color:var(--txt);background:radial-gradient(120vw 60vh at 80% -10%,rgba(47,240,176,.09),transparent 60%),var(--bg);min-height:100dvh;padding:calc(16px + var(--sat)) 16px calc(28px + var(--sab));-webkit-user-select:none;user-select:none}
+.wrap{max-width:760px;margin:0 auto}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.brand{font-weight:800;font-size:19px;letter-spacing:2px}.brand b{color:var(--accent)}
+.spacer{flex:1}
+a.home,select{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 14px;cursor:pointer}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--brd);border-radius:16px;padding:14px}
+.card .k{font-family:var(--n);font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim)}
+.card .v{font-family:var(--n);font-weight:700;font-size:26px;font-variant-numeric:tabular-nums;margin-top:4px}
+.v.accent{color:var(--accent)}.v.gold{color:var(--gold)}.v.cyan{color:var(--cyan)}
+.panel{background:var(--panel);border:1px solid var(--brd);border-radius:18px;padding:16px;margin-bottom:14px}
+.panel h2{font-family:var(--n);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
+canvas{width:100%;height:140px;display:block}
+.list{display:flex;flex-direction:column;gap:8px}
+.row{display:flex;align-items:center;gap:12px;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:10px 13px}
+.row .g{font-weight:800;font-size:14px;min-width:96px}
+.row .b{font-family:var(--n);font-size:12px;color:var(--dim);flex:1}
+.row .m{font-family:var(--n);font-weight:700;font-size:14px}
+.row .dt{font-family:var(--n);font-size:11px;color:var(--dim);min-width:74px;text-align:right}
+.empty{color:var(--dim);text-align:center;padding:30px;line-height:1.6}
+@media(max-width:560px){.cards{grid-template-columns:repeat(2,1fr)}}
+</style></head>
+<body>
+<div class="wrap">
+<div class="top">
+<div class="brand">X3F <b>PROGRESS</b></div><div class="spacer"></div>
+<select id="bandFilter" data-nav data-nav-first></select>
+<a class="home" href="index.html" data-nav data-nav-back>All games</a>
+</div>
+<div class="cards">
+<div class="card"><div class="k">Sessions</div><div class="v" id="cSess">0</div></div>
+<div class="card"><div class="k">Best Reps</div><div class="v accent" id="cReps">-</div></div>
+<div class="card"><div class="k">Best Peak</div><div class="v gold" id="cPeak">-</div></div>
+<div class="card"><div class="k">Boss Stage</div><div class="v cyan" id="cBoss">-</div></div>
+</div>
+<div class="panel"><h2>Max Force over time</h2><canvas id="chPeak"></canvas></div>
+<div class="panel"><h2>Flow reps over time</h2><canvas id="chReps"></canvas></div>
+<div class="panel"><h2>Recent sessions</h2><div class="list" id="list"></div></div>
+</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
+const BANDS=['All bands','White','Light Gray','Dark Gray','Black','Elite Black'];
+const GL={flow:'Flow',max:'Max Effort',boss:'Boss',zone:'Hold',meter:'Meter',ascent:'Ascent'};
+let hist=xget('history',[]);
+let filt=xget('progFilter','All bands');
+const bf=$('bandFilter');
+BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b;o.selected=b===filt;bf.appendChild(o)});
+bf.onchange=()=>{filt=bf.value;try{localStorage.setItem('x3f_progFilter',JSON.stringify(filt))}catch(e){}render()};
+
+function fdate(t){const d=new Date(t),n=new Date();const sameDay=d.toDateString()===n.toDateString();
+  return sameDay?d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):(d.getMonth()+1)+'/'+d.getDate();}
+function chart(cv,pts,color){
+  const ctx=cv.getContext('2d'),DPR=Math.min(devicePixelRatio||1,2),W=cv.clientWidth,H=cv.clientHeight;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,W,H);
+  if(pts.length<1){ctx.fillStyle='#5b677d';ctx.font="13px 'Space Grotesk',sans-serif";ctx.fillText('No data yet',10,H/2);return;}
+  const pad=22,vs=pts.map(p=>p.v),mn=Math.min(...vs),mx=Math.max(...vs),rng=(mx-mn)||1;
+  const x=i=>pad+ (pts.length<2?(W-2*pad)/2:(i/(pts.length-1))*(W-2*pad));
+  const y=v=>H-pad-((v-mn)/rng)*(H-2*pad);
+  ctx.strokeStyle='rgba(255,255,255,.06)';ctx.lineWidth=1;
+  for(let g=0;g<=2;g++){const yy=pad+g*(H-2*pad)/2;ctx.beginPath();ctx.moveTo(pad,yy);ctx.lineTo(W-pad,yy);ctx.stroke();}
+  ctx.beginPath();pts.forEach((p,i)=>{const xx=x(i),yy=y(p.v);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});
+  ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.lineJoin='round';ctx.stroke();
+  ctx.fillStyle=color;pts.forEach((p,i)=>{ctx.beginPath();ctx.arc(x(i),y(p.v),3,0,7);ctx.fill()});
+  ctx.fillStyle='#8593a9';ctx.font="11px 'Space Grotesk',sans-serif";
+  ctx.fillText(Math.round(mx),4,pad+4);ctx.fillText(Math.round(mn),4,H-pad+4);
+}
+function render(){
+  const h=filt==='All bands'?hist:hist.filter(e=>e.b===filt);
+  $('cSess').textContent=h.length;
+  const reps=h.filter(e=>e.g==='flow'&&e.reps!=null).map(e=>e.reps);
+  const peaks=h.filter(e=>e.g==='max'&&e.peak!=null).map(e=>e.peak);
+  const bosses=h.filter(e=>e.g==='boss'&&e.stage!=null).map(e=>e.stage);
+  $('cReps').textContent=reps.length?Math.max(...reps):'-';
+  $('cPeak').textContent=peaks.length?Math.max(...peaks):'-';
+  $('cBoss').textContent=bosses.length?Math.max(...bosses):'-';
+  chart($('chPeak'),h.filter(e=>e.g==='max'&&e.peak!=null).map(e=>({v:e.peak})),'#ffd35c');
+  chart($('chReps'),h.filter(e=>e.g==='flow'&&e.reps!=null).map(e=>({v:e.reps})),'#2ff0b0');
+  const recent=h.slice().reverse().slice(0,25);
+  $('list').innerHTML=recent.length?recent.map(e=>{
+    let m='';if(e.g==='flow')m=e.reps+' reps'+(e.acc!=null?' · '+e.acc+'%':'');
+    else if(e.g==='max')m=e.peak+' peak';else if(e.g==='boss')m='stage '+e.stage+(e.time!=null?' · '+e.time+'s':'');else m='';
+    return`<div class="row"><div class="g">${GL[e.g]||e.g}</div><div class="b">${e.b||''}</div><div class="m">${m}</div><div class="dt">${fdate(e.t)}</div></div>`;
+  }).join(''):'<div class="empty">No sessions logged yet.<br>Play Flow, Max Effort, or Boss and your results show up here.</div>';
+}
+addEventListener('resize',render);
+render();
+</script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script src="x3f-nav.js"></script>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script></body></html>

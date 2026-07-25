@@ -4,6 +4,15 @@ A TV-native Android app that connects the **X3 Force bar** straight to the TV ov
 
 This first version is the **bar probe**: it auto-connects to the bar and shows the live force, to confirm the TV's Bluetooth radio can read it. Once that's confirmed, the games get layered on (WebView + the same force feed).
 
+## What's in here
+```
+web/    the browser games (Web Bluetooth) — the source of truth for game code
+app/    the Android TV app; app/src/main/assets/ is GENERATED from web/
+tools/  sync-from-web.py — regenerates the bundle after you edit web/
+```
+Edit a game in `web/`, run `python tools/sync-from-web.py`, bump `versionCode` in
+`app/build.gradle`, push. See [DEPLOY.md](DEPLOY.md).
+
 ## How it gets built
 This repo builds itself. Every push runs the **Build APK** GitHub Action, which compiles a debug APK on GitHub's runners and attaches it to the **[latest release](../../releases/tag/latest)** as `x3f-tv.apk`.
 

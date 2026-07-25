@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync the web games in E:\\Fun\\X3 Bar into this repo's app/src/main/assets/.
+"""Sync the web games in web/ into this repo's app/src/main/assets/.
 
 The TV bundle is a set of copies of the web games. They are byte-identical to the
 originals except for a few mechanical edits, which is exactly what this script
@@ -15,6 +15,9 @@ What it changes, per file:
   * on the menu pages, injects a small TV block: the X3FFILES launch map that
     x3f-exercises.js reads, 10-foot type scaling, and initial D-pad focus
 
+Both halves live in this one repo — web/ is the source, app/ is the TV wrapper —
+so there is no second project to keep in step by hand.
+
 Usage:
     python tools/sync-from-web.py [path-to-web-folder] [--check]
 
@@ -27,7 +30,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 ASSETS = REPO / "app" / "src" / "main" / "assets"
-DEFAULT_WEB = Path(r"E:\Fun\X3 Bar")
+DEFAULT_WEB = REPO / "web"
 
 # web filename -> bundled asset name
 GAMES = {
