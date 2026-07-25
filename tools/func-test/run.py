@@ -25,7 +25,15 @@ REPO = Path(__file__).resolve().parents[2]
 ASSETS = REPO / "app" / "src" / "main" / "assets"
 HERE = Path(__file__).resolve().parent
 
-SCREENS = ["launcher", "routine", "library", "progress", "bloom", "flow", "splash"]
+SCREENS = ["launcher", "routine", "library", "progress", "bloom", "flow", "splash",
+           "bloomtv"]
+
+# Scenarios that are a bundled page seen through a different lens. "bloomtv" is
+# Bloom with the SHELL'S OWN bootstrap injected, because the TV drives `force`
+# down a completely different path from the browser build and the two have now
+# silently diverged twice.
+AS_PAGE = {"bloomtv": "bloom"}
+BOOTSTRAPPED = {"bloomtv"}
 
 BROWSERS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -100,17 +108,33 @@ def main():
     for f in ("func.js", "cases.js"):
         shutil.copy2(HERE / f, stage / f)
 
-    # No BOOTSTRAP here on purpose: it auto-starts a run and drives `force`, which
-    # would fight the scenarios. Navigation is the nav-audit's job; this is about
-    # whether the features do what they claim.
+    # Most scenarios get no BOOTSTRAP on purpose: it auto-starts a run and drives
+    # `force`, which would fight them. The bloomtv scenario is the exception - it
+    # exists precisely to test that path.
+    #
+    # Pulled from MainActivity rather than copied, for the same reason the nav
+    # audit does it: a copy drifts, and then the test is checking fiction. The
+    # per-movement floor was applied in the games' onSample() and NOT in this
+    # bootstrap, so on the TV the scale shrank to the calibrated span while the
+    # resting load stayed in. A copied bootstrap would have passed.
+    java = (REPO / "app" / "src" / "main" / "java" / "com" / "goob" / "x3ftv" /
+            "MainActivity.java").read_text(encoding="utf-8")
+    m = re.search(r'BOOTSTRAP\s*=\s*"""(.*?)""";', java, re.S)
+    if not m:
+        print("could not find the BOOTSTRAP text block in MainActivity.java")
+        return 2
+    (stage / "bootstrap.js").write_text(m.group(1), encoding="utf-8")
+
     failures, totals = {}, []
     for name in want:
-        src = stage / (name + ".html")
+        src = stage / (AS_PAGE.get(name, name) + ".html")
         if not src.exists():
             print("%-11s ?  not in the bundle" % name)
             continue
+        boot = '<script src="bootstrap.js"></script>' if name in BOOTSTRAPPED else ""
         html = src.read_text(encoding="utf-8").replace(
-            "</body>", '<script src="func.js"></script><script src="cases.js"></script></body>')
+            "</body>", boot + '<script src="func.js"></script>'
+                              '<script src="cases.js" data-scenario="%s"></script></body>' % name)
         page = stage / ("func_" + name + ".html")
         page.write_text(html, encoding="utf-8")
 
@@ -118,7 +142,9 @@ def main():
         flags = ["--headless", "--disable-gpu", "--no-sandbox",
                  "--user-data-dir=" + str(stage / ("profile_" + name)),
                  "--window-size=1600,1000", "--virtual-time-budget=20000",
-                 "--dump-dom", page.as_uri()]
+                 # bloomtv is launched the way a guided Routine launches a lift,
+                 # because that is what makes X3FCal.slug() resolve at all
+                 "--dump-dom", page.as_uri() + ("?ex=overhead-press" if name in BOOTSTRAPPED else "")]
         if sys.platform == "win32":
             args = ",".join("'" + f.replace("'", "''") + "'" for f in flags)
             subprocess.run(["powershell", "-NoProfile", "-Command",

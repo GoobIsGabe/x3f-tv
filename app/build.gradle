@@ -19,8 +19,8 @@ android {
         applicationId 'com.goob.x3ftv'
         minSdk 24
         targetSdk 34
-        versionCode 15
-        versionName '1.5'
+        versionCode 16
+        versionName '1.6'
     }
 
     buildFeatures {

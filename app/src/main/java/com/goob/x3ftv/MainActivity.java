@@ -606,8 +606,19 @@ public class MainActivity extends Activity {
      +'.card .tag{font-size:14px!important}'
      +'}';
    (document.head||document.documentElement).appendChild(st); } }catch(e){}
+ /* This assignment REPLACES the browser build's onSample(), so anything that
+    conditions the raw signal has to be repeated here or it silently does not
+    exist on the TV. That is exactly how the per-movement floor got lost: the
+    games subtract calLo() in onSample(), which this shell never calls, so the
+    scale shrank to the calibrated span while the resting load stayed in - an
+    overhead press sat pinned at the top and climbed further from there.
+    Calibrate deliberately has no calLo(): it must measure absolute force. */
  try{ if(window.__x3fDrv)clearInterval(window.__x3fDrv);
-   window.__x3fDrv=setInterval(function(){ try{ force=+window.__x3fForce||0; }catch(e){} },16); }catch(e){}
+   window.__x3fDrv=setInterval(function(){ try{
+     var f=+window.__x3fForce||0;
+     if(typeof calLo==='function'){ var lo=+calLo()||0; f=f>lo?f-lo:0; }
+     force=f;
+   }catch(e){} },16); }catch(e){}
  try{ var fr=document.getElementById('firstrun'); if(fr)fr.classList.remove('show'); }catch(e){}
  try{ if(typeof startRun==='function')startRun(); }catch(e){}
  try{ var z=document.getElementById('zeroBtn'); if(z){ z.addEventListener('click',function(ev){ ev.preventDefault(); ev.stopPropagation(); try{ if(window.X3F&&X3F.reZero)X3F.reZero(); }catch(e){} },true); } }catch(e){}

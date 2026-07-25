@@ -19,7 +19,7 @@ tools/  sync-from-web.py, which does the generating
 
 `E:\Fun\X3 Bar` was the old separate home of the web games. It is **retired** — it had a git remote pointing at this same repo and a DEPLOY.md telling you to force-push, which would have overwritten the Android app. Everything that matters was moved into `web/`. Don't develop there.
 
-Current status: **v1.5**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
+Current status: **v1.6**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -90,6 +90,13 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - `routine.html` — pick Push / Pull / Custom, then run the day. Per movement it coaches the setup + strongest-range start, shows the form demonstrator, launches the chosen game pre-configured (`?from=routine&band=…&ex=…`), logs the set and runs a rest timer to the next lift. Days are editable (add / reorder / remove from the 11 movements); sets, bands, tempo and progress persist. Back → launcher → Workout resumes the session and asks whether the set counted.
 - `x3f-form.js` — the animated figure. Poses are authored as hip/hand/foot targets with the knees and elbows solved by two-bone IK, driven by live force: it rises, holds, eases, flushes and trembles near max, and flips to "diminishing range" when your rep tops start collapsing (the X3 burnout). The foot hinges on the ball with the contact pinned to the floor, so a calf raise really rises onto the toes.
 - `library.html` + `progress.html` bundled; launcher gained Workout (hero card), Library and Progress.
+
+**v1.6 — the per-movement floor was never applied on the TV.**
+- **The bug:** the shell's `BOOTSTRAP` assigns `force = window.__x3fForce` every 16ms, which **replaces the browser build's `onSample()` entirely**. v1.4 put the floor subtraction in `onSample()` and nowhere else, so on the TV `ref()` shrank to the calibrated span while the resting load stayed in the signal. A White-band overhead press calibrated 52-78 rested at 52/26 = **200% of the screen** — pinned at the top, and pressing drove it to 300%. Exactly as reported. The browser build was fine; only the TV was wrong, which is why it passed everything.
+- The bootstrap now applies `calLo()` when the page defines one. Calibrate deliberately does not define it — it must measure absolute force.
+- **The rule this keeps breaking:** anything that conditions the raw signal must exist in BOTH `onSample()` and the bootstrap, or it silently does not exist on the TV. This is the second divergence (v0.9's Arena `vis()` was the first).
+- **`func-test` now has a `bloomtv` scenario**: Bloom with the **live** BOOTSTRAP extracted from `MainActivity.java` (not a copy — a copy drifts and then the test checks fiction), launched with `?ex=` the way a Routine launches a lift. It asserts resting-at-the-start reads 0, halfway reads 0.5, all-out reads 1.0. Mutation-verified: restoring the old one-line driver fails it with `force=52` / `frac=3.00`, the user's exact symptom.
+- Note on zeroing: the floor is only meaningful against the same baseline the calibration used. Zero the bar **at rest, band unloaded** — the state native tares in on connect. Zeroing while already in the start position bakes that load into the baseline and the stored floor then double-counts.
 
 **v1.5 — calibration you can actually complete, with the movement on screen.**
 - **The "too narrow to be real" refusal was my bug, not a bad capture.** v1.4 required 40 force units between the hold and the max. A White band overhead press genuinely spans only ~20-35, so honest calibrations were rejected with no way to proceed. The floor is now 10, and the refusal *says what it measured* — "Only 6 between hold and max; needs 10" or "The max (70) came out no higher than the hold (90)" — instead of a dead end. Verified across all three cases: 52-78 on a White band saves, 90-96 is refused, max-below-hold is refused with the right reason.

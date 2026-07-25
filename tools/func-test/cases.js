@@ -164,6 +164,44 @@
         return F.report(page);
       }
 
+      /* ============ bloom as the TV shell drives it ============
+         Must be tested before the plain bloom branch - the staged filename
+         contains "bloom" either way.
+
+         The shell's bootstrap assigns `force` directly every 16ms and the
+         games' onSample() never runs, so ANY conditioning of the raw signal has
+         to exist in both places. It did not: the per-movement floor lived only
+         in onSample(), so on the TV the scale shrank to the calibrated span
+         while the resting load stayed in - an overhead press sat pinned at the
+         top of the screen and climbed further from there. The bootstrap here is
+         extracted from MainActivity, so a fix that misses it fails this. */
+      if (page.indexOf('bloomtv') >= 0) {
+        ok('the shell bootstrap is driving force', !!window.__x3fDrv);
+        ok('the movement resolved from the launch url', EXSLUG === 'overhead-press', String(EXSLUG));
+        ok('calibration module present under the shell', !!window.X3FCal);
+        localStorage.setItem('x3f_band', JSON.stringify('White'));
+        band = 'White';
+        X3FCal.save('overhead-press', 'White', 52, 78);   // a real White-band range
+        ok('the scale is the calibrated span', ref() === 26, String(ref()));
+        window.__x3fForce = 52;                           // just holding the start position
+        wait(function () {
+          ok('resting at the start reads ZERO on the TV path', force === 0, 'force=' + force);
+          window.__x3fForce = 65;
+          wait(function () {
+            ok('halfway up reads halfway', Math.abs(force / ref() - 0.5) < 0.05,
+               'frac=' + (force / ref()).toFixed(2));
+            window.__x3fForce = 78;
+            wait(function () {
+              ok('an all-out press reads as the top', Math.abs(force / ref() - 1) < 0.02,
+                 'frac=' + (force / ref()).toFixed(2));
+              X3FCal.clear('overhead-press', 'White');
+              F.report(page);
+            });
+          });
+        });
+        return;
+      }
+
       /* ================= bloom (a game) ================= */
       if (page.indexOf('bloom') >= 0) {
         ok('progress engine loaded in-game', !!P);
