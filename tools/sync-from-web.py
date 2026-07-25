@@ -48,6 +48,16 @@ MENUS = {
 }
 SHARED = ["x3f-exercises.js", "x3f-form.js", "x3f-nav.js"]
 
+# Illustrated art, copied to the same relative paths the games request
+# (ASSET_BASE='assets/bloom/' etc). Without these the games silently fall back to
+# their procedural drawings, which is what shipped in v0.6 by mistake.
+# bloom/bg.png is deliberately absent: Bloom loads bg.jpg, and the png is 1.7MB.
+ART = {
+    "assets/bloom": ["bg.jpg", "critter.png", "critter_strain.png", "critter_cheer.png",
+                     "flower.png", "bud.png", "petal.png"],
+    "assets/splash": ["dolphin.png", "star.png", "pearl.png", "bubble.png", "fish.png"],
+}
+
 # web link target -> bundle link target
 LINKS = {
     "index.html": "launcher.html",
@@ -133,6 +143,20 @@ def main() -> int:
             changed.append(name)
             if not check:
                 dst.write_text(out, encoding="utf-8")
+
+    for folder, names in ART.items():
+        for name in names:
+            src = web / folder / name
+            if not src.exists():
+                missing.append(folder + "/" + name)
+                continue
+            blob = src.read_bytes()
+            dst = ASSETS / folder / name
+            if not dst.exists() or dst.read_bytes() != blob:
+                changed.append(folder + "/" + name)
+                if not check:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.write_bytes(blob)
 
     print(("would change: " if check else "synced: ") + (", ".join(changed) if changed else "nothing"))
     if missing:

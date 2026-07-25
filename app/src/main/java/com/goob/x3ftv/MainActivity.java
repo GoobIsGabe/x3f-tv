@@ -364,11 +364,17 @@ public class MainActivity extends Activity {
      var list=items(); if(!list.length){ clear(); return; }
      if(!cur||list.indexOf(cur)<0){ setFocus(list[0]); return; }
      if(dir==='enter'){ if(cur.tagName==='SELECT'){ cur.selectedIndex=(cur.selectedIndex+1)%cur.options.length; cur.dispatchEvent(new Event('change',{bubbles:true})); } else { cur.click(); } return; }
-     var c=ctr(cur), best=null, bd=1e12;
+     var c=ctr(cur), cr=cur.getBoundingClientRect(), best=null, bd=1e12;
      for(var i=0;i<list.length;i++){ var el=list[i]; if(el===cur)continue; var e=ctr(el), dx=e.x-c.x, dy=e.y-c.y;
        var ok=(dir==='left'&&dx<-4)||(dir==='right'&&dx>4)||(dir==='up'&&dy<-4)||(dir==='down'&&dy>4); if(!ok)continue;
-       var along=(dir==='left'||dir==='right')?Math.abs(dx):Math.abs(dy), perp=(dir==='left'||dir==='right')?Math.abs(dy):Math.abs(dx);
-       var d=along+perp*2.5; if(d<bd){bd=d;best=el;} }
+       var horiz=(dir==='left'||dir==='right');
+       var along=horiz?Math.abs(dx):Math.abs(dy), perp=horiz?Math.abs(dy):Math.abs(dx);
+       // Require the candidate to actually share your row (or column) - without
+       // this a control one row up can out-score the one right beside you.
+       var r=el.getBoundingClientRect();
+       var ov=horiz?(Math.min(cr.bottom,r.bottom)-Math.max(cr.top,r.top))
+                   :(Math.min(cr.right,r.right)-Math.max(cr.left,r.left));
+       var d=along+perp*2.5+(ov>2?0:4000); if(d<bd){bd=d;best=el;} }
      if(best)setFocus(best);
    }catch(e){} };
    setInterval(function(){ try{ var sc=scope();

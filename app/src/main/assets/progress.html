@@ -63,8 +63,8 @@ addEventListener('load',function(){setTimeout(function(){
 <div class="wrap">
 <div class="top">
 <div class="brand">X3F <b>PROGRESS</b></div><div class="spacer"></div>
-<select id="bandFilter"></select>
-<a class="home" href="launcher.html">All games</a>
+<select id="bandFilter" data-nav data-nav-first></select>
+<a class="home" href="launcher.html" data-nav data-nav-back>All games</a>
 </div>
 <div class="cards">
 <div class="card"><div class="k">Sessions</div><div class="v" id="cSess">0</div></div>
@@ -127,4 +127,5 @@ addEventListener('resize',render);
 render();
 </script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script src="x3f-nav.js"></script>
 </body></html>

@@ -52,6 +52,9 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
 .hint{font-family:var(--n);font-size:1.7vh;color:#6f6790}
 </style></head>
 <body>
+<!-- shared menu nav: reuse this page's own .foc focus look -->
+<script>window.X3FNAV_CLASS='foc';</script>
+<script src="x3f-nav.js"></script>
 <canvas id="bgcv"></canvas>
 <div class="wrap">
   <div class="top">
@@ -71,7 +74,7 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
   <div class="grid" id="grid"></div>
 
   <div class="updrow">
-    <button class="upd nav" id="updBtn" data-act="update">⟳ Check for updates</button>
+    <button class="upd nav" id="updBtn" data-act="update" data-nav>⟳ Check for updates</button>
     <span class="updmsg" id="updMsg"></span>
     <span class="spacer"></span>
     <span class="hint" id="verHint"></span>
@@ -107,12 +110,13 @@ const GAMES=[
 // ---- band pills ----
 const bandrow=$('bandrow');
 BANDS.forEach(b=>{const el=document.createElement('button');el.className='pill nav'+(b===band?' sel':'');el.dataset.band=b;el.textContent=b;
-  el.onclick=()=>selectBand(b);bandrow.appendChild(el);});
+  el.setAttribute('data-nav','');el.onclick=()=>selectBand(b);bandrow.appendChild(el);});
 function selectBand(b){band=b;xset('band',b);[...bandrow.children].forEach(p=>p.classList.toggle('sel',p.dataset.band===b));}
 
 // ---- game cards ----
 const grid=$('grid');
-GAMES.forEach(g=>{const el=document.createElement('div');el.className='card nav'+(g.hero?' hero':'');el.style.setProperty('--c',g.c);el.dataset.f=g.f;
+GAMES.forEach((g,i)=>{const el=document.createElement('div');el.className='card nav'+(g.hero?' hero':'');el.style.setProperty('--c',g.c);el.dataset.f=g.f;
+  el.setAttribute('data-nav','');el.setAttribute('tabindex','-1');if(i===0)el.setAttribute('data-nav-first','');
   el.innerHTML='<div class="glow" style="--c:'+g.c+'"></div><div class="ic">'+g.ic+'</div><div class="nm">'+g.nm+'</div><div class="tag">'+g.tag+'</div>';
   el.onclick=()=>{try{xset('band',band);}catch(e){} location.href=g.f;};
   grid.appendChild(el);});
@@ -126,23 +130,12 @@ window.__x3fVersion=function(v){ try{ $('verHint').textContent=v?('v'+v):''; }ca
 window.__x3fSetBar=function(state,txt){ try{ $('dot').className='dot'+(state?(' '+state):''); $('statusTxt').textContent=txt||''; }catch(e){} };
 
 // ---- D-pad spatial nav ----
-const navEls=()=>[...document.querySelectorAll('.nav')].filter(el=>el.offsetParent!==null);
-let cur=null;
-function setFoc(el){ if(cur)cur.classList.remove('foc'); cur=el; if(el){el.classList.add('foc'); try{el.scrollIntoView({block:'nearest'});}catch(e){}} }
-function ctr(el){const r=el.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2};}
-window.__x3fNav=function(dir){
-  const list=navEls(); if(!list.length)return;
-  if(!cur||!list.includes(cur)){setFoc(list[0]);return;}
-  if(dir==='enter'){cur.click();return;}
-  const c=ctr(cur);let best=null,bd=1e12;
-  for(const el of list){ if(el===cur)continue; const e=ctr(el),dx=e.x-c.x,dy=e.y-c.y;
-    const ok=(dir==='left'&&dx<-4)||(dir==='right'&&dx>4)||(dir==='up'&&dy<-4)||(dir==='down'&&dy>4); if(!ok)continue;
-    const along=(dir==='left'||dir==='right')?Math.abs(dx):Math.abs(dy),perp=(dir==='left'||dir==='right')?Math.abs(dy):Math.abs(dx);
-    const d=along+perp*2.2; if(d<bd){bd=d;best=el;} }
-  if(best)setFoc(best);
-};
-// initial focus: first game card
-setTimeout(()=>{ const cards=[...grid.children]; setFoc(cards[0]||navEls()[0]||null); },120);
+// Handled by the shared x3f-nav.js (loaded below, reusing this page's .foc look).
+// It requires the target to actually share your row before it will move there,
+// which the old scoring here did not: from a card, a band pill one row up could
+// out-score the card right beside you, so Right off Workout landed on a grey
+// band and Left off Nova landed on Black.
+setTimeout(()=>{ try{ if(window.X3FNav && !X3FNav.current()) X3FNav.focusFirst(); }catch(e){} },140);
 
 // ---- live force meter ----
 const mfill=$('mfill'),mval=$('mval');

@@ -26,3 +26,5 @@ Same as the web games: BLE service `e3458900`, force characteristic `e3458901` (
 - v0.6 — **guided workout mode**: Push/Pull days that coach each X3 movement, plus a live
   form demonstrator — an animated figure that moves with your actual force — and the
   Library / Progress pages on the TV
+- v0.7 — couch fixes: launcher D-pad stays in its row, illustrated Bloom/Splash art
+  actually bundled, long pages scroll from the remote

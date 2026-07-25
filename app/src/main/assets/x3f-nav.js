@@ -10,7 +10,10 @@
 (function () {
   "use strict";
 
-  var CUR = 'x3f-nav-cur';
+  /* A page can set window.X3FNAV_CLASS before loading this file to use its own
+     focus styling (the TV launcher does: it already has a .foc look). */
+  var CUR = window.X3FNAV_CLASS || 'x3f-nav-cur';
+  var OWN_RING = !window.X3FNAV_CLASS;
   var items = [], cursor = null, engaged = false;
 
   /* ---------- styling (injected so every page gets the same focus ring) ---------- */
@@ -18,9 +21,9 @@
   css.textContent =
     '[data-nav]{scroll-margin:26px}' +
     '[data-nav]:focus{outline:none}' +
-    '.' + CUR + '{position:relative;z-index:2;' +
-    'box-shadow:0 0 0 2px var(--navring,#2ff0b0),0 12px 34px rgba(0,0,0,.45)!important;' +
-    'border-color:var(--navring,#2ff0b0)!important}' +
+    (OWN_RING ? '.' + CUR + '{position:relative;z-index:2;' +
+      'box-shadow:0 0 0 2px var(--navring,#2ff0b0),0 12px 34px rgba(0,0,0,.45)!important;' +
+      'border-color:var(--navring,#2ff0b0)!important}' : '') +
     '@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}';
   (document.head || document.documentElement).appendChild(css);
 
@@ -29,7 +32,19 @@
     if (el.disabled || el.getAttribute('aria-hidden') === 'true') return false;
     if (!el.offsetParent && el.tagName !== 'BODY') return false;
     var r = el.getBoundingClientRect();
-    return r.width > 1 && r.height > 1;
+    if (r.width <= 1 || r.height <= 1) return false;
+    /* Overlays here (the rest timer, the session summary) stay in the layout and
+       fade with opacity, so they keep a box and an offsetParent while invisible.
+       Without this the D-pad would happily focus - and OK would press - buttons
+       nobody can see. */
+    for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
+      var cs = getComputedStyle(n);
+      if (cs.visibility === 'hidden' || cs.display === 'none') return false;
+      if (parseFloat(cs.opacity) < 0.05) return false;
+      if (cs.pointerEvents === 'none') return false;
+      if (n === document.body) break;
+    }
+    return true;
   }
   function refresh() {
     items = [].slice.call(document.querySelectorAll('[data-nav]')).filter(visible);
@@ -82,14 +97,41 @@
       if (score < bestScore) { bestScore = score; best = el; }
     });
 
-    // Nothing visually that way. Fall back to reading order so the cursor
-    // wraps along the grid instead of escaping into the page chrome.
+    // Nothing visually that way. On a remote there is no wheel and no
+    // scrollbar, so if the page still has content below (or above) that way,
+    // scroll it rather than teleporting the cursor - otherwise long pages like
+    // Progress are unreachable.
+    if (!best && (dir === 'up' || dir === 'down') && scrollPage(dir)) return;
+
+    // Still nothing: fall back to reading order so the cursor wraps along the
+    // grid instead of escaping into the page chrome.
     if (!best) {
       var i = items.indexOf(cursor);
       if (dir === 'right' || dir === 'down') best = items[i + 1] || items[0];
       else best = items[i - 1] || items[items.length - 1];
     }
     setCursor(best);
+  }
+
+  /* nearest scrollable ancestor of the cursor, else the document */
+  function scrollHost(el) {
+    for (var n = el; n && n !== document.body; n = n.parentElement) {
+      var cs = getComputedStyle(n);
+      if (/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 2) return n;
+    }
+    var d = document.scrollingElement || document.documentElement;
+    return (d.scrollHeight > d.clientHeight + 2) ? d : null;
+  }
+  function scrollPage(dir) {
+    var h = scrollHost(cursor); if (!h) return false;
+    var view = (h === document.scrollingElement || h === document.documentElement)
+      ? innerHeight : h.clientHeight;
+    var max = h.scrollHeight - h.clientHeight;
+    var at = h.scrollTop;
+    if ((dir === 'down' && at >= max - 2) || (dir === 'up' && at <= 2)) return false;
+    var to = Math.max(0, Math.min(max, at + (dir === 'down' ? 1 : -1) * view * 0.75));
+    try { h.scrollTo({ top: to, behavior: 'smooth' }); } catch (e) { h.scrollTop = to; }
+    return true;
   }
 
   function activate() {
@@ -194,12 +236,14 @@
     window.__x3fNav = function (dir) {
       engaged = true;
       var c = cursor;
+      /* On a remote, OK cycles a <select> in place (opening the native dropdown
+         is a dead end) and the arrows are left alone for moving and scrolling.
+         Do NOT make Up/Down step the value here: on a page whose only focusable
+         control is a select - Progress - that would trap the D-pad on the filter
+         and the page could never be scrolled. The browser keydown path above
+         still steps selects vertically, which is what a keyboard user expects. */
       if (dir === 'enter') {
         if (c && c.tagName === 'SELECT') stepSelect(c, 1, true); else activate();
-        return;
-      }
-      if (c && c.tagName === 'SELECT' && (dir === 'up' || dir === 'down')) {
-        stepSelect(c, dir === 'down' ? 1 : -1);
         return;
       }
       move(dir);
