@@ -269,6 +269,7 @@
      On a remote, opening a native <select> dropdown is a dead end, so OK cycles
      the value in place instead. */
   if (!window.__x3fNav) {
+    window.__x3fPageNav = true;      // so tooling can tell whose nav is driving
     window.__x3fNav = function (dir) {
       engaged = true;
       var c = cursor;

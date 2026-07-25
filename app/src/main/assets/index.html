@@ -49,9 +49,20 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
 .upd{font-family:var(--d);font-weight:600;font-size:2vh;padding:1.2vh 2.4vw;border-radius:100px;background:rgba(20,14,44,.55);border:2px solid rgba(160,140,255,.3);color:var(--txt);cursor:pointer;transition:transform .12s,box-shadow .12s}
 .upd.foc{transform:scale(1.06);border-color:#fff;box-shadow:0 0 22px rgba(57,245,196,.6)}
 .updmsg{font-family:var(--n);font-size:1.9vh;color:var(--dim)}
+/* manual bar picker - only shown if we could not connect on our own */
+.finder{display:none;margin-top:1.6vh;padding:1.4vh 1.6vw;border-radius:18px;background:rgba(30,20,60,.55);border:2px solid rgba(255,211,63,.35)}
+.finder.on{display:block}
+.findhead{font-family:var(--n);font-weight:700;font-size:1.9vh;color:var(--gold);margin-bottom:1vh}
+.findrow{display:flex;gap:1vw;flex-wrap:wrap;margin-bottom:1vh}
+.dev{font-family:var(--d);font-weight:600;font-size:1.9vh;padding:1vh 1.6vw;border-radius:100px;background:rgba(20,14,44,.7);border:2px solid rgba(160,140,255,.28);color:var(--txt);cursor:pointer;max-width:30vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dev.foc{transform:scale(1.06);border-color:#fff;box-shadow:0 0 22px rgba(255,211,63,.6)}
+.dev small{display:block;font-family:var(--n);font-size:1.4vh;color:var(--dim)}
 .hint{font-family:var(--n);font-size:1.7vh;color:#6f6790}
 </style></head>
 <body>
+<!-- shared menu nav: reuse this page's own .foc focus look -->
+<script>window.X3FNAV_CLASS='foc';</script>
+<script src="x3f-nav.js"></script>
 <canvas id="bgcv"></canvas>
 <div class="wrap">
   <div class="top">
@@ -70,8 +81,14 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
 
   <div class="grid" id="grid"></div>
 
+  <div class="finder" id="finder">
+    <div class="findhead">Bar not connecting? Pick it by hand<span id="findCount"></span></div>
+    <div class="findrow" id="findList"></div>
+    <button class="upd nav" id="rescanBtn" data-nav>⟳ Scan again</button>
+  </div>
+
   <div class="updrow">
-    <button class="upd nav" id="updBtn" data-act="update">⟳ Check for updates</button>
+    <button class="upd nav" id="updBtn" data-act="update" data-nav>⟳ Check for updates</button>
     <span class="updmsg" id="updMsg"></span>
     <span class="spacer"></span>
     <span class="hint" id="verHint"></span>
@@ -107,12 +124,13 @@ const GAMES=[
 // ---- band pills ----
 const bandrow=$('bandrow');
 BANDS.forEach(b=>{const el=document.createElement('button');el.className='pill nav'+(b===band?' sel':'');el.dataset.band=b;el.textContent=b;
-  el.onclick=()=>selectBand(b);bandrow.appendChild(el);});
+  el.setAttribute('data-nav','');el.onclick=()=>selectBand(b);bandrow.appendChild(el);});
 function selectBand(b){band=b;xset('band',b);[...bandrow.children].forEach(p=>p.classList.toggle('sel',p.dataset.band===b));}
 
 // ---- game cards ----
 const grid=$('grid');
-GAMES.forEach(g=>{const el=document.createElement('div');el.className='card nav'+(g.hero?' hero':'');el.style.setProperty('--c',g.c);el.dataset.f=g.f;
+GAMES.forEach((g,i)=>{const el=document.createElement('div');el.className='card nav'+(g.hero?' hero':'');el.style.setProperty('--c',g.c);el.dataset.f=g.f;
+  el.setAttribute('data-nav','');el.setAttribute('tabindex','-1');if(i===0)el.setAttribute('data-nav-first','');
   el.innerHTML='<div class="glow" style="--c:'+g.c+'"></div><div class="ic">'+g.ic+'</div><div class="nm">'+g.nm+'</div><div class="tag">'+g.tag+'</div>';
   el.onclick=()=>{try{xset('band',band);}catch(e){} location.href=g.f;};
   grid.appendChild(el);});
@@ -123,26 +141,48 @@ window.__x3fUpdate=function(msg){ try{ $('updMsg').textContent=msg||''; }catch(e
 window.__x3fVersion=function(v){ try{ $('verHint').textContent=v?('v'+v):''; }catch(e){} };
 
 // ---- bar status (native calls this) ----
-window.__x3fSetBar=function(state,txt){ try{ $('dot').className='dot'+(state?(' '+state):''); $('statusTxt').textContent=txt||''; }catch(e){} };
+let barLive=false;
+window.__x3fSetBar=function(state,txt){ try{
+  $('dot').className='dot'+(state?(' '+state):'');
+  $('statusTxt').textContent=txt||'';
+  barLive=(state==='on');
+  if(barLive)showFinder(false);            // connected - put the picker away
+}catch(e){} };
+
+// ---- manual bar picker ----
+// Scanning cannot see a bar that is already connected to something, or one whose
+// advertisement carries no name and no service UUID. If we are still not live
+// after a few seconds, offer the raw list and let the remote choose.
+let devices=[];
+function renderDevices(){
+  const list=$('findList');
+  list.innerHTML='';
+  if(!devices.length){
+    const e=document.createElement('div');e.className='updmsg';
+    e.textContent='Nothing seen yet — wake the bar (load a band) and hit Scan again.';
+    list.appendChild(e);
+  } else devices.forEach(d=>{
+    const b=document.createElement('button');
+    b.className='dev nav';b.setAttribute('data-nav','');
+    b.innerHTML=(d.n||'(unnamed)')+'<small>'+d.a+'</small>';
+    b.onclick=()=>{ $('statusTxt').textContent='Connecting…'; try{ X3F.pickDevice(d.a); }catch(e){} };
+    list.appendChild(b);
+  });
+  $('findCount').textContent=devices.length?('  ·  '+devices.length+' seen'):'';
+  if(window.X3FNav)X3FNav.refresh();
+}
+function showFinder(on){ $('finder').classList.toggle('on',!!on); if(on)renderDevices(); if(window.X3FNav)X3FNav.refresh(); }
+window.__x3fDevices=function(list){ try{ devices=list||[]; if($('finder').classList.contains('on'))renderDevices(); }catch(e){} };
+$('rescanBtn').onclick=()=>{ try{ if(window.X3F&&X3F.rescan){ $('statusTxt').textContent='Rescanning…'; X3F.rescan(); } }catch(e){} };
+setTimeout(()=>{ if(!barLive)showFinder(true); },9000);
 
 // ---- D-pad spatial nav ----
-const navEls=()=>[...document.querySelectorAll('.nav')].filter(el=>el.offsetParent!==null);
-let cur=null;
-function setFoc(el){ if(cur)cur.classList.remove('foc'); cur=el; if(el){el.classList.add('foc'); try{el.scrollIntoView({block:'nearest'});}catch(e){}} }
-function ctr(el){const r=el.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2};}
-window.__x3fNav=function(dir){
-  const list=navEls(); if(!list.length)return;
-  if(!cur||!list.includes(cur)){setFoc(list[0]);return;}
-  if(dir==='enter'){cur.click();return;}
-  const c=ctr(cur);let best=null,bd=1e12;
-  for(const el of list){ if(el===cur)continue; const e=ctr(el),dx=e.x-c.x,dy=e.y-c.y;
-    const ok=(dir==='left'&&dx<-4)||(dir==='right'&&dx>4)||(dir==='up'&&dy<-4)||(dir==='down'&&dy>4); if(!ok)continue;
-    const along=(dir==='left'||dir==='right')?Math.abs(dx):Math.abs(dy),perp=(dir==='left'||dir==='right')?Math.abs(dy):Math.abs(dx);
-    const d=along+perp*2.2; if(d<bd){bd=d;best=el;} }
-  if(best)setFoc(best);
-};
-// initial focus: first game card
-setTimeout(()=>{ const cards=[...grid.children]; setFoc(cards[0]||navEls()[0]||null); },120);
+// Handled by the shared x3f-nav.js (loaded below, reusing this page's .foc look).
+// It requires the target to actually share your row before it will move there,
+// which the old scoring here did not: from a card, a band pill one row up could
+// out-score the card right beside you, so Right off Workout landed on a grey
+// band and Left off Nova landed on Black.
+setTimeout(()=>{ try{ if(window.X3FNav && !X3FNav.current()) X3FNav.focusFirst(); }catch(e){} },140);
 
 // ---- live force meter ----
 const mfill=$('mfill'),mval=$('mval');

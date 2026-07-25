@@ -19,7 +19,7 @@ tools/  sync-from-web.py, which does the generating
 
 `E:\Fun\X3 Bar` was the old separate home of the web games. It is **retired** — it had a git remote pointing at this same repo and a DEPLOY.md telling you to force-push, which would have overwritten the Android app. Everything that matters was moved into `web/`. Don't develop there.
 
-Current status: **v0.8**, working on the TV.
+Current status: **v0.9**, working on the TV.
 
 ---
 
@@ -90,6 +90,14 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - `routine.html` — pick Push / Pull / Custom, then run the day. Per movement it coaches the setup + strongest-range start, shows the form demonstrator, launches the chosen game pre-configured (`?from=routine&band=…&ex=…`), logs the set and runs a rest timer to the next lift. Days are editable (add / reorder / remove from the 11 movements); sets, bands, tempo and progress persist. Back → launcher → Workout resumes the session and asks whether the set counted.
 - `x3f-form.js` — the animated figure. Poses are authored as hip/hand/foot targets with the knees and elbows solved by two-bone IK, driven by live force: it rises, holds, eases, flushes and trembles near max, and flips to "diminishing range" when your rep tops start collapsing (the X3 burnout). The foot hinges on the ball with the contact pinned to the floor, so a calf raise really rises onto the toes.
 - `library.html` + `progress.html` bundled; launcher gained Workout (hero card), Library and Progress.
+
+**v0.9 — the bar connects itself again, and the TV button stopped lying.**
+- **Why "scanning forever" happens:** a BLE peripheral that is already connected — to this TV from a previous run, or to your phone — **stops advertising**, so a scan can never see it, no matter how long it runs. Same story if its advertisement carries neither the name nor the service UUID (a wiped name cache is enough to flip that). Reopening the app used to be the only way out. The BLE code itself had not changed since v0.5; the scan-only strategy was simply blind to those states.
+- Now, before scanning, it goes straight at devices it can address without an advertisement: anything the system already reports connected on GATT, the address that worked last time (remembered in prefs), then any bonded bar. A 9s watchdog falls back to scanning if a direct attempt stalls, so it can no longer sit on "Reconnecting…" forever.
+- Name matching is case-insensitive and also accepts FORCE / JAQUISH; the old check was `toUpperCase().contains("X3")` only.
+- Escape hatch: if it is still not live after 9s the launcher shows **every device the scan saw**, remote-navigable — pick the bar by hand (`X3F.pickDevice`). **Scan again** (`X3F.rescan`) drops any half-open GATT, which is what a restart was really fixing.
+- The **TV** button in games is hidden in the TV build: it asks for fullscreen and an orientation lock, and this shell is already fullscreen and locked to landscape, so it did nothing. It still works in a phone browser.
+- The audit now extracts the **live** BOOTSTRAP from MainActivity instead of keeping a copy (a copy would drift and the audit would be testing fiction), which also means a syntax error in the injected JS fails the audit. Verified with a mutation test: reintroducing the Arena bug makes it fail, restoring the fix makes it pass.
 
 **v0.8 — navigation audit + the fixes it found.** `python tools/nav-audit/run.py` walks all 12 screens and 27 UI states with a simulated remote and fails on unreachable controls, focusable-but-invisible controls, or an overlay that doesn't trap the cursor. What it caught:
 - The **guided coach had 8 controls and none were focusable**, and because the nav wasn't scoped to overlays the cursor silently walked the day list underneath it. Coach controls are now `data-nav`, and `x3f-nav.js` scopes to the topmost open overlay (`.coach.show`, `.rest.show`, `.scrim.show`, `.modal.show`, `[data-nav-scope]`) and lands the cursor inside when one opens.

@@ -49,6 +49,14 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
 .upd{font-family:var(--d);font-weight:600;font-size:2vh;padding:1.2vh 2.4vw;border-radius:100px;background:rgba(20,14,44,.55);border:2px solid rgba(160,140,255,.3);color:var(--txt);cursor:pointer;transition:transform .12s,box-shadow .12s}
 .upd.foc{transform:scale(1.06);border-color:#fff;box-shadow:0 0 22px rgba(57,245,196,.6)}
 .updmsg{font-family:var(--n);font-size:1.9vh;color:var(--dim)}
+/* manual bar picker - only shown if we could not connect on our own */
+.finder{display:none;margin-top:1.6vh;padding:1.4vh 1.6vw;border-radius:18px;background:rgba(30,20,60,.55);border:2px solid rgba(255,211,63,.35)}
+.finder.on{display:block}
+.findhead{font-family:var(--n);font-weight:700;font-size:1.9vh;color:var(--gold);margin-bottom:1vh}
+.findrow{display:flex;gap:1vw;flex-wrap:wrap;margin-bottom:1vh}
+.dev{font-family:var(--d);font-weight:600;font-size:1.9vh;padding:1vh 1.6vw;border-radius:100px;background:rgba(20,14,44,.7);border:2px solid rgba(160,140,255,.28);color:var(--txt);cursor:pointer;max-width:30vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dev.foc{transform:scale(1.06);border-color:#fff;box-shadow:0 0 22px rgba(255,211,63,.6)}
+.dev small{display:block;font-family:var(--n);font-size:1.4vh;color:var(--dim)}
 .hint{font-family:var(--n);font-size:1.7vh;color:#6f6790}
 </style></head>
 <body>
@@ -72,6 +80,12 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
   <div class="bandrow" id="bandrow"></div>
 
   <div class="grid" id="grid"></div>
+
+  <div class="finder" id="finder">
+    <div class="findhead">Bar not connecting? Pick it by hand<span id="findCount"></span></div>
+    <div class="findrow" id="findList"></div>
+    <button class="upd nav" id="rescanBtn" data-nav>⟳ Scan again</button>
+  </div>
 
   <div class="updrow">
     <button class="upd nav" id="updBtn" data-act="update" data-nav>⟳ Check for updates</button>
@@ -127,7 +141,40 @@ window.__x3fUpdate=function(msg){ try{ $('updMsg').textContent=msg||''; }catch(e
 window.__x3fVersion=function(v){ try{ $('verHint').textContent=v?('v'+v):''; }catch(e){} };
 
 // ---- bar status (native calls this) ----
-window.__x3fSetBar=function(state,txt){ try{ $('dot').className='dot'+(state?(' '+state):''); $('statusTxt').textContent=txt||''; }catch(e){} };
+let barLive=false;
+window.__x3fSetBar=function(state,txt){ try{
+  $('dot').className='dot'+(state?(' '+state):'');
+  $('statusTxt').textContent=txt||'';
+  barLive=(state==='on');
+  if(barLive)showFinder(false);            // connected - put the picker away
+}catch(e){} };
+
+// ---- manual bar picker ----
+// Scanning cannot see a bar that is already connected to something, or one whose
+// advertisement carries no name and no service UUID. If we are still not live
+// after a few seconds, offer the raw list and let the remote choose.
+let devices=[];
+function renderDevices(){
+  const list=$('findList');
+  list.innerHTML='';
+  if(!devices.length){
+    const e=document.createElement('div');e.className='updmsg';
+    e.textContent='Nothing seen yet — wake the bar (load a band) and hit Scan again.';
+    list.appendChild(e);
+  } else devices.forEach(d=>{
+    const b=document.createElement('button');
+    b.className='dev nav';b.setAttribute('data-nav','');
+    b.innerHTML=(d.n||'(unnamed)')+'<small>'+d.a+'</small>';
+    b.onclick=()=>{ $('statusTxt').textContent='Connecting…'; try{ X3F.pickDevice(d.a); }catch(e){} };
+    list.appendChild(b);
+  });
+  $('findCount').textContent=devices.length?('  ·  '+devices.length+' seen'):'';
+  if(window.X3FNav)X3FNav.refresh();
+}
+function showFinder(on){ $('finder').classList.toggle('on',!!on); if(on)renderDevices(); if(window.X3FNav)X3FNav.refresh(); }
+window.__x3fDevices=function(list){ try{ devices=list||[]; if($('finder').classList.contains('on'))renderDevices(); }catch(e){} };
+$('rescanBtn').onclick=()=>{ try{ if(window.X3F&&X3F.rescan){ $('statusTxt').textContent='Rescanning…'; X3F.rescan(); } }catch(e){} };
+setTimeout(()=>{ if(!barLive)showFinder(true); },9000);
 
 // ---- D-pad spatial nav ----
 // Handled by the shared x3f-nav.js (loaded below, reusing this page's .foc look).

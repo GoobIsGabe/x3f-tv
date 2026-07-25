@@ -32,6 +32,9 @@
     } catch (e) {}
     try { var fr = document.getElementById('firstrun'); if (fr) fr.classList.remove('show'); } catch (e) {}
     try { if (typeof startRun === 'function') startRun(); } catch (e) {}
+    // run.py injects the real BOOTSTRAP ahead of us; if it already installed the
+    // fallback nav, use that and do not shadow it with a stale copy.
+    if (window.__x3fNav) { window.__usingFallback = !window.__x3fPageNav; return; }
     try {
       if (!window.__x3fNav) {
         window.__usingFallback = true;
@@ -133,13 +136,22 @@
     }
     return null;
   }
-  function reseat(el) {
-    if (window.X3FNav) { X3FNav.set(el); return; }
-    if (window.__fallbackSet) window.__fallbackSet(el);
-  }
+  /* Two ways to explore, because the two navs give us different leverage.
 
-  /* Breadth-first walk of the menu graph using only the remote. */
-  function walk() {
+     On pages driven by x3f-nav.js we can seat the cursor anywhere (X3FNav.set),
+     so we do a proper breadth-first walk of the menu graph and reachability is
+     EXHAUSTIVE - that is what caught the guided coach having no focusable
+     controls at all.
+
+     Game pages are driven by the injected bootstrap, whose cursor is private.
+     There we can only press directions and see where we land, so coverage is
+     best-effort and "not reached" is advisory, not a failure. Landing on an
+     invisible control or escaping an overlay is still a hard failure either way,
+     since neither claim depends on coverage. */
+  function exhaustive() { return !!(window.X3FNav || window.__x3fSeat); }
+  function seat(el) { if (window.X3FNav) X3FNav.set(el); else if (window.__x3fSeat) window.__x3fSeat(el); }
+
+  function walkBFS() {
     var dirs = ['right', 'down', 'left', 'up'], seen = [], dead = [];
     window.__x3fNav('down');
     var start = focused();
@@ -149,7 +161,7 @@
     while (queue.length && guard++ < 300) {
       var from = queue.shift();
       for (var d = 0; d < dirs.length; d++) {
-        reseat(from);
+        seat(from);
         window.__x3fNav(dirs[d]);
         var after = focused();
         if (!after) { dead.push(name(from) + ' ' + dirs[d] + ' -> NOTHING'); continue; }
@@ -158,6 +170,27 @@
     }
     return { reach: seen, dead: dead };
   }
+
+  function walkSweep() {
+    var seen = [], dead = [], plan = [];
+    function note() { var f = focused(); if (f && seen.indexOf(f) < 0) seen.push(f); return f; }
+    function run(dir, n) { for (var i = 0; i < n; i++) plan.push(dir); }
+    for (var pass = 0; pass < 3; pass++) {
+      for (var row = 0; row < 6; row++) { run('right', 8); run('down', 1); run('left', 8); run('down', 1); }
+      for (var col = 0; col < 6; col++) { run('up', 8); run('right', 1); run('down', 8); run('right', 1); }
+    }
+    if (plan.length > 700) plan.length = 700;
+    window.__x3fNav('down');
+    if (!note()) return { reach: [], dead: ['nothing focusable at all'] };
+    for (var k = 0; k < plan.length; k++) {
+      var before = focused();
+      window.__x3fNav(plan[k]);
+      if (!note() && before) dead.push(name(before) + ' ' + plan[k] + ' -> NOTHING');
+    }
+    return { reach: seen, dead: dead };
+  }
+
+  function walk() { return exhaustive() ? walkBFS() : walkSweep(); }
 
   function audit(label) {
     var ov = openOverlay();
@@ -171,9 +204,11 @@
     OUT.push('--- ' + label + ' ---');
     OUT.push('  overlay: ' + (ov ? (ov.id || ov.className) : 'none') +
              '   expected controls: ' + expect.length + '   reached: ' + reached.length +
-             (window.__usingFallback ? '   [bootstrap nav]' : '   [x3f-nav]'));
-    OUT.push('  ' + (missing.length ? 'UNREACHABLE (' + missing.length + '): ' + missing.map(name).join(', ')
-                                    : 'ok - every visible control is reachable'));
+             (exhaustive() ? '   [x3f-nav, exhaustive]' : '   [bootstrap nav, sweep]'));
+    OUT.push('  ' + (missing.length
+      ? (exhaustive() ? 'UNREACHABLE (' : 'not reached, sweep coverage is best-effort (')
+        + missing.length + '): ' + missing.map(name).join(', ')
+      : 'ok - every visible control is reachable'));
     OUT.push('  ' + (strays.length ? 'FOCUSED INVISIBLE (' + strays.length + '): ' + strays.map(name).join(', ')
                                    : 'ok - nothing invisible is focusable'));
     if (ov) OUT.push('  ' + (outside.length ? 'ESCAPED OVERLAY (' + outside.length + '): ' + outside.map(name).join(', ')

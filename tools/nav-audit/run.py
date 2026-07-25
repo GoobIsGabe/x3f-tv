@@ -70,6 +70,28 @@ def main():
         return 2
 
     stage = Path(tempfile.mkdtemp(prefix="x3f-nav-"))
+
+    # Pull the LIVE BOOTSTRAP out of MainActivity rather than keeping a copy here.
+    # A copy would drift, and the audit would then be testing fiction. This also
+    # means a syntax error in the injected JS shows up as an audit failure.
+    java = (REPO / "app" / "src" / "main" / "java" / "com" / "goob" / "x3ftv" /
+            "MainActivity.java").read_text(encoding="utf-8")
+    m = re.search(r'BOOTSTRAP\s*=\s*"""(.*?)""";', java, re.S)
+    if not m:
+        print("could not find the BOOTSTRAP text block in MainActivity.java")
+        return 2
+    boot = m.group(1)
+    # The bootstrap keeps its cursor private, so the walker cannot seat focus and
+    # coverage collapses to whatever path the arrows happen to take. Add a test
+    # seam at STAGING time only - the shipped string is untouched - so the audit
+    # can walk the graph exhaustively while still running the real logic.
+    seam_anchor = "   setInterval(function(){ try{ var sc=scope();"
+    if seam_anchor not in boot:
+        print("BOOTSTRAP changed shape: the audit's focus seam no longer applies.\n"
+              "Fix the anchor in run.py, or reachability checking is silently weakened.")
+        return 2
+    boot = boot.replace(seam_anchor, "   window.__x3fSeat=setFocus;\n" + seam_anchor, 1)
+    (stage / "bootstrap.js").write_text(boot, encoding="utf-8")
     # the pages load their siblings by relative path, so stage the whole bundle
     for f in ASSETS.iterdir():
         if f.is_file():
@@ -85,8 +107,10 @@ def main():
         if not src.exists():
             missing.append(name)
             continue
+        # the shell injects BOOTSTRAP into every page EXCEPT the launcher
+        boot_tag = "" if name in ("launcher", "index") else '<script src="bootstrap.js"></script>'
         html = src.read_text(encoding="utf-8").replace(
-            "</body>", '<script src="audit.js"></script><script src="cases.js"></script></body>')
+            "</body>", boot_tag + '<script src="audit.js"></script><script src="cases.js"></script></body>')
         page = stage / ("audit_" + name + ".html")
         page.write_text(html, encoding="utf-8")
 

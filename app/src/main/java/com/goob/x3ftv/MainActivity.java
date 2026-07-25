@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
@@ -45,7 +46,9 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -79,11 +82,18 @@ public class MainActivity extends Activity {
     private long lastInject = 0;
     private long dlId = -1;
     private String barState = "wait", barText = "Connecting…";
+    private android.content.SharedPreferences prefs;
+    /* Everything the scan has seen this session, address -> name, so the user can
+       pick the bar by hand when the advertisement is not self-describing. */
+    private final Map<String, String> seen = new LinkedHashMap<>();
+    private boolean triedKnown = false;
+    private long watchdog = 0;
 
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        try { prefs = getSharedPreferences("x3f", MODE_PRIVATE); } catch (Exception ignored) {}
         buildWeb();
         try {
             IntentFilter f = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
@@ -148,8 +158,76 @@ public class MainActivity extends Activity {
     }
 
     // ---------- BLE ----------
+
+    /* Names the bar is known to advertise under. Case-insensitive, because a
+       lowercase name used to slip past the old toUpperCase().contains("X3"). */
+    private boolean nameLooksLikeBar(String n) {
+        if (n == null) return false;
+        String u = n.toUpperCase();
+        return u.contains("X3") || u.contains("FORCE") || u.contains("JAQUISH");
+    }
+    private String safeNameOf(BluetoothDevice d) {
+        try { return d.getName(); } catch (Exception e) { return null; }
+    }
+
+    /* Scanning alone cannot find the bar in two very ordinary situations:
+         1. it is already connected (to this TV from a previous run, or to your
+            phone) - a connected peripheral stops advertising, so it is invisible
+            to every scan, forever;
+         2. its advertisement carries neither the name nor the service UUID, which
+            is what the matcher needs - if the system's name cache gets wiped the
+            same firmware suddenly stops matching.
+       So before scanning, go straight at the devices we can address directly. */
+    private boolean tryKnownDevices() {
+        try {
+            BluetoothManager mgr = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+            if (mgr != null) {
+                List<BluetoothDevice> live = mgr.getConnectedDevices(BluetoothProfile.GATT);
+                if (live != null) for (BluetoothDevice d : live) {
+                    if (nameLooksLikeBar(safeNameOf(d))) {
+                        setBar("wait", "Bar already connected - attaching…");
+                        connectTo(d); armWatchdog(); return true;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        try {
+            String last = (prefs != null) ? prefs.getString("lastBar", null) : null;
+            if (last != null && adapter != null) {
+                BluetoothDevice d = adapter.getRemoteDevice(last);
+                if (d != null) { setBar("wait", "Reconnecting to your bar…"); connectTo(d); armWatchdog(); return true; }
+            }
+        } catch (Exception ignored) {}
+        try {
+            if (adapter != null && adapter.getBondedDevices() != null) {
+                for (BluetoothDevice d : adapter.getBondedDevices()) {
+                    if (nameLooksLikeBar(safeNameOf(d))) {
+                        setBar("wait", "Connecting to paired bar…");
+                        connectTo(d); armWatchdog(); return true;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    /* A direct connect has no timeout of its own - if the address is stale it can
+       sit on "Reconnecting…" forever. Fall back to scanning if it stalls. */
+    private void armWatchdog() {
+        final long id = ++watchdog;
+        ui.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (id != watchdog || connected) return;
+                connecting = false; closeGatt();
+                setBar("wait", "No answer - scanning instead…");
+                startScan();
+            }
+        }, 9000);
+    }
+
     private void startScan() {
         if (scanning || connected || connecting || adapter == null) return;
+        if (!triedKnown) { triedKnown = true; if (tryKnownDevices()) return; }
         try {
             scanner = adapter.getBluetoothLeScanner();
             if (scanner == null) { setBar("wait", "Bluetooth off"); return; }
@@ -167,7 +245,19 @@ public class MainActivity extends Activity {
             String name = safeName(d, result);
             boolean hasService = result.getScanRecord() != null && result.getScanRecord().getServiceUuids() != null
                     && result.getScanRecord().getServiceUuids().contains(new ParcelUuid(SERVICE));
-            boolean looksLikeBar = (name != null && name.toUpperCase().contains("X3")) || hasService;
+            // remember everything, so the launcher can offer a manual pick
+            try {
+                String addr = d.getAddress();
+                boolean isNew = false;
+                synchronized (seen) {
+                    if (addr != null && !seen.containsKey(addr)) {
+                        seen.put(addr, name != null ? name : "(unnamed device)");
+                        isNew = true;
+                    }
+                }
+                if (isNew) pushDevices();
+            } catch (Exception ignored) {}
+            boolean looksLikeBar = nameLooksLikeBar(name) || hasService;
             if (looksLikeBar && !connecting && !connected) connectTo(d);
         }
         @Override public void onScanFailed(int c) { setBar("", "Scan failed"); }
@@ -211,6 +301,9 @@ public class MainActivity extends Activity {
                 BluetoothGattDescriptor cccd = ch.getDescriptor(CCCD);
                 if (cccd != null) { cccd.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE); g.writeDescriptor(cccd); }
                 connected = true; connecting = false; haveBaseline = false; setBar("on", "Bar: LIVE");
+                // remember it: next launch can go straight at it, which works even
+                // when the bar is not advertising and a scan would never see it
+                try { if (prefs != null && targetAddress != null) prefs.edit().putString("lastBar", targetAddress).apply(); } catch (Exception ignored) {}
             } catch (SecurityException e) { setBar("", "Connect permission?"); }
         }
         @Override public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic ch, byte[] value) { handleForce(value); }
@@ -245,6 +338,56 @@ public class MainActivity extends Activity {
     private class Bridge {
         @JavascriptInterface public void reZero() { haveBaseline = false; }
         @JavascriptInterface public void checkUpdate() { new Thread(MainActivity.this::doCheckUpdate).start(); }
+        /* Manual escape hatch: the launcher lists everything the scan saw and the
+           user picks the bar with the remote. Works when the advertisement gives
+           us nothing to match on. */
+        @JavascriptInterface public void pickDevice(final String addr) {
+            ui.post(new Runnable() { @Override public void run() {
+                try {
+                    stopScan(); closeGatt();
+                    connecting = false; connected = false;
+                    BluetoothDevice d = adapter.getRemoteDevice(addr);
+                    if (d == null) { setBar("", "Bad address"); return; }
+                    connectTo(d); armWatchdog();
+                } catch (Exception e) { setBar("", "Could not connect"); }
+            } });
+        }
+        /* Start over cleanly - drops any half-open GATT, which is what gets the
+           stack unstuck without reopening the app. */
+        @JavascriptInterface public void rescan() {
+            ui.post(new Runnable() { @Override public void run() {
+                watchdog++;                       // cancel any pending fallback
+                stopScan(); closeGatt();
+                connecting = false; connected = false; triedKnown = false;
+                synchronized (seen) { seen.clear(); }
+                pushDevices();
+                setBar("wait", "Rescanning…");
+                ensurePermsThenScan();
+            } });
+        }
+    }
+    private String jsSafe(String s) {
+        if (s == null) return "";
+        return s.replace("\\", " ").replace("\"", " ").replace("'", " ")
+                .replace("\n", " ").replace("\r", " ").trim();
+    }
+    private void pushDevices() {
+        if (web == null || !webReady) return;
+        StringBuilder sb = new StringBuilder("[");
+        synchronized (seen) {
+            boolean firstItem = true;
+            for (Map.Entry<String, String> e : seen.entrySet()) {
+                if (!firstItem) sb.append(",");
+                firstItem = false;
+                sb.append("{\"a\":\"").append(jsSafe(e.getKey()))
+                  .append("\",\"n\":\"").append(jsSafe(e.getValue())).append("\"}");
+            }
+        }
+        sb.append("]");
+        final String js = "window.__x3fDevices&&window.__x3fDevices(" + sb + ")";
+        ui.post(new Runnable() { @Override public void run() {
+            try { web.evaluateJavascript(js, null); } catch (Exception ignored) {}
+        } });
     }
     private void pushUpdate(String msg) {
         if (web == null) return;
@@ -344,7 +487,12 @@ public class MainActivity extends Activity {
  try{ window.__x3fNative=true; }catch(e){}
  try{ baseline=0; }catch(e){}
  try{ var st=document.getElementById('x3fCss'); if(!st){ st=document.createElement('style'); st.id='x3fCss';
-   st.textContent='.app{max-width:none!important;width:100%!important}html,body{width:100%!important;height:100%!important}.x3f-focus{outline:4px solid #39f5c4!important;outline-offset:2px;border-radius:8px}';
+   st.textContent='.app{max-width:none!important;width:100%!important}html,body{width:100%!important;height:100%!important}.x3f-focus{outline:4px solid #39f5c4!important;outline-offset:2px;border-radius:8px}'
+     /* The TV button asks for fullscreen + an orientation lock. In this shell the
+        WebView is already fullscreen and the activity is locked to landscape, so
+        it does nothing at all - a button that lies. Hide it here rather than in
+        the game, which still needs it in a phone browser. */
+     +'.tvbtn{display:none!important}';
    (document.head||document.documentElement).appendChild(st); } }catch(e){}
  try{ if(window.__x3fDrv)clearInterval(window.__x3fDrv);
    window.__x3fDrv=setInterval(function(){ try{ force=+window.__x3fForce||0; }catch(e){} },16); }catch(e){}
