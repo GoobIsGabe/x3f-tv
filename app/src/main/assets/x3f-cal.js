@@ -38,7 +38,13 @@
 
   var KEY = 'x3f_exCal';
   var BAND_DEF = { 'White': 130, 'Light Gray': 230, 'Dark Gray': 330, 'Black': 430, 'Elite Black': 600 };
-  var MIN_SPAN = 40;                 // below this the meter is twitch, not signal
+  /* The smallest range we will scale by. This started at 40 and was wrong: a
+     White band overhead press genuinely spans only ~20-35 units between its
+     start tension and an all-out press, so honest calibrations were refused as
+     "too narrow to be real". 10 is low enough to accept a light band and still
+     high enough that a divide by it is not noise amplification. */
+  var MIN_SPAN = 10;
+  var MIN_PEAK = 25;                 // a set peak below this is not a real effort
 
   function read(k, d) {
     try { var v = JSON.parse(localStorage.getItem(k)); return (v === null || v === undefined) ? d : v; }
@@ -112,7 +118,7 @@
      the moment you calibrate one, auto is false and this returns early. Do not
      relax that check without also un-flooring the peak. */
   function observe(sl, band, peak) {
-    if (!sl || !(peak > MIN_SPAN)) return;
+    if (!sl || !(peak > MIN_PEAK)) return;
     var m = map(), k = id(sl, band), e = m[k];
     if (e && !e.auto) return;
     if (e && e.hi >= peak) { e.n = (e.n || 1) + 1; flush(m); return; }

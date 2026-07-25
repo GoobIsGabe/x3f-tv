@@ -192,9 +192,14 @@
           X3FCal.observe('bent-row', 'White', 260);
           ok('an uncalibrated movement learns its own ceiling',
              X3FCal.range('bent-row', 'White').hi === 260, String(X3FCal.range('bent-row', 'White').hi));
-          ok('a range too narrow to be real is refused',
-             X3FCal.save('drag-curl', 'White', 100, 120) === false);
-          X3FCal.clear('overhead-press', 'White'); X3FCal.clear('bent-row', 'White');
+          /* A White band genuinely spans only ~20-35 units between its start
+             tension and an all-out effort. The first threshold was 40 and
+             refused honest calibrations as "too narrow to be real". */
+          ok('a light band\'s narrow but real range is accepted',
+             X3FCal.save('drag-curl', 'White', 100, 120) === true);
+          ok('a max no higher than the hold is still refused',
+             X3FCal.save('upright-row', 'White', 100, 100) === false);
+          ['overhead-press', 'bent-row', 'drag-curl'].forEach(function (s) { X3FCal.clear(s, 'White'); });
         }
         ok('hype module loaded', !!window.X3FHype);
         ok('music module loaded', !!window.X3FMusic);

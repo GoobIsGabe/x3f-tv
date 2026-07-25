@@ -19,7 +19,7 @@ tools/  sync-from-web.py, which does the generating
 
 `E:\Fun\X3 Bar` was the old separate home of the web games. It is **retired** — it had a git remote pointing at this same repo and a DEPLOY.md telling you to force-push, which would have overwritten the Android app. Everything that matters was moved into `web/`. Don't develop there.
 
-Current status: **v1.4**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
+Current status: **v1.5**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -90,6 +90,10 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - `routine.html` — pick Push / Pull / Custom, then run the day. Per movement it coaches the setup + strongest-range start, shows the form demonstrator, launches the chosen game pre-configured (`?from=routine&band=…&ex=…`), logs the set and runs a rest timer to the next lift. Days are editable (add / reorder / remove from the 11 movements); sets, bands, tempo and progress persist. Back → launcher → Workout resumes the session and asks whether the set counted.
 - `x3f-form.js` — the animated figure. Poses are authored as hip/hand/foot targets with the knees and elbows solved by two-bone IK, driven by live force: it rises, holds, eases, flushes and trembles near max, and flips to "diminishing range" when your rep tops start collapsing (the X3 burnout). The foot hinges on the ball with the contact pinned to the floor, so a calf raise really rises onto the toes.
 - `library.html` + `progress.html` bundled; launcher gained Workout (hero card), Library and Progress.
+
+**v1.5 — calibration you can actually complete, with the movement on screen.**
+- **The "too narrow to be real" refusal was my bug, not a bad capture.** v1.4 required 40 force units between the hold and the max. A White band overhead press genuinely spans only ~20-35, so honest calibrations were rejected with no way to proceed. The floor is now 10, and the refusal *says what it measured* — "Only 6 between hold and max; needs 10" or "The max (70) came out no higher than the hold (90)" — instead of a dead end. Verified across all three cases: 52-78 on a White band saves, 90-96 is refused, max-below-hold is refused with the right reason.
+- **Calibrate shows the animated figure**, the same rig the guided Routine uses. Idle it loops the movement as a reminder of what you are about to do; during **HOLD THE START** it is pinned to the start pose, which is the instruction rendered as a picture rather than a sentence; during the max it rides your live force. `create()` sizes its canvas on construction and this one has no layout yet at that moment, so it also asks for a resize once the page settles — otherwise the figure draws stretched from the 300x150 default.
 
 **v1.4 — every movement gets its own scale, and its own name for the work.**
 - **`x3f-cal.js` — per-movement calibration (`x3f_exCal`).** One number per band was wrong twice: the ceiling differs per movement, and so does the **floor**. An overhead press starts at chin height with the band already under the midfoot, so its start position is *already carrying real load* — and every game treated 0 as "no effort". Measured in Bloom: merely holding the overhead-press start position read **74% up the screen** before a rep had been done. A movement+band is now a **range** (`lo` = start tension, `hi` = all-out max); games subtract `lo` and scale to `hi - lo`, so start = 0%, midpoint = 50%, max = 100%. Wiring per game is two lines, because the signal handed to the game is already floored and spanned.

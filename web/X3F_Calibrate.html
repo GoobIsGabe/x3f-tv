@@ -19,7 +19,14 @@ body{font-family:var(--d);color:var(--txt);background:radial-gradient(120vw 60vh
 a.home{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 13px}
 .status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);font-size:12px;color:var(--dim);font-family:var(--n)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--hot)}.dot.on{background:var(--accent);box-shadow:0 0 12px var(--accent)}.dot.wait{background:var(--gold)}
-.mid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;min-height:0}
+.mid{flex:1;display:flex;align-items:center;justify-content:center;gap:14px;min-height:0}
+/* The figure sits beside the readout, so you can see the movement you are being
+   asked to hold instead of guessing it from a sentence. */
+.figure{flex:0 0 34%;max-width:210px;align-self:stretch;min-height:0;border-radius:16px;
+ background:rgba(255,255,255,.03);border:1px solid var(--brd);overflow:hidden}
+#formCv{width:100%;height:100%;display:block}
+.readout{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px}
+@media (max-width:430px){.mid{flex-direction:column;gap:8px}.figure{flex:0 0 34%;width:100%;max-width:none}}
 .eyebrow{font-family:var(--n);font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--dim)}
 .big{font-family:var(--n);font-weight:700;font-variant-numeric:tabular-nums;font-size:clamp(3.6rem,20vw,7rem);line-height:.95}
 .big.hot{color:var(--hot)}.big.accent{color:var(--accent)}
@@ -48,9 +55,12 @@ select{flex:1;font-family:var(--n);font-weight:700;font-size:14px;background:var
 <a class="home" href="index.html" data-nav data-nav-back>Home</a></div>
 <div class="rowsel"><select id="exSel"></select><select id="bandSel"></select></div>
 <div class="mid">
+<div class="figure"><canvas id="formCv"></canvas></div>
+<div class="readout">
 <div class="eyebrow" id="eye">Live Force</div>
 <div class="big" id="big">0</div>
 <div class="sub" id="sub">Pick the movement and the band you use for it, then run the two captures.</div>
+</div>
 </div>
 <div class="stored" id="stored"></div>
 <div class="btnrow" style="margin-top:12px"><button class="cta ghost" id="zeroBtn" style="flex:1">Re-Zero</button><button class="cta" id="calBtn" style="flex:2">Calibrate</button></div>
@@ -80,7 +90,26 @@ const EXL=(window.X3FEX&&X3FEX.list)?X3FEX.list:[];
 const exSel=$('exSel');
 let slug=(window.X3FCal?X3FCal.slug():null)||(EXL[0]&&EXL[0].slug)||null;
 EXL.forEach(e=>{const o=document.createElement('option');o.value=e.slug;o.textContent=e.name;o.selected=e.slug===slug;exSel.appendChild(o)});
-exSel.onchange=()=>{slug=exSel.value;showStored()};
+exSel.onchange=()=>{slug=exSel.value;showStored();if(fig&&X3FForm.has(slug))fig.setExercise(slug)};
+
+/* The same animated figure the guided Routine uses, as a reminder of the
+   movement you are calibrating - and, during the hold, as a picture of the exact
+   position you are being asked to hold. Idle it loops the rep on a tempo; in the
+   captures it is driven live, so it moves with you. */
+let fig=null,figN=0;
+(function(){
+  try{
+    if(!window.X3FForm||!X3FForm.has(slug))return;
+    fig=X3FForm.create($('formCv'),{exercise:slug,mode:'tempo',tempo:3400,
+      getN:()=>figN,theme:{accent:'#2ff0b0',band:'#ffd35c',dim:'#8ba0a8',skin:'#e9f6f1',deep:'#4b6b66'}});
+    /* create() sizes the canvas immediately, and at that moment this one has no
+       layout yet - it bails and the figure stays at the 300x150 default, drawn
+       stretched. Its ResizeObserver fixes it on the first frame in a live
+       browser, but ask once the page has settled rather than relying on that. */
+    addEventListener('load',()=>{try{fig.resize()}catch(e){}});
+    setTimeout(()=>{try{fig.resize()}catch(e){}},120);
+  }catch(e){fig=null}
+})();
 function verb(){return (window.X3FForm&&X3FForm.verb)?X3FForm.verb(slug):'PULL'}
 function exName(){const e=EXL.filter(x=>x.slug===slug)[0];return e?e.name:'this movement'}
 
@@ -139,7 +168,22 @@ $('calBtn').onclick=()=>{ if(phase!=='idle')return;
   if(!slug){alert('Pick a movement first.');return;}
   if(baseline==null&&!demo){alert('Connect and let it zero first.');return;}
   phase='count';pEnd=performance.now()+3000; };
+/* What the figure should be doing, per phase. During HOLD it is pinned to the
+   start pose - that is the whole instruction, and a picture carries it better
+   than a sentence. During the max it rides your actual force against a running
+   estimate of the range, because the real one is what we are still measuring. */
+function driveFigure(){
+  if(!fig)return;
+  if(phase==='hold'||phase==='count'){fig.setMode('live');figN=0;return}
+  if(phase==='ready'){fig.setMode('live');figN=0;return}
+  if(phase==='cap'){fig.setMode('live');
+    const est=Math.max(30,(capMax||0)-capLo);
+    figN=Math.max(0,Math.min(1,(force-capLo)/est));return}
+  if(phase==='done'){fig.setMode('live');figN=1;return}
+  fig.setMode('tempo');                       // idle: just show me the movement
+}
 function loop(now){
+  driveFigure();
   if(phase==='count'){const s=Math.ceil((pEnd-now)/1000);$('eye').textContent='Get ready';$('big').className='big';$('big').textContent=s>0?s:'GO';$('sub').textContent='Get into your START position for the '+exName()+' and hold it';
     if(!loop.lastS||loop.lastS!==s){loop.lastS=s;if(s>0)beep(520,0.08);else beep(760,0.12)}
     if(now>=pEnd){phase='hold';pEnd=now+3000;holdSum=0;holdN=0;} }
@@ -160,8 +204,13 @@ function loop(now){
   else if(phase==='done'){
     if(loop.ok){$('eye').textContent=exName()+' · '+band;$('big').className='big accent';$('big').textContent=Math.round(capLo)+'–'+Math.round(capMax);
       $('sub').textContent='Saved. Games now treat '+Math.round(capLo)+' as the bottom of this movement and '+Math.round(capMax)+' as the top.';}
-    else{$('eye').textContent='Not saved';$('big').className='big';$('big').textContent=Math.round(capMax);
-      $('sub').textContent='That range was too narrow to be real — check the setup and run it again.';}
+    else{$('eye').textContent='Not saved';$('big').className='big';$('big').textContent=Math.round(capLo)+'–'+Math.round(capMax);
+      /* Say what we actually measured. "Too narrow" on its own is a dead end -
+         you cannot tell whether the hold was wrong, the press was, or the bar
+         drifted. The numbers make it obvious which. */
+      $('sub').textContent=capMax<=capLo
+        ? 'The max ('+Math.round(capMax)+') came out no higher than the hold ('+Math.round(capLo)+') — re-zero, hold your start position, then press all out.'
+        : 'Only '+Math.round(capMax-capLo)+' between hold and max; needs '+(window.X3FCal?X3FCal.minSpan:10)+'. Check the band is loaded at your start position, then run it again.';}
     setTimeout(()=>{if(phase==='done')phase='idle'},3200); }
   else{$('eye').textContent='Live Force';$('big').className='big';$('big').textContent=Math.round(force);}
   $('calBtn').textContent=phase==='idle'?'Calibrate '+exName():'...';
