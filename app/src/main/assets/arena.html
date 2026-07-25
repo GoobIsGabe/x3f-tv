@@ -79,7 +79,8 @@ body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-s
 input[type=number],select{font-family:var(--num);background:rgba(0,0,0,.25);color:var(--txt);border:1px solid var(--brd2);border-radius:10px;padding:9px 10px;font-size:15px;width:88px}
 select{width:74px}
 @media(min-width:620px){.huge{font-size:6.4rem}.app{border-left:1px solid var(--brd);border-right:1px solid var(--brd)}}
-@media(orientation:landscape) and (max-height:560px){.huge{font-size:clamp(2.4rem,11vh,4rem)}.ring{max-height:56vh;width:min(40vh,220px);height:min(40vh,220px)}.chip{padding:8px 12px}.view{padding:6px 16px 8px}}</style></head>
+@media(orientation:landscape) and (max-height:560px){.huge{font-size:clamp(2.4rem,11vh,4rem)}.ring{max-height:56vh;width:min(40vh,220px);height:min(40vh,220px)}.chip{padding:8px 12px}.view{padding:6px 16px 8px}}</style><script src="x3f-cal.js"></script>
+</head>
 <body>
 <svg width="0" height="0" style="position:absolute"><defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2ff0b0"/><stop offset="1" stop-color="#37d6ff"/></linearGradient></defs></svg>
 <div class="app">
@@ -160,7 +161,16 @@ const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
 const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
 let band=store.get('band','White');
 let bandMax=Object.assign({},BAND_DEF,store.get('bandMax',{}));
-function ref(){return Math.max(20,bandMax[band]||130)}
+const EXSLUG=window.X3FCal?X3FCal.slug():null;
+/* The band this run is actually using. A ?band= override no longer writes the
+   global setting, so the set log has to ask the game, not localStorage. */
+window.__x3fBand=function(){return band};
+/* The span of THIS movement's calibrated range, not the raw band max: a chest
+   press and an overhead press on one band are nowhere near the same scale. */
+function ref(){return window.X3FCal?X3FCal.span(EXSLUG,band):Math.max(20,bandMax[band]||130)}
+/* The movement's own start position already carries load (an overhead press
+   starts at chin height with the band loaded). That load is the zero. */
+function calLo(){return window.X3FCal?X3FCal.floor(EXSLUG,band):0}
 function logSession(o){try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push(Object.assign({t:Date.now(),b:band},o));while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}}
 const RC=2*Math.PI*52;$('ringFg').style.strokeDasharray=RC;$('ringFg').style.strokeDashoffset=RC;
 async function connect(){
@@ -187,7 +197,7 @@ function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=perf
 function onSample(){
   if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
   if(baseline==null)baseline=raw;
-  force=Math.max(0,raw-baseline)*scale;
+  force=Math.max(0,raw-baseline-calLo())*scale;
   if(force>sessionPeak)sessionPeak=force;
 }
 let demoF=0,pull=false;
@@ -214,7 +224,7 @@ const bandSel=$('bandSel'),bandMaxInp=$('bandMaxInp');
 BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';bandSel.appendChild(o)});
 function syncBand(){bandSel.value=band;bandMaxInp.value=Math.round(bandMax[band]||130)}
 syncBand();
-(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;store.set('band',band);syncBand();}const m=p.get('mode');if(m){const tb=document.querySelector('.tab[data-m=\"'+m+'\"]');if(tb)tb.click();}})();
+(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;syncBand();}const m=p.get('mode');if(m){const tb=document.querySelector('.tab[data-m=\"'+m+'\"]');if(tb)tb.click();}})();
 bandSel.onchange=()=>{band=bandSel.value;store.set('band',band);sessionPeak=0;bandMaxInp.value=Math.round(bandMax[band]||130)};
 bandMaxInp.onchange=()=>{const v=parseFloat(bandMaxInp.value);if(v>0){bandMax[band]=v;store.set('bandMax',bandMax)}};
 $('bandCap').onclick=()=>{if(sessionPeak>10){bandMax[band]=Math.round(sessionPeak);store.set('bandMax',bandMax);bandMaxInp.value=bandMax[band]}closeSheet()};

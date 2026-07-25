@@ -57,7 +57,8 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 .up .lv{font-family:var(--n);font-size:10px;color:var(--cyan);letter-spacing:1px}
 .buy{font-family:var(--d);font-weight:700;font-size:13px;border:none;border-radius:10px;padding:9px 12px;cursor:pointer;background:linear-gradient(180deg,var(--gold),#e0a91b);color:#2a1e00;flex:0 0 auto;min-width:64px}
 .buy:disabled{opacity:.4;filter:grayscale(.5)}
-</style></head>
+</style><script src="x3f-cal.js"></script>
+</head>
 <body>
 <div class="app">
 <div class="topbar">
@@ -116,7 +117,18 @@ function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e)
 const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
 const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
 let band=xget('band','White'), bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
-function ref(){return Math.max(60,bandMax[band]||130)}
+const EXSLUG=window.X3FCal?X3FCal.slug():null;
+/* The band this run is actually using. A ?band= override no longer writes the
+   global setting, so the set log has to ask the game, not localStorage. */
+window.__x3fBand=function(){return band};
+/* The span of THIS movement's calibrated range, not the raw band max: a chest
+   press and an overhead press on one band are nowhere near the same scale. */
+function ref(){return window.X3FCal?X3FCal.span(EXSLUG,band):Math.max(60,bandMax[band]||130)}
+/* The movement's own start position already carries load (an overhead press
+   starts at chin height with the band loaded). That load is the zero. */
+function calLo(){return window.X3FCal?X3FCal.floor(EXSLUG,band):0}
+// how to name the effort on screen - overwritten from the movement, if we know it
+let EFFORT='PULL';
 let hiScore=xget('novaHi',0), bestSector=xget('novaSector',0), ach=xget('novaAch',{});
 const bandSel=$('bandSel');
 BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSel.appendChild(o)});
@@ -148,7 +160,7 @@ async function connect(){
 function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
 function onSample(){
   if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
-  if(baseline==null)baseline=raw;force=Math.max(0,raw-baseline);
+  if(baseline==null)baseline=raw;force=Math.max(0,raw-baseline-calLo());
 }
 let demoF=0,pull=false;
 function startDemo(){demo=true;connected=false;baseline=0;setStatus('Demo','on');
@@ -516,7 +528,7 @@ function drawHUD(norm,now){
   // banner
   if(now<bannerT){const a=Math.min(1,(bannerT-now)/400);ctx.globalAlpha=a;ctx.textAlign='center';ctx.font='700 '+Math.min(W,H)*0.06+"px 'Fredoka',sans-serif";ctx.fillStyle='#eee9ff';ctx.shadowColor='#8f7dff';ctx.shadowBlur=20;ctx.fillText(banner,W/2,H*0.34);ctx.shadowBlur=0;ctx.textAlign='left';ctx.globalAlpha=1;}
   // idle hint
-  if(scene==='play'&&norm<0.06&&enemies.length){ctx.globalAlpha=0.6+0.3*Math.sin(now*0.006);ctx.textAlign='center';ctx.fillStyle='#a99fd6';ctx.font='600 '+fs*0.7+"px 'Space Grotesk',sans-serif";ctx.fillText('PULL TO FIRE THE BEAM',W/2,player.y-Math.min(W,H)*0.12);ctx.textAlign='left';ctx.globalAlpha=1;}
+  if(scene==='play'&&norm<0.06&&enemies.length){ctx.globalAlpha=0.6+0.3*Math.sin(now*0.006);ctx.textAlign='center';ctx.fillStyle='#a99fd6';ctx.font='600 '+fs*0.7+"px 'Space Grotesk',sans-serif";ctx.fillText(EFFORT+' TO FIRE THE BEAM',W/2,player.y-Math.min(W,H)*0.12);ctx.textAlign='left';ctx.globalAlpha=1;}
 }
 
 // ---------- main loop ----------
@@ -540,7 +552,7 @@ const music=window.X3FMusic?X3FMusic.create({mood:'nova',
 (function(){const b=$('musicBtn');if(!b)return;
   const sync=()=>{b.textContent=(music&&music.isOn())?'Music on':'Music off';};
   sync();b.onclick=()=>{if(music)music.toggle();sync();};})();
-(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;xset('band',band);bandSel.value=band;}})();
+(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;bandSel.value=band;}})();
 // ---------- live form demonstrator ----------
 // If we were launched for a specific X3 movement (Library / guided Routine), mirror
 // it in the corner: the figure rises, strains and eases with your actual force.
@@ -548,6 +560,7 @@ const music=window.X3FMusic?X3FMusic.create({mood:'nova',
   const p=new URLSearchParams(location.search);let slug=p.get('ex');
   if(!slug){try{const s=JSON.parse(localStorage.getItem('x3f_session')||'null');if(s&&s.active&&s.pending)slug=s.pending.slug}catch(e){}}
   if(!slug||!window.X3FForm||!X3FForm.has(slug))return;
+  EFFORT=X3FForm.verb(slug);            // "PRESS TO FIRE THE BEAM" on a push day
   X3FForm.mount({exercise:slug,host:$('stage'),toggleBtn:$('formBtn'),
     getN:()=>force/ref(),theme:{accent:'#8f7dff',band:'#ffd35c',dim:'#93a1c4',skin:'#e7ecff',deep:'#5b5c8f'}});
 })();

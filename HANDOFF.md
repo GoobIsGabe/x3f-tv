@@ -19,7 +19,7 @@ tools/  sync-from-web.py, which does the generating
 
 `E:\Fun\X3 Bar` was the old separate home of the web games. It is **retired** — it had a git remote pointing at this same repo and a DEPLOY.md telling you to force-push, which would have overwritten the Android app. Everything that matters was moved into `web/`. Don't develop there.
 
-Current status: **v1.3**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
+Current status: **v1.4**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -90,6 +90,17 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - `routine.html` — pick Push / Pull / Custom, then run the day. Per movement it coaches the setup + strongest-range start, shows the form demonstrator, launches the chosen game pre-configured (`?from=routine&band=…&ex=…`), logs the set and runs a rest timer to the next lift. Days are editable (add / reorder / remove from the 11 movements); sets, bands, tempo and progress persist. Back → launcher → Workout resumes the session and asks whether the set counted.
 - `x3f-form.js` — the animated figure. Poses are authored as hip/hand/foot targets with the knees and elbows solved by two-bone IK, driven by live force: it rises, holds, eases, flushes and trembles near max, and flips to "diminishing range" when your rep tops start collapsing (the X3 burnout). The foot hinges on the ball with the contact pinned to the floor, so a calf raise really rises onto the toes.
 - `library.html` + `progress.html` bundled; launcher gained Workout (hero card), Library and Progress.
+
+**v1.4 — every movement gets its own scale, and its own name for the work.**
+- **`x3f-cal.js` — per-movement calibration (`x3f_exCal`).** One number per band was wrong twice: the ceiling differs per movement, and so does the **floor**. An overhead press starts at chin height with the band already under the midfoot, so its start position is *already carrying real load* — and every game treated 0 as "no effort". Measured in Bloom: merely holding the overhead-press start position read **74% up the screen** before a rep had been done. A movement+band is now a **range** (`lo` = start tension, `hi` = all-out max); games subtract `lo` and scale to `hi - lo`, so start = 0%, midpoint = 50%, max = 100%. Wiring per game is two lines, because the signal handed to the game is already floored and spanned.
+- Movements you have never calibrated **auto-learn the ceiling** from the peaks `x3f-set.js` already measures, so nothing is broken on day one. Auto-learn never overwrites a real calibration, and only runs while the floor is still 0 — which is what makes it safe to hand it the game's (floored) force.
+- **Calibrate is per movement, two captures**: hold the start position (averaged, not peaked — a wobble must not become the floor), then go all out. `?ex=` preselects the movement. It shows every band's range for that movement and marks the estimates `est`.
+- **The work phase is named after the movement.** The form demonstrator labelled every rep `PULL`, including all three presses on a push day — the opposite of the instruction. Each rig now carries a verb (PRESS / ROW / CURL / DRIVE / SQUEEZE / RAISE / PULL), exposed as `X3FForm.verb(slug)` for anything outside the panel: Nova's idle prompt and Calibrate's countdown use it too.
+- **The band you pick stays picked.** Routines defaulted every movement to the *library's* suggestion (`ex.band`), and every game then did `xset('band', …)` on `?band=` — so starting a day on White silently moved you to Dark Gray, a setting you never chose. Routines now default to the band you are on and show the suggestion as advice; a `?band=` override applies to that run only and no longer rewrites your global choice. `x3f-set.js` asks the game (`window.__x3fBand`) so the set is still logged against the band you actually pulled.
+- Ascent (phone-only, not in the TV bundle) got the same two fixes, so it stops clobbering the band setting there.
+- Export/import carries `x3f_exCal`; a real calibration wins over an imported estimate.
+- **`func-test/run.py` now parses each page's inline script first.** A duplicate top-level `const EXSLUG` in Bloom killed the entire script and surfaced as "endSet is not defined" across nine assertions, pointing at nothing. `node --check` names the line in milliseconds. Verified by mutation: reintroducing the duplicate fails the run, removing it passes.
+- Suites: 96 functional (up from 85), 12 screens / 28 nav states.
 
 **v1.3 — the bar chip: battery, and a picker that stops squashing the launcher.**
 - **The manual bar picker is a modal, not an inline panel.** It lived in the launcher's flex column, so opening it stole height from `.grid` (`flex:1`) and squashed all 11 cards — and it opened *itself* after 9 seconds, unasked. It is now a `.scrim` modal opened from the **bar chip** in the top row; nothing else on the page moves. After 9s without a connection the chip just turns gold and says "· OK to pick", which is the prompt without the layout damage.

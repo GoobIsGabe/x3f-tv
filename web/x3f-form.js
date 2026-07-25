@@ -31,49 +31,49 @@
   var P = function (o) { return o; };
   var EXR = {
     'deadlift': {
-      anchor: 'foot', ebow: 1, strongAt: 'top', label: 'Deadlift',
+      anchor: 'foot', ebow: 1, strongAt: 'top', label: 'Deadlift', verb: 'PULL',
       a: P({ hx: -0.34, hy: 1.62, lean: 0.94, hand: [0.34, 1.44], foot: [0, 0], head: -0.18, grip: 0.95 }),
       b: P({ hx: 0.00, hy: 2.44, lean: 0.14, hand: [0.26, 1.46], foot: [0, 0], head: 0.00, grip: 0.95 }),
       tipA: 'Flat back · hinge the hips', tipB: 'Glutes · no knee lockout'
     },
     'bent-row': {
-      anchor: 'foot', ebow: 1, strongAt: 'mid', label: 'Bent Row',
+      anchor: 'foot', ebow: 1, strongAt: 'mid', label: 'Bent Row', verb: 'ROW',
       a: P({ hx: -0.30, hy: 2.08, lean: 0.84, hand: [0.24, 1.46], foot: [0, 0], head: -0.10, grip: 1.0 }),
       b: P({ hx: -0.30, hy: 2.08, lean: 0.80, hand: [-0.10, 0.62], foot: [0, 0], head: -0.06, grip: 1.0 }),
       tipA: 'Neutral spine, straight diagonal', tipB: 'Elbows back · squeeze the lats'
     },
     'drag-curl': {
-      anchor: 'foot', ebow: 1, strongAt: 'top', label: 'Drag Curl',
+      anchor: 'foot', ebow: 1, strongAt: 'top', label: 'Drag Curl', verb: 'CURL',
       a: P({ hx: 0, hy: 2.42, lean: 0.07, hand: [0.28, 1.40], foot: [0, 0], head: 0, grip: 0.85 }),
       b: P({ hx: 0, hy: 2.42, lean: 0.05, hand: [0.34, 0.52], foot: [0, 0], head: 0.04, grip: 0.85 }),
       tipA: 'Keep a slight bend - never rest', tipB: 'Drag it close · elbows back'
     },
     'chest-press': {
-      anchor: 'shoulder', ebow: 1, strongAt: 'top', label: 'Chest Press',
+      anchor: 'shoulder', ebow: 1, strongAt: 'top', label: 'Chest Press', verb: 'PRESS',
       a: P({ hx: 0, hy: 2.40, lean: 0.18, hand: [0.26, 0.20], foot: [0.05, 0], head: 0, grip: 0.95 }),
       b: P({ hx: 0, hy: 2.40, lean: 0.20, hand: [1.40, 0.44], foot: [0.05, 0], head: 0.03, grip: 0.95 }),
       tipA: 'Elbows in toward the midline', tipB: 'Press slightly DOWN · no lockout'
     },
     'tricep-press': {
-      anchor: 'shoulder', ebow: 1, strongAt: 'top', label: 'Tricep Press',
+      anchor: 'shoulder', ebow: 1, strongAt: 'top', label: 'Tricep Press', verb: 'PRESS',
       a: P({ hx: -0.10, hy: 2.30, lean: 0.56, hand: [0.30, -0.34], foot: [0.05, 0], head: 0.06, grip: 0.8 }),
       b: P({ hx: -0.10, hy: 2.30, lean: 0.56, hand: [0.92, 0.72], foot: [0.05, 0], head: 0.06, grip: 0.8 }),
       tipA: 'Bar at eyebrow height', tipB: 'Only the elbow hinges'
     },
     'pec-crossover': {
-      anchor: 'shoulder', ebow: -1, strongAt: 'top', label: 'Pec Crossover',
+      anchor: 'shoulder', ebow: -1, strongAt: 'top', label: 'Pec Crossover', verb: 'SQUEEZE',
       a: P({ hx: 0, hy: 2.40, lean: 0.12, hand: [-0.40, 0.30], hand2: [-0.30, 0.05], foot: [0.05, 0], head: 0, grip: 0 }),
       b: P({ hx: 0, hy: 2.40, lean: 0.16, hand: [1.22, 0.56], hand2: [1.10, 0.20], foot: [0.05, 0], head: 0.02, grip: 0 }),
       tipA: 'Wide - feel the stretch', tipB: 'Cross the body · squeeze'
     },
     'overhead-press': {
-      anchor: 'foot', ebow: 1, strongAt: 'top', label: 'Overhead Press',
+      anchor: 'foot', ebow: 1, strongAt: 'top', label: 'Overhead Press', verb: 'PRESS',
       a: P({ hx: 0, hy: 2.42, lean: 0.06, hand: [0.46, -0.10], foot: [0.02, 0], head: 0, grip: 1.05 }),
       b: P({ hx: 0, hy: 2.46, lean: 0.02, hand: [0.24, -1.38], foot: [0.02, 0], head: 0.12, grip: 1.05 }),
       tipA: 'Start at chin height', tipB: 'Head through the window'
     },
     'upright-row': {
-      anchor: 'foot', ebow: -1, strongAt: 'mid', label: 'Upright Row',
+      anchor: 'foot', ebow: -1, strongAt: 'mid', label: 'Upright Row', verb: 'ROW',
       a: P({ hx: 0, hy: 2.42, lean: 0.06, hand: [0.30, 1.34], foot: [0.02, 0], head: 0, grip: 0.6 }),
       b: P({ hx: 0, hy: 2.42, lean: 0.04, hand: [0.44, 0.34], foot: [0.02, 0], head: 0.02, grip: 0.6 }),
       tipA: 'Narrow grip, light band', tipB: 'Mid-chest ONLY - never the chin'
@@ -82,13 +82,13 @@
       /* bar rests on the front of the shoulders, so the hand sits almost on the
          shoulder joint - the elbow has to solve FORWARD (+1) or it swings up
          through the head */
-      anchor: 'foot', ebow: 1, strongAt: 'top', label: 'Front Squat',
+      anchor: 'foot', ebow: 1, strongAt: 'top', label: 'Front Squat', verb: 'DRIVE',
       a: P({ hx: -0.22, hy: 1.16, lean: 0.44, hand: [0.40, -0.06], foot: [0.06, 0], head: 0, grip: 1.0 }),
       b: P({ hx: 0.00, hy: 2.42, lean: 0.10, hand: [0.40, -0.10], foot: [0.06, 0], head: 0, grip: 1.0 }),
       tipA: 'Hips straight down · knee over toe', tipB: 'Stand tall - no lockout'
     },
     'split-squat': {
-      anchor: 'foot', ebow: 1, strongAt: 'top', label: 'Split Squat',
+      anchor: 'foot', ebow: 1, strongAt: 'top', label: 'Split Squat', verb: 'DRIVE',
       a: P({ hx: -0.08, hy: 1.24, lean: 0.20, hand: [0.40, -0.08], foot: [0.52, 0], foot2: [-0.86, 0.80], head: 0, grip: 1.0 }),
       b: P({ hx: 0.02, hy: 2.34, lean: 0.10, hand: [0.40, -0.12], foot: [0.52, 0], foot2: [-0.86, 0.74], head: 0, grip: 1.0 }),
       tipA: 'Rear knee nearly to the floor', tipB: 'All the weight on the FRONT leg'
@@ -96,7 +96,7 @@
     'calf-raise': {
       /* balls of the feet on the band channel, heels off the back edge and never
          resting on the floor - so even the bottom of the range keeps a lift */
-      anchor: 'foot', plate: 'ball', ebow: 1, strongAt: 'top', label: 'Calf Raise',
+      anchor: 'foot', plate: 'ball', ebow: 1, strongAt: 'top', label: 'Calf Raise', verb: 'RAISE',
       a: P({ hx: 0, hy: 2.30, lean: 0.05, hand: [0.30, 1.42], foot: [0, 0.10], head: 0, grip: 0.95 }),
       b: P({ hx: 0, hy: 2.52, lean: 0.05, hand: [0.30, 1.42], foot: [0, 0.90], head: 0, grip: 0.95 }),
       tipA: 'Heels never touch down', tipB: 'All the way up on the balls'
@@ -463,7 +463,9 @@
       ctx.font = '700 ' + f + "px 'Space Grotesk',system-ui,sans-serif";
       ctx.textAlign = 'left';
       ctx.fillStyle = dir > 0 ? theme.accent : dir < 0 ? theme.band : theme.dim;
-      var ph = burnout > 0.5 ? 'PARTIALS' : dir > 0 ? 'PULL' : dir < 0 ? 'EASE' : (t > 0.5 ? 'HOLD' : 'TENSION');
+      /* Name the work phase after the movement. Every press on a push day used to
+         read PULL, which is the opposite of what you are being asked to do. */
+      var ph = burnout > 0.5 ? 'PARTIALS' : dir > 0 ? (ex.verb || 'PULL') : dir < 0 ? 'EASE' : (t > 0.5 ? 'HOLD' : 'TENSION');
       ctx.fillText(ph, 10, 16);
       if (!compact) {
         ctx.fillStyle = theme.dim;
@@ -561,5 +563,12 @@
     return inst;
   }
 
-  window.X3FForm = { create: create, mount: mount, rigs: EXR, has: function (s) { return !!EXR[s]; } };
+  /* verb(slug) is for anything OUTSIDE the panel that has to name the effort -
+     a game's "pull to fire" prompt, a calibration countdown. Same word the
+     figure shows, so the whole screen agrees with the movement. */
+  window.X3FForm = {
+    create: create, mount: mount, rigs: EXR,
+    has: function (s) { return !!EXR[s]; },
+    verb: function (s) { return (EXR[s] && EXR[s].verb) || 'PULL'; }
+  };
 })();

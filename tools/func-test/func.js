@@ -38,9 +38,12 @@
                  peak: 300 + (d % 6) * 20 });
     }
     localStorage.setItem('x3f_history', JSON.stringify(out));
-    ['x3f_ach', 'x3f_chal', 'x3f_prog', 'x3f_routineProg2', 'x3f_session'].forEach(function (k) {
+    ['x3f_ach', 'x3f_chal', 'x3f_prog', 'x3f_routineProg2', 'x3f_session',
+     'x3f_exCal', 'x3f_routine2'].forEach(function (k) {
       localStorage.removeItem(k);
     });
+    // the band you are "on" - the thing that must survive walking to the next lift
+    localStorage.setItem('x3f_band', JSON.stringify('White'));
     return out;
   }
 

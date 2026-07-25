@@ -44,6 +44,7 @@
   .tag{font-size:11px;color:#8092ad;position:absolute;right:16px;bottom:14px}
   #err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:30px;font-size:16px;color:#ffb4c0}
 </style>
+<script src="x3f-cal.js"></script>
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -93,11 +94,16 @@ const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite 
 const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
 let band=xget('band','White');
 let bandMaxMap=Object.assign({},BAND_DEF,xget('bandMax',{}));
-function bandRef(){return Math.max(60,bandMaxMap[band]||130)}
+const EXSLUG=window.X3FCal?X3FCal.slug():null;
+// same per-movement scale the rest of the suite uses: the span of THIS
+// movement's calibrated range, floored by the load its start position carries
+function bandRef(){return window.X3FCal?X3FCal.span(EXSLUG,band):Math.max(60,bandMaxMap[band]||130)}
+function calLo(){return window.X3FCal?X3FCal.floor(EXSLUG,band):0}
+window.__x3fBand=function(){return band};
 const bandSelEl=$('bandSel');
 BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSelEl.appendChild(o)});
 bandSelEl.onchange=()=>{band=bandSelEl.value;try{localStorage.setItem('x3f_band',JSON.stringify(band))}catch(e){}};
-(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;try{localStorage.setItem('x3f_band',JSON.stringify(band))}catch(e){}bandSelEl.value=band;}})();
+(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;bandSelEl.value=band;}})();
 
 async function connect(){
   if(!navigator.bluetooth){ setConn('No Web Bluetooth in this browser',false);
@@ -127,7 +133,7 @@ function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=perf
 function sample(){
   if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw); if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;if(!running)armReady();} return;}
   if(baseline==null)baseline=raw;
-  force=Math.max(0,raw-baseline);
+  force=Math.max(0,raw-baseline-calLo());
   if(force>peak)peak=force;
   forceRef=bandRef();
 }

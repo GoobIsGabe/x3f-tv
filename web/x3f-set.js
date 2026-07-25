@@ -41,7 +41,12 @@
   function param(name) {
     try { return (new URLSearchParams(location.search)).get(name); } catch (e) { return null; }
   }
+  /* The game wins over storage. A guided Routine can launch a lift on a band
+     that overrides your global choice for that run only, and the set has to be
+     logged against the band you actually pulled - not the one the launcher
+     still says you are on. */
   function band() {
+    try { var g = window.__x3fBand && window.__x3fBand(); if (typeof g === 'string' && g) return g; } catch (e) {}
     try {
       var b = JSON.parse(localStorage.getItem('x3f_band'));
       return (typeof b === 'string' && b) ? b : null;
@@ -134,6 +139,11 @@
     sample();                       // one last look, in case the set just ended
     if (entry.peak == null && watch.peak > 0) entry.peak = Math.round(watch.peak);
     if (entry.tut == null && watch.tut > 1) entry.tut = Math.round(watch.tut);
+    /* Teach an uncalibrated movement its own ceiling. Safe to hand the game's
+       force straight over: a movement only auto-learns while its floor is 0, so
+       what the games measure is still absolute. An explicit calibration wins and
+       observe() leaves it alone. */
+    try { if (window.X3FCal && entry.ex && entry.peak > 0) X3FCal.observe(entry.ex, entry.band, entry.peak); } catch (e) {}
     resetWatch();
     if (!P) return { logged: false, entry: entry, fresh: [], improved: '' };
 

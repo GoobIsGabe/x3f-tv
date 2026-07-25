@@ -89,6 +89,16 @@
         ok('strip carries today\'s challenge', /Challenge|🎯/.test(txt('pstrip')));
         ok('one set is the default', (document.querySelector('#list select[data-k="sets"]') || {}).value === '1',
            (document.querySelector('#list select[data-k="sets"]') || {}).value);
+        /* The band you are on must survive walking to the next lift. Every
+           movement used to default to the LIBRARY's suggestion (chest press ->
+           Dark Gray), so starting a day on White quietly moved you up a band you
+           never chose. The suggestion is advice now, not an instruction. */
+        var bandSels = document.querySelectorAll('#list select[data-k="band"]');
+        var offBand = [].filter.call(bandSels, function (s) { return s.value !== 'White'; });
+        ok('every lift starts on the band you are on', bandSels.length > 0 && offBand.length === 0,
+           offBand.length + ' of ' + bandSels.length + ' moved off White');
+        ok('the library suggestion is still shown as advice',
+           /X3 suggests/.test(document.getElementById('list').textContent));
         var lifts = document.querySelectorAll('#list .ex').length;
         ok('the day lists movements (' + lifts + ')', lifts >= 4);
 
@@ -157,6 +167,35 @@
       /* ================= bloom (a game) ================= */
       if (page.indexOf('bloom') >= 0) {
         ok('progress engine loaded in-game', !!P);
+        ok('calibration module loaded in-game', !!window.X3FCal);
+        /* The work phase is named after the movement. Every press on a push day
+           used to read PULL - the opposite of the instruction. */
+        ok('a press is called a press', window.X3FForm && X3FForm.verb('chest-press') === 'PRESS',
+           window.X3FForm ? X3FForm.verb('chest-press') : 'no form module');
+        ok('a pull is still called a pull', window.X3FForm && X3FForm.verb('deadlift') === 'PULL');
+        if (window.X3FCal) {
+          X3FCal.clear('overhead-press', 'White');
+          ok('an uncalibrated movement falls back to the band, floor 0',
+             X3FCal.range('overhead-press', 'White').lo === 0 && X3FCal.range('overhead-press', 'White').auto);
+          X3FCal.save('overhead-press', 'White', 96, 214);
+          var r = X3FCal.range('overhead-press', 'White');
+          ok('a calibrated movement keeps its floor and ceiling', r.lo === 96 && r.hi === 214 && !r.auto,
+             r.lo + '-' + r.hi);
+          // the point of the whole change: games scale the RANGE, not the ceiling,
+          // so an overhead press does not start pinned at the top
+          ok('the scale is the range, not the ceiling', X3FCal.span('overhead-press', 'White') === 118,
+             String(X3FCal.span('overhead-press', 'White')));
+          X3FCal.observe('overhead-press', 'White', 900);
+          ok('auto-learn never overwrites a real calibration',
+             X3FCal.range('overhead-press', 'White').hi === 214);
+          X3FCal.clear('bent-row', 'White');
+          X3FCal.observe('bent-row', 'White', 260);
+          ok('an uncalibrated movement learns its own ceiling',
+             X3FCal.range('bent-row', 'White').hi === 260, String(X3FCal.range('bent-row', 'White').hi));
+          ok('a range too narrow to be real is refused',
+             X3FCal.save('drag-curl', 'White', 100, 120) === false);
+          X3FCal.clear('overhead-press', 'White'); X3FCal.clear('bent-row', 'White');
+        }
         ok('hype module loaded', !!window.X3FHype);
         ok('music module loaded', !!window.X3FMusic);
         ok('music toggle present', has('musicBtn'));

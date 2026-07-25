@@ -272,7 +272,8 @@ $('expBtn').onclick=()=>{
   const payload={v:1,at:Date.now(),history:P.history(),
     ach:JSON.parse(localStorage.getItem('x3f_ach')||'{}'),
     chal:JSON.parse(localStorage.getItem('x3f_chal')||'{}'),
-    bandMax:JSON.parse(localStorage.getItem('x3f_bandMax')||'{}')};
+    bandMax:JSON.parse(localStorage.getItem('x3f_bandMax')||'{}'),
+    exCal:JSON.parse(localStorage.getItem('x3f_exCal')||'{}')};
   try{
     const blob=new Blob([JSON.stringify(payload,null,1)],{type:'application/json'});
     const a=document.createElement('a');
@@ -296,6 +297,11 @@ $('impBtn').onclick=()=>{
     localStorage.setItem('x3f_history',JSON.stringify(mine.slice(-600)));
     if(d.ach){const cur=JSON.parse(localStorage.getItem('x3f_ach')||'{}');Object.keys(d.ach).forEach(k=>{if(!cur[k])cur[k]=d.ach[k]});localStorage.setItem('x3f_ach',JSON.stringify(cur));}
     if(d.bandMax)localStorage.setItem('x3f_bandMax',JSON.stringify(d.bandMax));
+    // per-movement ranges: keep a real calibration over an imported estimate
+    if(d.exCal){const cur=JSON.parse(localStorage.getItem('x3f_exCal')||'{}');
+      Object.keys(d.exCal).forEach(k=>{const mine=cur[k],theirs=d.exCal[k];
+        if(!mine||(mine.auto&&theirs&&!theirs.auto))cur[k]=theirs});
+      localStorage.setItem('x3f_exCal',JSON.stringify(cur));}
     box.style.display='none';box.value='';
     alert('Imported '+added+' new sets.');
     refresh();

@@ -54,7 +54,8 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 .card h1{font-size:30px;font-weight:700;letter-spacing:.5px}.card h1 b{color:var(--accent)}
 .card .tag{font-family:var(--n);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--aqua)}
 .card p{color:var(--dim);font-size:14px;line-height:1.6}
-</style></head>
+</style><script src="x3f-cal.js"></script>
+</head>
 <body>
 <div class="app">
 <div class="topbar">
@@ -108,7 +109,16 @@ function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e)
 const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
 const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
 let band=xget('band','White'), bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
-function ref(){return Math.max(60,bandMax[band]||130)}
+const EXSLUG=window.X3FCal?X3FCal.slug():null;
+/* The band this run is actually using. A ?band= override no longer writes the
+   global setting, so the set log has to ask the game, not localStorage. */
+window.__x3fBand=function(){return band};
+/* The span of THIS movement's calibrated range, not the raw band max: a chest
+   press and an overhead press on one band are nowhere near the same scale. */
+function ref(){return window.X3FCal?X3FCal.span(EXSLUG,band):Math.max(60,bandMax[band]||130)}
+/* The movement's own start position already carries load (an overhead press
+   starts at chin height with the band loaded). That load is the zero. */
+function calLo(){return window.X3FCal?X3FCal.floor(EXSLUG,band):0}
 let bestScore=xget('splashBest',0), bestCombo=xget('splashCombo',0); $('hBest').textContent=bestScore;
 const bandSel=$('bandSel');
 BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSel.appendChild(o)});
@@ -148,7 +158,7 @@ function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=perf
 function onSample(){
   if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
   if(baseline==null)baseline=raw;
-  force=Math.max(0,raw-baseline);
+  force=Math.max(0,raw-baseline-calLo());
 }
 let demoF=0,pull=false;
 function startDemo(){demo=true;connected=false;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
@@ -397,7 +407,7 @@ const music=window.X3FMusic?X3FMusic.create({mood:'splash',
 (function(){const b=$('musicBtn');if(!b)return;
   const sync=()=>{b.textContent=(music&&music.isOn())?'Music on':'Music off';};
   sync();b.onclick=()=>{if(music)music.toggle();sync();};})();
-(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;xset('band',band);bandSel.value=band;}})();
+(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;bandSel.value=band;}})();
 // ---------- live form demonstrator ----------
 // If we were launched for a specific X3 movement (Library / guided Routine), mirror
 // it in the corner: the figure rises, strains and eases with your actual force.

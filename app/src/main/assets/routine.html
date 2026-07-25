@@ -279,7 +279,12 @@ function per(slug){
   const d=cfg[day]; d.per=d.per||{};
   const ex=EXD.get(slug)||{};
   const c=d.per[slug]||{};
-  return {game:c.game||(ex.games&&ex.games[0])||'bloom',band:c.band||ex.band||'White',tempo:c.tempo||'3000',sets:c.sets||'1'};
+  /* Band defaults to the one YOU are on, not the library's suggestion for this
+     movement. It used to default to ex.band, so starting a day on White and
+     walking to the next lift silently moved you up to Dark Gray - a setting you
+     never chose, changed on your behalf. The suggestion is still shown as advice
+     on the movement; a band picked here still overrides, per movement. */
+  return {game:c.game||(ex.games&&ex.games[0])||'bloom',band:c.band||xget('band','White'),tempo:c.tempo||'3000',sets:c.sets||'1'};
 }
 function setPer(slug,patch){const d=cfg[day];d.per=d.per||{};d.per[slug]=Object.assign(per(slug),patch);xset('routine2',cfg)}
 function doneSets(slug){return (prog[day]&&prog[day][slug])||0}
@@ -346,7 +351,7 @@ function render(){
     return `<div class="ex${done?' done':''}${cur?' cur':''}" data-n="${slug}">
       <div class="exnum">${done?'✓':i+1}</div>
       <div class="exmain"><div class="exname">${ex.name}</div>
-        <div class="exhint">${ex.muscle}</div>
+        <div class="exhint">${ex.muscle}${ex.band&&ex.band!==c.band?` · X3 suggests ${ex.band}`:''}</div>
         <div class="pips">${pips}</div>
         <div class="exrow">
           <select data-k="game" data-n="${slug}" data-nav>${opts(GAMES,c.game)}</select>

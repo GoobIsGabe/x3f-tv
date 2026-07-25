@@ -46,12 +46,50 @@ def find_browser():
     return None
 
 
+def syntax_check():
+    """Parse every page's own inline script before driving anything.
+
+    A single bad top-level declaration takes the WHOLE script with it, and the
+    feature assertions then report the symptom instead of the cause: adding a
+    second `const EXSLUG` to Bloom surfaced as "endSet is not defined" across
+    nine checks, with nothing pointing at the real line. node parses it in
+    milliseconds and names the line. Skipped silently if node is absent.
+    """
+    if not shutil.which("node"):
+        return []
+    bad = []
+    with tempfile.TemporaryDirectory(prefix="x3f-syn-") as tmp:
+        for page in sorted(ASSETS.glob("*.html")):
+            blocks = re.findall(r"<script(?![^>]*\ssrc=)[^>]*>(.*?)</script>",
+                                page.read_text(encoding="utf-8"), re.S)
+            for i, src in enumerate(blocks):
+                if len(src.strip()) < 80:
+                    continue
+                f = Path(tmp) / ("%s_%d.js" % (page.stem, i))
+                f.write_text(src, encoding="utf-8")
+                r = subprocess.run(["node", "--check", str(f)],
+                                   capture_output=True, text=True)
+                if r.returncode:
+                    detail = [l for l in r.stderr.splitlines()
+                              if "Error" in l or "^" in l]
+                    bad.append("%s: %s" % (page.name, " ".join(detail[:2]).strip()))
+    return bad
+
+
 def main():
     want = [a for a in sys.argv[1:] if not a.startswith("-")] or SCREENS
     browser = find_browser()
     if not browser:
         print("no Chromium-family browser found")
         return 2
+
+    broken = syntax_check()
+    if broken:
+        print("===== a page's inline script does not parse =====")
+        for b in broken:
+            print("  " + b)
+        print("\nFix that first - every assertion on that page is meaningless.")
+        return 1
 
     stage = Path(tempfile.mkdtemp(prefix="x3f-func-"))
     for f in ASSETS.iterdir():
