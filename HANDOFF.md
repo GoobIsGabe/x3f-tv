@@ -19,7 +19,7 @@ tools/  sync-from-web.py, which does the generating
 
 `E:\Fun\X3 Bar` was the old separate home of the web games. It is **retired** — it had a git remote pointing at this same repo and a DEPLOY.md telling you to force-push, which would have overwritten the Android app. Everything that matters was moved into `web/`. Don't develop there.
 
-Current status: **v1.0**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
+Current status: **v1.1**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -90,6 +90,19 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - `routine.html` — pick Push / Pull / Custom, then run the day. Per movement it coaches the setup + strongest-range start, shows the form demonstrator, launches the chosen game pre-configured (`?from=routine&band=…&ex=…`), logs the set and runs a rest timer to the next lift. Days are editable (add / reorder / remove from the 11 movements); sets, bands, tempo and progress persist. Back → launcher → Workout resumes the session and asks whether the set counted.
 - `x3f-form.js` — the animated figure. Poses are authored as hip/hand/foot targets with the knees and elbows solved by two-bone IK, driven by live force: it rises, holds, eases, flushes and trembles near max, and flips to "diminishing range" when your rep tops start collapsing (the X3 burnout). The foot hinges on the ball with the contact pinned to the floor, so a calf raise really rises onto the toes.
 - `library.html` + `progress.html` bundled; launcher gained Workout (hero card), Library and Progress.
+
+**v1.1 — the program brain.** `x3f-progress.js` is now the source of truth for everything about your training, derived entirely from `localStorage['x3f_history']`. Local only: no account, no server, nothing that can collide with another project.
+- **12-week program** derived from what you have *done*, not the calendar, so a missed day shifts the plan instead of desyncing it. Weeks 1-4 are four workouts a week, 5-12 are six, Push/Pull alternating.
+- **Streak with one rest day per rolling week** — a second gap inside seven days ends the run, and an unfinished today is a grace day, not a break.
+- **Daily challenges**, deterministic per date, aimed at 70-90% of your own best for a movement+band: match it, do not beat it. Falls back to "set your first benchmark" with no history.
+- **~130 generated achievements** from 16 templates x parameters (lifetime reps, per-movement mastery, band mileage, burnout depth, streaks, program weeks, challenges, sessions, guided sessions, single-set feats, peak force, perfect weeks, days trained, day variety, comebacks, burnout specialisation).
+- **Band-progression coaching** — 40+ full reps on a band means it stopped being heavy; the dashboard says which band to move to.
+- **Score the failure**: partials past full-range collapse get a meter, their own milestones and the headline slot in the set summary.
+- **Dashboard rewrite** (`X3F_Progress.html`): today, challenge, 84-day adherence grid, reps/week, peak-force/week, PB table, band coaching, achievements with filters, export/import.
+- **Music everywhere** — 10 moods across menus and all games; menus lift briefly on a keypress so the app feels awake.
+- **Free phone access**: `.github/workflows/pages.yml` publishes `web/` to `gh-pages`. Enable Settings -> Pages -> gh-pages / root once and https://goobisgabe.github.io/x3f-tv/ serves the games over https (which Web Bluetooth needs).
+- Test suites: `tools/func-test/run.py` (63 feature assertions over 5 screens) and `tools/func-test/engine.html` (40 engine tests) join the nav audit.
+- Fixed: Bloom wrote TWO history entries per set, inflating every total; the dashboard did not re-check achievements after an import; `program()` said Week 1 on an empty log.
 
 **v1.0 — milestone moments, generated soundtrack, and one set per lift.**
 - **One set is the X3 prescription**, not three. Routines defaulted to 3 sets; it now defaults to 1, the option is labelled "1 set · X3 standard", and the page says why.

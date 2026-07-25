@@ -1,5 +1,8 @@
 <!DOCTYPE html>
-<!-- X3F PROGRESS - reads x3f_history logged by the games and charts your gains. -->
+<!-- X3F PROGRESS - the program dashboard. Local only: everything is derived from
+ localStorage by x3f-progress.js, so there is no account, no server, no cost and
+ nothing that can collide with another project. Export/import moves your history
+ between devices as a plain file. -->
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -8,102 +11,285 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--gold:#ffd35c;--cyan:#37d6ff;--hot:#ff5d78;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
-*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--cyan:#37d6ff;--violet:#8f7dff;--hot:#ff5d78;--navring:#2ff0b0;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);--e:cubic-bezier(.2,.9,.25,1)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
 body{font-family:var(--d);color:var(--txt);background:radial-gradient(120vw 60vh at 80% -10%,rgba(47,240,176,.09),transparent 60%),var(--bg);min-height:100dvh;padding:calc(16px + var(--sat)) 16px calc(28px + var(--sab));-webkit-user-select:none;user-select:none}
-.wrap{max-width:760px;margin:0 auto}
-.top{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.wrap{max-width:880px;margin:0 auto}
+.top{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
 .brand{font-weight:800;font-size:19px;letter-spacing:2px}.brand b{color:var(--accent)}
 .spacer{flex:1}
-a.home,select{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 14px;cursor:pointer}
-.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+a.home,button.home{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 14px;cursor:pointer;transition:border-color .18s}
+a.home:hover,button.home:hover{border-color:var(--accent)}
+h2{font-family:var(--n);font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--dim);margin:22px 2px 10px;font-weight:700;display:flex;align-items:center;gap:10px}
+h2:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--brd),transparent)}
 .card{background:var(--panel);border:1px solid var(--brd);border-radius:16px;padding:14px}
-.card .k{font-family:var(--n);font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim)}
-.card .v{font-family:var(--n);font-weight:700;font-size:26px;font-variant-numeric:tabular-nums;margin-top:4px}
-.v.accent{color:var(--accent)}.v.gold{color:var(--gold)}.v.cyan{color:var(--cyan)}
-.panel{background:var(--panel);border:1px solid var(--brd);border-radius:18px;padding:16px;margin-bottom:14px}
-.panel h2{font-family:var(--n);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
-canvas{width:100%;height:140px;display:block}
-.list{display:flex;flex-direction:column;gap:8px}
-.row{display:flex;align-items:center;gap:12px;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:10px 13px}
-.row .g{font-weight:800;font-size:14px;min-width:96px}
-.row .b{font-family:var(--n);font-size:12px;color:var(--dim);flex:1}
-.row .m{font-family:var(--n);font-weight:700;font-size:14px}
-.row .dt{font-family:var(--n);font-size:11px;color:var(--dim);min-width:74px;text-align:right}
-.empty{color:var(--dim);text-align:center;padding:30px;line-height:1.6}
-@media(max-width:560px){.cards{grid-template-columns:repeat(2,1fr)}}
+.today{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;background:linear-gradient(180deg,rgba(47,240,176,.1),rgba(255,255,255,.03));border:1px solid var(--brd);border-radius:18px;padding:16px}
+.tday{font-size:clamp(20px,5vw,27px);font-weight:800;line-height:1.1}
+.tday small{display:block;font-family:var(--n);font-size:12.5px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);margin-bottom:4px}
+.tmeta{font-family:var(--n);font-size:12.5px;color:var(--dim);margin-top:6px}
+.flame{text-align:center;min-width:96px}
+.flame .n{font-family:var(--n);font-weight:700;font-size:34px;color:var(--gold);line-height:1}
+.flame .k{font-family:var(--n);font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim)}
+.bar{height:7px;border-radius:7px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--cyan));transition:width .5s var(--e)}
+.chal{display:flex;gap:12px;align-items:flex-start;border-left:3px solid var(--gold)}
+.chal.done{border-left-color:var(--accent)}
+.chal .ic{font-size:26px;line-height:1}
+.chal h3{font-size:17px;font-weight:800}
+.chal p{font-family:var(--n);font-size:13px;color:var(--dim);line-height:1.5;margin-top:3px}
+.chal .tag{display:inline-block;font-family:var(--n);font-size:10.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;border-radius:100px;padding:4px 10px;margin-top:8px;color:var(--gold);border:1px solid rgba(255,211,92,.35)}
+.chal.done .tag{color:var(--accent);border-color:rgba(47,240,176,.4)}
+.grid12{display:flex;flex-direction:column;gap:4px}
+.growrow{display:flex;gap:4px;align-items:center}
+.growrow .wk{font-family:var(--n);font-size:10px;color:var(--dim);width:26px;flex:0 0 auto}
+.cell{flex:1;aspect-ratio:1;border-radius:4px;background:rgba(255,255,255,.06);max-width:26px}
+@supports not (aspect-ratio:1/1){.cell{height:18px}}
+.cell.done{background:var(--accent);box-shadow:0 0 10px rgba(47,240,176,.45)}
+.cell.future{background:rgba(255,255,255,.02)}
+.cell.today{outline:2px solid var(--gold);outline-offset:1px}
+.vol{display:flex;gap:5px;align-items:flex-end;height:88px}
+.vol div{flex:1;border-radius:4px 4px 0 0;min-height:2px}
+.vol.reps div{background:linear-gradient(180deg,var(--cyan),rgba(55,214,255,.25))}
+.vol.force div{background:linear-gradient(180deg,var(--gold),rgba(255,211,92,.22))}
+.vollab{display:flex;gap:5px;font-family:var(--n);font-size:9.5px;color:var(--dim);margin-top:4px}
+.vollab span{flex:1;text-align:center}
+.pbs{display:flex;flex-direction:column;gap:7px}
+.pbrow{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:10px 12px}
+.pbrow .nm{font-weight:800;font-size:14.5px}
+.pbrow .bd{font-family:var(--n);font-size:11px;color:var(--dim)}
+.pbrow .v{font-family:var(--n);font-weight:700;font-size:16px;text-align:right;min-width:44px}
+.pbrow .v small{display:block;font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);font-weight:600}
+.advice{border-left:3px solid var(--gold);margin-bottom:8px}
+.advice b{color:var(--gold)}
+.advice p{font-family:var(--n);font-size:12.5px;color:var(--dim);line-height:1.5;margin-top:4px}
+.achhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.achhead .cnt{font-family:var(--n);font-weight:700;font-size:15px;color:var(--accent)}
+.achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:8px}
+.ach{background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:10px;opacity:.45;transition:opacity .2s,border-color .2s}
+.ach.got{opacity:1;border-color:rgba(47,240,176,.4)}
+.ach .an{font-weight:800;font-size:13px;line-height:1.2}
+.ach .ad{font-family:var(--n);font-size:11px;color:var(--dim);line-height:1.4;margin-top:3px}
+.ach .at{display:inline-block;font-family:var(--n);font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;margin-top:6px;color:var(--dim)}
+.ach.got .at{color:var(--gold)}
+.ach.t4.got{border-color:rgba(255,211,92,.5)}
+.filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+.chip{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);border:1px solid var(--brd2);color:var(--txt);border-radius:100px;padding:8px 12px;cursor:pointer}
+.chip.on{background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;border-color:transparent}
+.note{color:var(--dim);font-size:12.5px;line-height:1.5;margin-top:12px;text-align:center;font-family:var(--n)}
+.note a{color:var(--accent)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+textarea{width:100%;min-height:70px;font-family:var(--n);font-size:12px;background:var(--bg2);color:var(--txt);border:1px solid var(--brd2);border-radius:12px;padding:10px;margin-top:8px}
+.empty{font-family:var(--n);font-size:13px;color:var(--dim);line-height:1.6}
 /* end of a scrollable list: breathing room plus a hairline, so hitting the
    bottom reads as the bottom instead of the page just refusing to move */
 .endcap{height:1px;width:min(140px,40%);margin:30px auto calc(80px + var(--sab));background:linear-gradient(90deg,transparent,var(--brd2),transparent)}
 </style></head>
 <body>
 <div class="wrap">
-<div class="top">
-<div class="brand">X3F <b>PROGRESS</b></div><div class="spacer"></div>
-<select id="bandFilter" data-nav data-nav-first></select>
-<a class="home" href="index.html" data-nav data-nav-back>All games</a>
+<div class="top"><div class="brand">X3F <b>PROGRESS</b></div><div class="spacer"></div>
+<a class="home" href="X3F_Routine.html" data-nav data-nav-first>Routines</a>
+<a class="home" href="X3F_Library.html" data-nav>Library</a>
+<a class="home" href="index.html" data-nav data-nav-back>All games</a></div>
+
+<div class="today" id="today"></div>
+
+<h2>Today's challenge</h2>
+<div class="card chal" id="chal"></div>
+
+<h2>The 12-week program</h2>
+<div class="card"><div class="grid12" id="grid"></div>
+  <div class="note" style="margin-top:10px;text-align:left" id="gridNote"></div></div>
+
+<h2>Reps per week</h2>
+<div class="card"><div class="vol reps" id="vol"></div><div class="vollab" id="volLab"></div></div>
+
+<h2>Peak force per week</h2>
+<div class="card"><div class="vol force" id="pk"></div><div class="vollab" id="pkLab"></div></div>
+
+<h2>Band coaching</h2>
+<div id="advice"></div>
+
+<h2>Personal bests</h2>
+<div class="pbs" id="pbs"></div>
+
+<h2>Achievements</h2>
+<div class="achhead"><span class="cnt" id="achCnt"></span></div>
+<div class="filters" id="achFilters"></div>
+<div class="achs" id="achs"></div>
+
+<h2>Move your history between devices</h2>
+<div class="card">
+  <div class="empty">No account, no server — your log lives in this browser. Export writes a file; import merges one back in, skipping anything you already have.</div>
+  <div class="row" style="margin-top:10px">
+    <button class="home" id="expBtn" data-nav>⬇ Export my history</button>
+    <button class="home" id="impBtn" data-nav>⬆ Import from text</button>
+    <button class="home" id="wipeBtn" data-nav>Reset achievements</button>
+  </div>
+  <textarea id="impBox" placeholder="Paste an exported history here, then press Import again." style="display:none"></textarea>
 </div>
-<div class="cards">
-<div class="card"><div class="k">Sessions</div><div class="v" id="cSess">0</div></div>
-<div class="card"><div class="k">Best Reps</div><div class="v accent" id="cReps">-</div></div>
-<div class="card"><div class="k">Best Peak</div><div class="v gold" id="cPeak">-</div></div>
-<div class="card"><div class="k">Boss Stage</div><div class="v cyan" id="cBoss">-</div></div>
-</div>
-<div class="panel"><h2>Max Force over time</h2><canvas id="chPeak"></canvas></div>
-<div class="panel"><h2>Flow reps over time</h2><canvas id="chReps"></canvas></div>
-<div class="panel"><h2>Recent sessions</h2><div class="list" id="list"></div></div>
+
+<div class="note">Everything here is computed from your own logged sets. Train from <a href="X3F_Routine.html" data-nav>Routines</a> and it fills itself in.</div>
 <div class="endcap"></div>
 </div>
+<script src="x3f-exercises.js"></script>
+<script src="x3f-progress.js"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
-function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
-const BANDS=['All bands','White','Light Gray','Dark Gray','Black','Elite Black'];
-const GL={flow:'Flow',max:'Max Effort',boss:'Boss',zone:'Hold',meter:'Meter',ascent:'Ascent'};
-let hist=xget('history',[]);
-let filt=xget('progFilter','All bands');
-const bf=$('bandFilter');
-BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b;o.selected=b===filt;bf.appendChild(o)});
-bf.onchange=()=>{filt=bf.value;try{localStorage.setItem('x3f_progFilter',JSON.stringify(filt))}catch(e){}render()};
+const P=window.X3FProg, EX=window.X3FEX;
+const nameOf=slug=>{const e=EX&&EX.get(slug);return e?e.name:(slug||'—')};
 
-function fdate(t){const d=new Date(t),n=new Date();const sameDay=d.toDateString()===n.toDateString();
-  return sameDay?d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):(d.getMonth()+1)+'/'+d.getDate();}
-function chart(cv,pts,color){
-  const ctx=cv.getContext('2d'),DPR=Math.min(devicePixelRatio||1,2),W=cv.clientWidth,H=cv.clientHeight;
-  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,W,H);
-  if(pts.length<1){ctx.fillStyle='#5b677d';ctx.font="13px 'Space Grotesk',sans-serif";ctx.fillText('No data yet',10,H/2);return;}
-  const pad=22,vs=pts.map(p=>p.v),mn=Math.min(...vs),mx=Math.max(...vs),rng=(mx-mn)||1;
-  const x=i=>pad+ (pts.length<2?(W-2*pad)/2:(i/(pts.length-1))*(W-2*pad));
-  const y=v=>H-pad-((v-mn)/rng)*(H-2*pad);
-  ctx.strokeStyle='rgba(255,255,255,.06)';ctx.lineWidth=1;
-  for(let g=0;g<=2;g++){const yy=pad+g*(H-2*pad)/2;ctx.beginPath();ctx.moveTo(pad,yy);ctx.lineTo(W-pad,yy);ctx.stroke();}
-  ctx.beginPath();pts.forEach((p,i)=>{const xx=x(i),yy=y(p.v);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});
-  ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.lineJoin='round';ctx.stroke();
-  ctx.fillStyle=color;pts.forEach((p,i)=>{ctx.beginPath();ctx.arc(x(i),y(p.v),3,0,7);ctx.fill()});
-  ctx.fillStyle='#8593a9';ctx.font="11px 'Space Grotesk',sans-serif";
-  ctx.fillText(Math.round(mx),4,pad+4);ctx.fillText(Math.round(mn),4,H-pad+4);
+function renderToday(){
+  const pr=P.program(), st=P.streak();
+  const label=pr.active?('Week '+pr.week+' · '+pr.phase):'Not started yet';
+  const day=pr.doneToday?'Done for today':(pr.nextType+' day');
+  $('today').innerHTML=
+    '<div><div class="tday"><small>'+label+'</small>'+day+'</div>'+
+    '<div class="tmeta">'+(pr.active
+      ? pr.thisWeek+' of '+pr.perWeek+' workouts this week · '+pr.workouts+' training days total'
+      : 'Run one set and the 12-week program starts tracking itself.')+'</div>'+
+    '<div class="bar"><i style="width:'+Math.round(pr.weekProgress*100)+'%"></i></div></div>'+
+    '<div class="flame"><div class="n">'+st.current+'</div><div class="k">day streak</div>'+
+    (st.best>st.current?'<div class="k" style="margin-top:4px">best '+st.best+'</div>':'')+'</div>';
 }
-function render(){
-  const h=filt==='All bands'?hist:hist.filter(e=>e.b===filt);
-  $('cSess').textContent=h.length;
-  const reps=h.filter(e=>e.g==='flow'&&e.reps!=null).map(e=>e.reps);
-  const peaks=h.filter(e=>e.g==='max'&&e.peak!=null).map(e=>e.peak);
-  const bosses=h.filter(e=>e.g==='boss'&&e.stage!=null).map(e=>e.stage);
-  $('cReps').textContent=reps.length?Math.max(...reps):'-';
-  $('cPeak').textContent=peaks.length?Math.max(...peaks):'-';
-  $('cBoss').textContent=bosses.length?Math.max(...bosses):'-';
-  chart($('chPeak'),h.filter(e=>e.g==='max'&&e.peak!=null).map(e=>({v:e.peak})),'#ffd35c');
-  chart($('chReps'),h.filter(e=>e.g==='flow'&&e.reps!=null).map(e=>({v:e.reps})),'#2ff0b0');
-  const recent=h.slice().reverse().slice(0,25);
-  $('list').innerHTML=recent.length?recent.map(e=>{
-    let m='';if(e.g==='flow')m=e.reps+' reps'+(e.acc!=null?' · '+e.acc+'%':'');
-    else if(e.g==='max')m=e.peak+' peak';else if(e.g==='boss')m='stage '+e.stage+(e.time!=null?' · '+e.time+'s':'');else m='';
-    return`<div class="row"><div class="g">${GL[e.g]||e.g}</div><div class="b">${e.b||''}</div><div class="m">${m}</div><div class="dt">${fdate(e.t)}</div></div>`;
-  }).join(''):'<div class="empty">No sessions logged yet.<br>Play Flow, Max Effort, or Boss and your results show up here.</div>';
+
+function renderChal(){
+  const c=P.challenge();
+  $('chal').className='card chal'+(c.done?' done':'');
+  $('chal').innerHTML='<div class="ic">'+(c.done?'✅':'🎯')+'</div><div style="flex:1">'+
+    '<h3>'+c.title+'</h3><p>'+c.detail+'</p>'+
+    '<span class="tag">'+(c.done?'Complete':(c.metric==='sets'?'One set':c.target+' '+c.metric))+'</span>'+
+    (c.done?'':' <button class="home" id="chalDone" data-nav style="margin-top:8px">Mark done</button>')+
+    '</div>';
+  const b=$('chalDone'); if(b)b.onclick=()=>{P.markChallenge();refresh()};
 }
-addEventListener('resize',render);
-render();
+
+function renderGrid(){
+  const g=P.grid(), t=P.today();
+  let html='';
+  for(let w=0;w<12;w++){
+    html+='<div class="growrow"><span class="wk">'+(w+1)+'</span>';
+    for(let d=0;d<7;d++){
+      const c=g[w*7+d];
+      html+='<div class="cell'+(c.done?' done':'')+(c.future?' future':'')+(c.day===t?' today':'')+'" title="'+c.day+'"></div>';
+    }
+    html+='</div>';
+  }
+  $('grid').innerHTML=html;
+  const done=g.filter(c=>c.done).length;
+  $('gridNote').textContent=done
+    ? done+' training days in the last 12 weeks. Gaps are shown on purpose — one rest day a week keeps a streak alive.'
+    : 'Twelve weeks, one square a day. It fills in as you train.';
+}
+
+/* two weekly views: volume, and whether you are actually getting stronger */
+function weekly(pick){
+  const t=P.today(), out=new Array(12).fill(0);
+  P.sets().forEach(e=>{
+    const g=P.daysBetween(P.dayKey(e.t),t);
+    if(g<0||g>=84)return;
+    const i=11-Math.floor(g/7), v=pick(e);
+    if(pick.max){ if(v>out[i])out[i]=v; } else out[i]+=v;
+  });
+  return out;
+}
+function bars(el,lab,vals,unit){
+  const max=Math.max(1,...vals);
+  $(el).innerHTML=vals.map(v=>'<div style="height:'+Math.round(v/max*100)+'%" title="'+Math.round(v)+' '+unit+'"></div>').join('');
+  $(lab).innerHTML=vals.map((v,i)=>'<span>'+(i===11?'now':(i%2?'':(12-i)+'w'))+'</span>').join('');
+}
+function renderCharts(){
+  const reps=(e)=>(+e.reps||0);
+  const peak=(e)=>(+e.peak||0); peak.max=true;
+  bars('vol','volLab',weekly(reps),'reps');
+  bars('pk','pkLab',weekly(peak),'peak');
+}
+
+function renderAdvice(){
+  const a=P.bandAdvice();
+  $('advice').innerHTML=a.length
+    ? a.map(x=>'<div class="card advice"><b>Move '+x.name+' up to '+x.to+'</b><p>'+x.why+'</p></div>').join('')
+    : '<div class="card"><div class="empty">Nothing to change yet. When a movement passes 40 full reps on its band, that band has stopped being heavy in your strong range — this will say so, and which band to move to.</div></div>';
+}
+
+function renderPBs(){
+  const rows=P.pbTable().sort((a,b)=>b.reps-a.reps);
+  $('pbs').innerHTML=rows.length
+    ? rows.map(r=>'<div class="pbrow"><div><div class="nm">'+nameOf(r.ex)+'</div><div class="bd">'+r.band+' band · '+r.count+' set'+(r.count>1?'s':'')+'</div></div>'+
+        '<div class="v">'+r.reps+'<small>reps</small></div>'+
+        '<div class="v">'+(r.part||'–')+'<small>partials</small></div>'+
+        '<div class="v">'+(Math.round(r.peak)||'–')+'<small>peak</small></div></div>').join('')
+    : '<div class="card"><div class="empty">No sets logged yet. Play any game from Routines or the Library and your bests appear here, per movement and per band.</div></div>';
+}
+
+let achFilter='all';
+function renderAch(){
+  const all=P.achievements();
+  const got=all.filter(a=>a.got).length;
+  $('achCnt').textContent=got+' of '+all.length+' unlocked';
+  const groups=[['all','All'],['got','Unlocked'],['locked','Locked']];
+  $('achFilters').innerHTML=groups.map(([k,l])=>'<button class="chip'+(achFilter===k?' on':'')+'" data-f="'+k+'" data-nav>'+l+'</button>').join('');
+  $('achFilters').querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{achFilter=b.dataset.f;renderAch();if(window.X3FNav)X3FNav.refresh()});
+  const shown=all.filter(a=>achFilter==='all'||(achFilter==='got'?a.got:!a.got));
+  shown.sort((a,b)=>(b.got-a.got)||(b.tier-a.tier));
+  $('achs').innerHTML=shown.map(a=>'<div class="ach t'+a.tier+(a.got?' got':'')+'">'+
+    '<div class="an">'+(a.got?'🏅 ':'🔒 ')+a.name+'</div><div class="ad">'+a.desc+'</div>'+
+    '<span class="at">'+['Bronze','Silver','Gold','Platinum','Legend'][a.tier]+'</span></div>').join('');
+}
+
+$('expBtn').onclick=()=>{
+  const payload={v:1,at:Date.now(),history:P.history(),
+    ach:JSON.parse(localStorage.getItem('x3f_ach')||'{}'),
+    chal:JSON.parse(localStorage.getItem('x3f_chal')||'{}'),
+    bandMax:JSON.parse(localStorage.getItem('x3f_bandMax')||'{}')};
+  try{
+    const blob=new Blob([JSON.stringify(payload,null,1)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);a.download='x3f-history-'+P.today()+'.json';
+    document.body.appendChild(a);a.click();a.remove();
+  }catch(e){
+    // no download in this browser (a TV WebView, say) - show it to copy instead
+    const box=$('impBox');box.style.display='block';box.value=JSON.stringify(payload);box.select();
+  }
+};
+$('impBtn').onclick=()=>{
+  const box=$('impBox');
+  if(box.style.display==='none'){box.style.display='block';box.focus();return;}
+  try{
+    const d=JSON.parse(box.value);
+    const mine=P.history(), theirs=(d.history||[]);
+    const seen={};mine.forEach(e=>seen[e.t+'|'+(e.ex||'')+'|'+(e.reps||0)]=1);
+    let added=0;
+    theirs.forEach(e=>{const k=e.t+'|'+(e.ex||'')+'|'+(e.reps||0);if(!seen[k]){mine.push(e);seen[k]=1;added++}});
+    mine.sort((a,b)=>a.t-b.t);
+    localStorage.setItem('x3f_history',JSON.stringify(mine.slice(-600)));
+    if(d.ach){const cur=JSON.parse(localStorage.getItem('x3f_ach')||'{}');Object.keys(d.ach).forEach(k=>{if(!cur[k])cur[k]=d.ach[k]});localStorage.setItem('x3f_ach',JSON.stringify(cur));}
+    if(d.bandMax)localStorage.setItem('x3f_bandMax',JSON.stringify(d.bandMax));
+    box.style.display='none';box.value='';
+    alert('Imported '+added+' new sets.');
+    refresh();
+  }catch(e){alert('That did not look like an exported history.')}
+};
+$('wipeBtn').onclick=()=>{
+  if(!confirm('Clear unlocked achievements and challenge history? Your training log is kept.'))return;
+  P.reset();refresh();
+};
+
+function refresh(){
+  // Re-evaluate badges on every refresh, not just at boot: importing a history or
+  // marking a challenge changes what has been earned, and a badge that only
+  // appears after a reload looks broken.
+  try{ P.checkAchievements(); }catch(e){}
+  renderToday();renderChal();renderGrid();renderCharts();renderAdvice();renderPBs();renderAch();
+  if(window.X3FNav)X3FNav.refresh();
+}
+refresh();
 </script>
-<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script src="x3f-music.js"></script>
+<script>/* menus hum too - idles low, lifts when you press something */
+addEventListener("load",function(){try{X3FMusic.attach({mood:"menu",buttonHost:document.querySelector(".top")});}catch(e){}});</script>
 <script src="x3f-nav.js"></script>
-<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script></body></html>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
+</body></html>

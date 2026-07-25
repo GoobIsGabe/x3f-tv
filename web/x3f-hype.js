@@ -53,6 +53,15 @@
       'letter-spacing:3px;text-transform:uppercase;opacity:.85;margin-top:.35em}' +
       '.x3fh-flash{position:absolute;inset:0;opacity:0;transition:opacity .45s;mix-blend-mode:screen}' +
       '.x3fh-bit{position:absolute;width:10px;height:10px;border-radius:2px;will-change:transform,opacity}' +
+      /* the burnout meter: appears only after full-range failure, because that
+         is the only time it means anything */
+      '.x3fh-burn{position:absolute;left:50%;transform:translateX(-50%) translateY(10px);bottom:4%;' +
+      'display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:100px;' +
+      'background:rgba(10,6,20,.55);border:1px solid rgba(255,93,120,.45);opacity:0;' +
+      "font-family:'Space Grotesk',system-ui,sans-serif;font-weight:700;transition:opacity .3s,transform .3s}" +
+      '.x3fh-burn.on{opacity:1;transform:translateX(-50%)}' +
+      '.x3fh-burn i{display:block;height:6px;border-radius:6px;background:linear-gradient(90deg,#ff5d78,#ffd23f);width:0;transition:width .3s}' +
+      '.x3fh-burn u{text-decoration:none;letter-spacing:1.6px;text-transform:uppercase;opacity:.75}' +
       '@media (prefers-reduced-motion:reduce){.x3fh-near.shake{animation:none}}';
     document.head.appendChild(s);
   }
@@ -72,7 +81,9 @@
     var flash = document.createElement('div'); flash.className = 'x3fh-flash';
     var nearEl = document.createElement('div'); nearEl.className = 'x3fh-near';
     var bigEl = document.createElement('div'); bigEl.className = 'x3fh-big';
-    layer.appendChild(flash); layer.appendChild(nearEl); layer.appendChild(bigEl);
+    var burnEl = document.createElement('div'); burnEl.className = 'x3fh-burn';
+    burnEl.innerHTML = '<u>past failure</u><b id="x3fhBurnN">0</b><span style="width:70px"><i></i></span>';
+    layer.appendChild(flash); layer.appendChild(nearEl); layer.appendChild(bigEl); layer.appendChild(burnEl);
     host.appendChild(layer);
 
     var value = 0, lastNear = -1, done = {}, bigUntil = 0, nearUntil = 0, quietUntil = 0;
@@ -228,10 +239,29 @@
     }
     requestAnimationFrame(frame);
 
+    /* Partials past failure. Their own meter and their own milestones, because
+       total reps quietly rewards stopping at a round number and this rewards the
+       thing the program is actually asking for. */
+    var burn = 0;
+    function setBurn(n) {
+      n = Math.max(0, Math.round(+n || 0));
+      if (n === burn) return;
+      var was = burn; burn = n;
+      burnEl.classList.add('on');
+      var num = burnEl.querySelector('b'), fill = burnEl.querySelector('i');
+      if (num) num.textContent = n;
+      if (fill) fill.style.width = Math.min(100, n / 20 * 100) + '%';
+      burnEl.style.fontSize = px(0.048) + 'px';
+      if (n > was && (n === 5 || n === 10 || n === 20 || n === 35)) {
+        showBig(n + ' PAST FAILURE', 'this is the part that grows you', n >= 20);
+      } else if (n > was) { tick(Math.min(5, n)); }
+    }
+
     return {
       set: set,
+      setBurn: setBurn,
       bump: function () { set(value + 1); },
-      reset: function () { value = 0; lastNear = -1; done = {}; hideNear(); bigEl.classList.remove('on'); },
+      reset: function () { value = 0; lastNear = -1; done = {}; burn = 0; hideNear(); bigEl.classList.remove('on'); burnEl.classList.remove('on'); },
       say: function (title, sub, huge) { showBig(title, sub, !!huge); },
       mute: function (m) { muted = !!m; },
       value: function () { return value; }

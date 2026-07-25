@@ -22,6 +22,15 @@ body{font-family:var(--d);color:var(--txt);background:radial-gradient(120vw 60vh
 .spacer{flex:1}
 a.home,button.home{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 14px;cursor:pointer;transition:border-color .18s,background .18s}
 a.home:hover,button.home:hover{border-color:var(--accent)}
+/* today's programme: the week, the streak, and today's challenge */
+.pstrip{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(180deg,rgba(47,240,176,.09),rgba(255,255,255,.03));border:1px solid var(--brd);border-radius:16px;padding:12px 14px;margin-bottom:12px}
+.pstrip .pd{font-weight:800;font-size:16px}
+.pstrip .pd b{color:var(--accent)}
+.pstrip .pw,.pstrip .pc{font-family:var(--n);font-size:12.5px;color:var(--dim)}
+.pstrip .pc{flex:1;min-width:50%}
+.pstrip .pc b{color:var(--gold)}
+.pstrip .pc.done b{color:var(--accent)}
+.pstrip .ps{font-family:var(--n);font-weight:700;font-size:15px;color:var(--gold)}
 .days{display:flex;gap:8px;margin-bottom:12px}
 .day{flex:1;padding:13px 10px;border-radius:14px;background:var(--panel);border:1px solid var(--brd);color:var(--dim);font-weight:800;font-size:15px;text-align:center;cursor:pointer;transition:background .2s var(--e),color .2s,border-color .2s,transform .12s var(--e)}
 .day:hover{color:var(--txt)}
@@ -121,6 +130,13 @@ select{font-family:var(--n);font-weight:600;font-size:12.5px;background:var(--bg
 @media (max-width:620px){.cbody{flex-direction:column}.cdemo{flex:0 0 auto;max-width:none;display:grid;grid-template-columns:44% 1fr;gap:10px;align-items:center}.demobox{aspect-ratio:1/1.05}.demotag{text-align:left}}
 /* end of a scrollable list: breathing room plus a hairline, so hitting the
    bottom reads as the bottom instead of the page just refusing to move */
+.achtoast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);z-index:70;
+ display:flex;flex-direction:column;gap:2px;padding:12px 18px;border-radius:16px;max-width:min(90vw,420px);
+ background:rgba(10,16,26,.92);border:1px solid rgba(255,211,92,.45);box-shadow:0 14px 40px rgba(0,0,0,.5);
+ opacity:0;pointer-events:none;transition:opacity .25s var(--e),transform .25s var(--e)}
+.achtoast.on{opacity:1;transform:translateX(-50%)}
+.achtoast b{font-weight:800;font-size:15px;color:var(--gold)}
+.achtoast span{font-family:var(--n);font-size:12px;color:var(--dim)}
 .endcap{height:1px;width:min(140px,40%);margin:30px auto calc(80px + var(--sab));background:linear-gradient(90deg,transparent,var(--brd2),transparent)}
 </style><script>
 /* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames */
@@ -155,6 +171,7 @@ addEventListener('load',function(){setTimeout(function(){
 <a class="home" href="library.html" data-nav>Library</a>
 <a class="home" href="launcher.html" data-nav data-nav-back>All games</a></div>
 
+<div class="pstrip" id="pstrip"></div>
 <div class="days" id="days"></div>
 
 <div class="gostrip"><button class="go" id="startSession" data-nav data-nav-first>▶ Start guided session</button></div>
@@ -229,6 +246,7 @@ addEventListener('load',function(){setTimeout(function(){
 </div></div>
 
 <script src="x3f-exercises.js"></script>
+<script src="x3f-progress.js"></script>
 <script src="x3f-form.js"></script>
 <script>
 "use strict";
@@ -270,12 +288,45 @@ function listFor(){return cfg[day].list}
 function launchUrl(slug){const c=per(slug);return EXD.gameUrl(c.game,{from:'routine',band:c.band,tempo:c.tempo,ex:slug})}
 function opts(list,sel){return list.map(([v,l])=>`<option value="${v}"${String(v)===String(sel)?' selected':''}>${l}</option>`).join('')}
 
+/* ---------- achievement toast ----------
+   Never alert() for this: a modal blocks the page, and on a TV it is a system
+   dialog you have to dismiss with the remote mid-workout. */
+function toastAch(list){
+  let host=$('achToast');
+  if(!host){
+    host=document.createElement('div');host.id='achToast';host.className='achtoast';
+    document.body.appendChild(host);
+  }
+  let i=0;
+  const show=()=>{
+    if(i>=list.length||i>=3){ host.classList.remove('on'); return; }
+    const a=list[i++];
+    host.innerHTML='<b>🏅 '+a.name+'</b><span>'+a.desc+'</span>';
+    host.classList.add('on');
+    beep(880,.12); setTimeout(()=>beep(1170,.14),120);
+    setTimeout(show,2600);
+  };
+  show();
+}
+
 /* ---------- sound ---------- */
 let ac=null;
 function beep(f,d,type){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.type=type||'sine';o.frequency.value=f;o.connect(g);g.connect(ac.destination);g.gain.setValueAtTime(0.001,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.28,ac.currentTime+0.012);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+d);o.start();o.stop(ac.currentTime+d+0.03)}catch(e){}}
 function buzz(ms){if(navigator.vibrate)try{navigator.vibrate(ms)}catch(e){}}
 
 /* ---------- day list ---------- */
+function renderProgram(){
+  const P=window.X3FProg; if(!P)return;
+  try{
+    const pr=P.program(), st=P.streak(), c=P.challenge();
+    $('pstrip').innerHTML=
+      '<span class="pd">'+(pr.active?('<b>'+(pr.doneToday?'Done today':pr.nextType+' day')+'</b>'):'<b>Start the program</b>')+'</span>'+
+      '<span class="pw">'+(pr.active?('Week '+pr.week+' · '+pr.phase+' · '+pr.thisWeek+'/'+pr.perWeek+' this week'):'12 weeks · one all-out set per lift')+'</span>'+
+      '<span class="ps">'+st.current+' day streak</span>'+
+      '<span class="pc'+(c.done?' done':'')+'"><b>'+(c.done?'✅ Challenge complete':'🎯 '+c.title)+'</b> — '+c.detail+'</span>';
+  }catch(e){}
+}
+
 function render(){
   $('days').innerHTML=DAYNAMES.map(dn=>{
     const l=cfg[dn].list, n=l.filter(s=>{const c=(cfg[dn].per||{})[s]||{};const tot=+(c.sets||3);return ((prog[dn]&&prog[dn][s])||0)>=tot}).length;
@@ -310,6 +361,7 @@ function render(){
     </div>`;
   }).join('')||`<div class="note">This day is empty — hit <b>Edit day</b> and add movements.</div>`;
   $('prog').innerHTML=`<b>${setsDone}</b> / ${setsTotal} sets done · ${list.filter(isDone).length}/${list.length} lifts`;
+  renderProgram();
   $('startSession').textContent=(S&&S.active&&S.day===day)?'▶ Resume guided session':'▶ Start guided session';
   const used=listFor();
   $('addSel').innerHTML=EXD.list.filter(e=>used.indexOf(e.slug)<0).map(e=>`<option value="${e.slug}">${e.name} — ${e.muscle}</option>`).join('')||'<option value="">every movement is already in this day</option>';
@@ -408,6 +460,13 @@ function logSet(){
   const slug=curSlug(),tot=+per(slug).sets;
   const sd=Math.min(tot,doneSets(slug)+1);
   setDoneSets(slug,sd);
+  // record it against the movement, so the dashboard, challenges and achievements
+  // all see guided work even when the game itself logged nothing
+  if(window.X3FProg){try{
+    X3FProg.logSet({g:'routine',ex:slug,band:per(slug).band});
+    const fresh=X3FProg.checkAchievements();
+    if(fresh.length)toastAch(fresh);
+  }catch(e){}}
   S.sets=(S.sets||0)+1;S.pending=null;saveS();
   beep(760,.1);buzz(35);render();
   const lastOfLift=sd>=tot;
@@ -474,6 +533,9 @@ addEventListener('keydown',e=>{
   if(e.key==='Escape'){if($('rest').classList.contains('show'))stopRest();}
 });
 </script>
+<script src="x3f-music.js"></script>
+<script>/* menus hum too - idles low, lifts when you press something */
+addEventListener("load",function(){try{X3FMusic.attach({mood:"menu",buttonHost:document.querySelector(".top")});}catch(e){}});</script>
 <script src="x3f-nav.js"></script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
 

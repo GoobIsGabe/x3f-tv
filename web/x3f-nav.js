@@ -64,8 +64,20 @@
     return document;
   }
 
+  /* visible() walks ancestors calling getComputedStyle, so a full rebuild costs
+     one style recalc per item. That is fine once per keypress and wasteful when
+     something asks repeatedly, so the item list is reused for a few tens of
+     milliseconds. The SCOPE is still checked every time - if an overlay opened we
+     rebuild immediately, because getting that wrong is a real bug and 50ms of
+     staleness in a list of buttons is not. */
+  var lastBuild = 0;
+  function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+
   function refresh() {
     var root = scopeRoot();
+    var t = nowMs();
+    if (root === scope && items.length && t - lastBuild < 50) return items;
+    lastBuild = t;
     items = [].slice.call(root.querySelectorAll('[data-nav]')).filter(visible);
     // The cursor left the scope (an overlay opened over it, or it was hidden).
     // Drop the ring with it, or it stays lit on something we no longer control -

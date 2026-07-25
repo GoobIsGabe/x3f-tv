@@ -1,0 +1,136 @@
+<!doctype html><meta charset="utf-8">
+<title>x3f-progress engine tests</title>
+<style>html,body{margin:0;background:#0b0f18;color:#eaf0fa;font:13px/1.5 Consolas,monospace}#log{padding:16px;white-space:pre-wrap}</style>
+<div id="log">running…</div>
+<script src="../../app/src/main/assets/x3f-exercises.js"></script>
+<script src="../../app/src/main/assets/x3f-progress.js"></script>
+<script>
+var L=[],pass=0,fail=0;
+function ok(name,cond,extra){ (cond?pass++:fail++); L.push((cond?'PASS ':'FAIL ')+name+(extra!=null?('  -> '+extra):'')); }
+function eq(name,a,b){ ok(name+' ('+JSON.stringify(a)+' == '+JSON.stringify(b)+')', a===b); }
+
+var P=X3FProg;
+function key(minusDays){ return P.keyMinus(P.today(), minusDays); }
+function seed(entries){
+  localStorage.setItem('x3f_history', JSON.stringify(entries));
+  localStorage.removeItem('x3f_ach'); localStorage.removeItem('x3f_chal'); localStorage.removeItem('x3f_prog');
+}
+function at(minusDays, o){
+  var p=key(minusDays).split('-');
+  var d=new Date(+p[0],+p[1]-1,+p[2],12,0,0);
+  return Object.assign({t:d.getTime(), k:'set'}, o);
+}
+
+// ---------- streak ----------
+L.push('--- streak: one rest day per rolling week ---');
+seed([at(0,{ex:'deadlift',band:'Black',reps:20})]);
+eq('today only', P.streak().current, 1);
+
+seed([at(0,{reps:10}),at(1,{reps:10}),at(2,{reps:10})]);
+eq('three in a row', P.streak().current, 3);
+
+seed([at(1,{reps:10}),at(2,{reps:10})]);
+eq('today not done yet is a grace day, not a break', P.streak().current, 2);
+
+seed([at(0,{reps:10}),at(1,{reps:10}),at(3,{reps:10}),at(4,{reps:10})]);
+eq('one rest day is allowed', P.streak().current, 4);
+
+seed([at(0,{reps:10}),at(1,{reps:10}),at(3,{reps:10}),at(5,{reps:10})]);
+ok('two rest days inside a week ends the run (got '+P.streak().current+')', P.streak().current===3);
+
+seed([at(4,{reps:10}),at(5,{reps:10})]);
+eq('stale history means no current streak', P.streak().current, 0);
+
+seed([at(0,{reps:1}),at(1,{reps:1}),at(2,{reps:1}),at(3,{reps:1}),at(4,{reps:1}),at(5,{reps:1}),at(6,{reps:1}),
+     at(8,{reps:1}),at(9,{reps:1}),at(10,{reps:1}),at(11,{reps:1}),at(12,{reps:1}),at(13,{reps:1})]);
+ok('long run with a weekly rest day keeps going (got '+P.streak().current+')', P.streak().current>=13);
+
+// ---------- program ----------
+L.push('');L.push('--- 12-week program ---');
+seed([at(0,{reps:10})]);
+var pr=P.program();
+eq('week 1 at the start', pr.week, 1);
+eq('foundation phase is 4 a week', pr.perWeek, 4);
+ok('one workout logged -> next is Pull ('+pr.nextType+')', pr.nextType==='Pull');
+seed([at(0,{reps:10}),at(1,{reps:10})]);
+ok('two logged -> next is Push ('+P.program().nextType+')', P.program().nextType==='Push');
+seed([at(35,{reps:10}),at(0,{reps:10})]);
+var pr2=P.program();
+ok('35 days in -> week 6 ('+pr2.week+')', pr2.week===6);
+eq('growth phase is 6 a week', pr2.perWeek, 6);
+eq('grid covers 12 weeks', P.grid().length, 84);
+
+// ---------- personal bests ----------
+L.push('');L.push('--- personal bests ---');
+seed([at(3,{ex:'deadlift',band:'Black',reps:22,part:6,peak:400}),
+      at(2,{ex:'deadlift',band:'Black',reps:31,part:9,peak:430}),
+      at(1,{ex:'deadlift',band:'Elite Black',reps:12,part:3,peak:500}),
+      at(1,{ex:'chest-press',band:'Dark Gray',reps:44,part:11,peak:300})]);
+eq('best reps for deadlift on Black', P.pb('deadlift','Black').reps, 31);
+eq('bests are per band', P.pb('deadlift','Elite Black').reps, 12);
+eq('best partials tracked', P.pb('deadlift','Black').part, 9);
+eq('pb table rows', P.pbTable().length, 3);
+
+// ---------- band advice ----------
+L.push('');L.push('--- band progression advice ---');
+seed([at(2,{ex:'chest-press',band:'Dark Gray',reps:44}),at(1,{ex:'chest-press',band:'Dark Gray',reps:41})]);
+var adv=P.bandAdvice();
+ok('44 reps on Dark Gray suggests moving up ('+adv.length+')', adv.length===1 && adv[0].to==='Black');
+seed([at(1,{ex:'chest-press',band:'Dark Gray',reps:12})]);
+eq('12 reps suggests nothing', P.bandAdvice().length, 0);
+seed([at(2,{ex:'chest-press',band:'Elite Black',reps:60}),at(1,{ex:'chest-press',band:'Elite Black',reps:60})]);
+eq('no advice past the last band', P.bandAdvice().length, 0);
+
+// ---------- daily challenge ----------
+L.push('');L.push('--- daily challenge ---');
+seed([]);
+var c0=P.challenge();
+ok('with no history it asks for a baseline ('+c0.kind+')', c0.kind==='baseline');
+seed([at(2,{ex:'deadlift',band:'Black',reps:30,part:8,peak:420}),
+      at(3,{ex:'bent-row',band:'Dark Gray',reps:26,part:5,peak:330})]);
+var c1=P.challenge(), c2=P.challenge();
+ok('deterministic for the day', c1.id===c2.id && c1.target===c2.target, c1.id+' target '+c1.target);
+ok('it targets a real movement ('+c1.slug+')', !!c1.slug);
+if(c1.metric==='reps'){
+  var best=P.pb(c1.slug,c1.band).reps;
+  ok('a reps challenge asks for LESS than your best ('+c1.target+' < '+best+')', c1.target<best && c1.target>0);
+}
+ok('not done before you do it', c1.done===false);
+// satisfy it
+var h=JSON.parse(localStorage.getItem('x3f_history'));
+var payload={ex:c1.slug,band:c1.band,reps:999,part:999,peak:9999};
+h.push(at(0,payload)); localStorage.setItem('x3f_history',JSON.stringify(h));
+ok('completing it flips done', P.challenge().done===true);
+eq('and it counts', P.challengesDone(), 1);
+
+// ---------- achievements ----------
+L.push('');L.push('--- achievements ---');
+seed([]);
+var cat=P.catalogue();
+ok('generated a decent catalogue ('+cat.length+' badges)', cat.length>=100);
+var ids={}; var dup=cat.filter(function(a){ if(ids[a.id])return true; ids[a.id]=1; return false; });
+eq('no duplicate ids', dup.length, 0);
+ok('every badge has a name and a test', cat.every(function(a){return a.name&&typeof a.test==='function'}));
+eq('nothing unlocked on an empty log', P.checkAchievements().length, 0);
+seed([at(0,{ex:'deadlift',band:'Black',reps:26,part:6,peak:420,g:'routine'})]);
+var fresh=P.checkAchievements();
+ok('first set unlocks some ('+fresh.length+'): '+fresh.slice(0,4).map(function(a){return a.name}).join(', '), fresh.length>0);
+eq('unlocks are not handed out twice', P.checkAchievements().length, 0);
+var ach=P.achievements();
+ok('achievements() reports got flags', ach.some(function(a){return a.got}) && ach.some(function(a){return !a.got}));
+ok('One Set 25 Reps unlocked at 26 reps', ach.filter(function(a){return a.id==='set25'})[0].got===true);
+ok('One Set 40 Reps still locked', ach.filter(function(a){return a.id==='set40'})[0].got===false);
+
+// ---------- logSet round trip ----------
+L.push('');L.push('--- logSet ---');
+seed([]);
+P.logSet({ex:'calf-raise',band:'Light Gray',reps:48,full:30,part:18,peak:210,g:'bloom'});
+var s=P.sets();
+eq('one set logged', s.length, 1);
+eq('exercise round-trips', s[0].ex, 'calf-raise');
+eq('partials round-trip', s[0].part, 18);
+eq('pb sees it', P.pb('calf-raise','Light Gray').reps, 48);
+
+document.getElementById('log').textContent =
+  'X3F-PROGRESS ENGINE  '+pass+' passed, '+fail+' failed'+String.fromCharCode(10,10)+L.join(String.fromCharCode(10));
+</script>

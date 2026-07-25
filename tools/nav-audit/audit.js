@@ -13,10 +13,31 @@
   /* ---------- the real BOOTSTRAP from MainActivity ---------- */
   function bootstrap() {
     try { window.__x3fNative = true; } catch (e) {}
-    // headless has no compositor: let opacity transitions land instantly
+    /* The real shell auto-confirms dialogs (onJsAlert -> confirm), and a blocking
+       alert in headless stalls the whole run - which is exactly how the routine
+       page's achievement alert() wedged this audit for 500 seconds. Match what
+       production does. */
+    try { window.alert = function () {}; window.confirm = function () { return true; };
+          window.prompt = function () { return null; }; } catch (e) {}
+    // headless has no compositor: let opacity transitions land instantly, and make
+    // scrolling instant too. Hundreds of queued smooth-scroll animations under
+    // --virtual-time-budget will eat the entire allowance and the walk never
+    // reaches its own report.
     try { var ns=document.createElement('style');
-      ns.textContent='*{transition:none!important;animation:none!important}';
+      ns.textContent='*{transition:none!important;animation:none!important}html{scroll-behavior:auto!important}';
       document.head.appendChild(ns); } catch (e) {}
+    try {
+      var rawInto = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (o) {
+        if (o && typeof o === 'object') { o = Object.assign({}, o, { behavior: 'instant' }); }
+        return rawInto.call(this, o);
+      };
+      var rawTo = Element.prototype.scrollTo;
+      if (rawTo) Element.prototype.scrollTo = function (o) {
+        if (o && typeof o === 'object') { o = Object.assign({}, o, { behavior: 'instant' }); }
+        return rawTo.call(this, o);
+      };
+    } catch (e) {}
     try { baseline = 0; } catch (e) {}
     try {
       var st = document.getElementById('x3fCss');
@@ -157,8 +178,10 @@
     var start = focused();
     if (!start) return { reach: [], dead: ['nothing focusable at all'] };
     seen.push(start);
-    var queue = [start], guard = 0;
-    while (queue.length && guard++ < 300) {
+    // one visit per reachable item is enough; 300 was pure waste and pushed the
+    // routine page past its virtual-time budget before it could report
+    var queue = [start], guard = 0, cap = Math.max(40, document.querySelectorAll('[data-nav]').length + 20);
+    while (queue.length && guard++ < cap) {
       var from = queue.shift();
       for (var d = 0; d < dirs.length; d++) {
         seat(from);

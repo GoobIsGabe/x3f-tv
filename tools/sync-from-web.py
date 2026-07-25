@@ -49,7 +49,8 @@ MENUS = {
     "X3F_Library.html": "library.html",
     "X3F_Progress.html": "progress.html",
 }
-SHARED = ["x3f-exercises.js", "x3f-form.js", "x3f-nav.js", "x3f-hype.js", "x3f-music.js"]
+SHARED = ["x3f-exercises.js", "x3f-form.js", "x3f-nav.js", "x3f-hype.js", "x3f-music.js",
+          "x3f-progress.js"]
 
 # Illustrated art, copied to the same relative paths the games request
 # (ASSET_BASE='assets/bloom/' etc). Without these the games silently fall back to

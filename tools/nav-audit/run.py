@@ -117,7 +117,12 @@ def main():
         dump = stage / ("dump_" + name + ".html")
         flags = ["--headless", "--disable-gpu", "--no-sandbox",
                  "--user-data-dir=" + str(stage / "profile"),
-                 "--window-size=1920,1080", "--virtual-time-budget=14000",
+                 "--window-size=1920,1080",
+                 # Under virtual time the browser runs timers as fast as it can, so
+                 # this is a work allowance rather than a wall clock. The routine
+                 # page - five overlay states, ~55 focusable controls - needs the
+                 # headroom or it never reaches its own report() call.
+                 "--virtual-time-budget=45000",
                  "--dump-dom", page.as_uri()]
         if sys.platform == "win32":
             # On Windows the browser's stdout survives neither a pipe nor an

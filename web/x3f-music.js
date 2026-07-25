@@ -34,6 +34,36 @@
       bpm: 124, root: 174.61, scale: [0, 2, 3, 7, 8], wave: 'sawtooth',
       padWave: 'sawtooth', cutoff: 900, glide: 0.03, swing: 0.0, kick: 0.34, hat: 0.09, bassAt: 0.25
     },
+    // menus: a lively but unobtrusive bed, so the app hums while you choose
+    menu: {
+      bpm: 92, root: 233.08, scale: [0, 3, 5, 7, 10], wave: 'triangle',
+      padWave: 'sine', cutoff: 900, glide: 0.05, swing: 0.06, kick: 0.16, hat: 0.06, bassAt: 0.4
+    },
+    // controlled reps, cousin of bloom in a different key
+    flow: {
+      bpm: 74, root: 196.0, scale: [0, 2, 4, 7, 9], wave: 'triangle',
+      padWave: 'sine', cutoff: 700, glide: 0.08, swing: 0, kick: 0.20, hat: 0.05, bassAt: 0.45
+    },
+    // the training suite: businesslike, forward
+    arena: {
+      bpm: 112, root: 220.0, scale: [0, 2, 3, 5, 7], wave: 'square',
+      padWave: 'triangle', cutoff: 1100, glide: 0.02, swing: 0.08, kick: 0.32, hat: 0.09, bassAt: 0.3
+    },
+    // head to head: tense, minor, insistent
+    duel: {
+      bpm: 128, root: 164.81, scale: [0, 1, 5, 7, 8], wave: 'sawtooth',
+      padWave: 'sawtooth', cutoff: 800, glide: 0.02, swing: 0, kick: 0.34, hat: 0.10, bassAt: 0.25
+    },
+    // rhythm game: the beat is the point, so lead with it
+    rhythm: {
+      bpm: 120, root: 261.63, scale: [0, 2, 4, 5, 7], wave: 'square',
+      padWave: 'triangle', cutoff: 1400, glide: 0.01, swing: 0.14, kick: 0.36, hat: 0.13, bassAt: 0.2
+    },
+    // calibration: sparse, patient, gets out of the way of an all-out pull
+    calibrate: {
+      bpm: 60, root: 174.61, scale: [0, 5, 7], wave: 'sine',
+      padWave: 'sine', cutoff: 520, glide: 0.12, swing: 0, kick: 0.12, hat: 0.03, bassAt: 0.6
+    },
     // neutral fallback
     calm: {
       bpm: 76, root: 196.0, scale: [0, 2, 5, 7, 9], wave: 'triangle',
@@ -193,5 +223,41 @@
     };
   }
 
-  window.X3FMusic = { create: create, moods: Object.keys(MOODS) };
+  /* One-liner for menus and any game without a force signal to feed it. Idles
+     low and lifts briefly whenever you press something, so the app feels awake
+     rather than looping at you. Creates its own toggle if the page has no
+     #musicBtn to borrow. */
+  function attach(o) {
+    o = o || {};
+    var lift = 0;
+    var inst = create({
+      mood: o.mood || 'menu',
+      volume: o.volume,
+      getIntensity: o.getIntensity || function () {
+        lift *= 0.92;
+        return Math.min(1, (o.idle == null ? 0.22 : o.idle) + lift);
+      }
+    });
+    ['pointerdown', 'keydown'].forEach(function (ev) {
+      addEventListener(ev, function () { lift = 0.5; }, { passive: true });
+    });
+    var btn = o.button || document.getElementById('musicBtn');
+    if (!btn && o.makeButton !== false) {
+      btn = document.createElement('button');
+      btn.id = 'musicBtn';
+      btn.className = o.buttonClass || 'home';
+      btn.setAttribute('data-nav', '');
+      var host = o.buttonHost || document.querySelector('.top') || document.querySelector('.topbar');
+      if (host) host.appendChild(btn); else btn = null;
+    }
+    if (btn) {
+      var sync = function () { btn.textContent = inst.isOn() ? '♪ Music on' : '♪ Music off'; };
+      sync();
+      btn.addEventListener('click', function () { inst.toggle(); sync(); });
+      if (window.X3FNav) try { X3FNav.refresh(); } catch (e) {}
+    }
+    return inst;
+  }
+
+  window.X3FMusic = { create: create, attach: attach, moods: Object.keys(MOODS) };
 })();

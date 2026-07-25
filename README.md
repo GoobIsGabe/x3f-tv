@@ -37,6 +37,10 @@ Same as the web games: BLE service `e3458900`, force characteristic `e3458901` (
   Library / Progress pages on the TV
 - v0.7 — couch fixes: launcher D-pad stays in its row, illustrated Bloom/Splash art
   actually bundled, long pages scroll from the remote
+- v1.1 — the program brain: 12-week program, streak with a weekly rest day, daily
+  challenges pegged to a percentage of your PBs, ~130 generated achievements, band
+  coaching, failure-scoring, a real dashboard, music on every screen, and a free
+  phone build published to gh-pages
 - v1.0 — milestone moments (escalating countdown into 50, PB callouts), a generated
   WebAudio soundtrack that reacts to your effort, and one set per lift per the X3
   protocol. Roadmap: [ROADMAP.md](ROADMAP.md)

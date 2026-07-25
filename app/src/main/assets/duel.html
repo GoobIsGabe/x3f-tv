@@ -168,4 +168,11 @@ resize();requestAnimationFrame(loop);
 <script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
 
+<script src="x3f-music.js"></script>
+<script>/* soundtrack: reacts to your pull where the page exposes one */
+addEventListener("load",function(){try{
+  var f=function(){ try{ return Math.min(1,(force/ref())*1.05); }catch(e){ return 0.25; } };
+  X3FMusic.attach({mood:"duel",getIntensity:f,
+    buttonHost:document.querySelector(".topbar")||document.body,buttonClass:"mini"});
+}catch(e){}});</script>
 </body></html>

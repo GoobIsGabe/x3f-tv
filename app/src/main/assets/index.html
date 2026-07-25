@@ -49,6 +49,16 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
 .upd{font-family:var(--d);font-weight:600;font-size:2vh;padding:1.2vh 2.4vw;border-radius:100px;background:rgba(20,14,44,.55);border:2px solid rgba(160,140,255,.3);color:var(--txt);cursor:pointer;transition:transform .12s,box-shadow .12s}
 .upd.foc{transform:scale(1.06);border-color:#fff;box-shadow:0 0 22px rgba(57,245,196,.6)}
 .updmsg{font-family:var(--n);font-size:1.9vh;color:var(--dim)}
+/* today's programme: what to train, how the week is going, the streak */
+.prog{display:flex;align-items:center;gap:1.4vw;margin-bottom:1.6vh;padding:1.1vh 1.6vw;border-radius:16px;
+ background:rgba(20,14,44,.5);border:1px solid rgba(160,140,255,.22);flex-wrap:wrap}
+.prog .pd{font-family:var(--d);font-weight:700;font-size:2.4vh}
+.prog .pd b{color:var(--mint)}
+.prog .pw{font-family:var(--n);font-size:1.8vh;color:var(--dim)}
+.prog .pstreak{font-family:var(--n);font-weight:700;font-size:2.1vh;color:var(--gold)}
+.prog .pchal{font-family:var(--n);font-size:1.8vh;color:var(--txt);flex:1;min-width:38%}
+.prog .pchal em{font-style:normal;color:var(--gold)}
+.prog .pchal.done em{color:var(--mint)}
 /* manual bar picker - only shown if we could not connect on our own */
 .finder{display:none;margin-top:1.6vh;padding:1.4vh 1.6vw;border-radius:18px;background:rgba(30,20,60,.55);border:2px solid rgba(255,211,63,.35)}
 .finder.on{display:block}
@@ -62,6 +72,9 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
 <body>
 <!-- shared menu nav: reuse this page's own .foc focus look -->
 <script>window.X3FNAV_CLASS='foc';</script>
+<script src="x3f-exercises.js"></script>
+<script src="x3f-progress.js"></script>
+<script src="x3f-music.js"></script>
 <script src="x3f-nav.js"></script>
 <canvas id="bgcv"></canvas>
 <div class="wrap">
@@ -79,6 +92,7 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
 
   <div class="bandrow" id="bandrow"></div>
 
+  <div class="prog" id="prog"></div>
   <div class="grid" id="grid"></div>
 
   <div class="finder" id="finder">
@@ -135,6 +149,20 @@ GAMES.forEach((g,i)=>{const el=document.createElement('div');el.className='card 
   el.onclick=()=>{try{xset('band',band);}catch(e){} location.href=g.f;};
   grid.appendChild(el);});
 
+// ---- today's programme ----
+(function(){
+  var P=window.X3FProg; if(!P)return;
+  try{
+    var pr=P.program(), st=P.streak(), c=P.challenge();
+    var day=pr.doneToday?'Done today':(pr.nextType+' day');
+    $('prog').innerHTML=
+      '<span class="pd">'+(pr.active?'<b>'+day+'</b>':'<b>Start the program</b>')+'</span>'+
+      '<span class="pw">'+(pr.active?('Week '+pr.week+' · '+pr.thisWeek+'/'+pr.perWeek+' this week'):'12 weeks, one set per lift')+'</span>'+
+      '<span class="pstreak">'+st.current+' day streak</span>'+
+      '<span class="pchal'+(c.done?' done':'')+'"><em>'+(c.done?'✅ Challenge done':'🎯 '+c.title)+'</em> — '+c.detail+'</span>';
+  }catch(e){}
+})();
+
 // ---- update button ----
 $('updBtn').onclick=()=>{ try{ if(window.X3F&&X3F.checkUpdate){ $('updMsg').textContent='Checking…'; X3F.checkUpdate(); } else { $('updMsg').textContent='Updates only in the TV app'; } }catch(e){ $('updMsg').textContent='Update error'; } };
 window.__x3fUpdate=function(msg){ try{ $('updMsg').textContent=msg||''; }catch(e){} };
@@ -189,6 +217,9 @@ const mfill=$('mfill'),mval=$('mval');
 function meter(){ let f=+window.__x3fForce||0; const pct=Math.max(0,Math.min(100,f/ref()*100));
   mfill.style.width=pct+'%'; mval.textContent=Math.round(f); requestAnimationFrame(meter); }
 requestAnimationFrame(meter);
+
+// ---- soundtrack ----
+(function(){ try{ X3FMusic.attach({mood:'menu',buttonHost:document.querySelector('.updrow'),buttonClass:'upd nav'}); }catch(e){} })();
 
 // ---- bubbly background ----
 const cv=$('bgcv'),ctx=cv.getContext('2d');let W,H,bub=[];

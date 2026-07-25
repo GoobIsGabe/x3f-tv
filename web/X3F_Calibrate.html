@@ -41,7 +41,7 @@ select{flex:1;font-family:var(--n);font-weight:700;font-size:14px;background:var
 <div class="app">
 <div class="top"><div class="brand">X3F <b>CALIBRATE</b></div><div class="spacer"></div>
 <div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
-<a class="home" href="index.html">Home</a></div>
+<a class="home" href="index.html" data-nav data-nav-back>Home</a></div>
 <div class="rowsel"><select id="bandSel"></select></div>
 <div class="mid">
 <div class="eyebrow" id="eye">Live Force</div>
@@ -120,4 +120,11 @@ function loop(now){
 requestAnimationFrame(loop);
 </script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
-<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script></body></html>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script><script src="x3f-music.js"></script>
+<script>/* soundtrack: reacts to your pull where the page exposes one */
+addEventListener("load",function(){try{
+  var f=function(){ try{ return Math.min(1,(force/ref())*1.05); }catch(e){ return 0.25; } };
+  X3FMusic.attach({mood:"calibrate",getIntensity:f,
+    buttonHost:document.querySelector(".topbar")||document.body,buttonClass:"mini"});
+}catch(e){}});</script>
+</body></html>

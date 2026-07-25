@@ -54,6 +54,18 @@ land on something invisible, or if an open overlay doesn't trap it. Run it after
 touching menus, overlays or `x3f-nav.js`. See `tools/nav-audit/run.py` for the
 three shipped bugs that motivated it.
 
+## Check the features still work
+
+```bash
+python tools/func-test/run.py
+```
+
+Drives the real pages headlessly with a seeded log and asserts the FEATURES do
+what they claim: the guided session advances and logs one entry per set, the
+dashboard computes from history, export/import round-trips, a Bloom set records
+its partials and peak, the launcher shows today's programme. The engine itself
+has its own tests — open `tools/func-test/engine.html` in a browser.
+
 ## Change only the Android side
 
 Editing `MainActivity.java`, the manifest, gradle or resources needs no sync. Bump

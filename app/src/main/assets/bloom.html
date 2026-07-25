@@ -91,6 +91,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 </div></div>
 <script src="x3f-exercises.js"></script>
 <script src="x3f-form.js"></script>
+<script src="x3f-progress.js"></script>
 <script src="x3f-hype.js"></script>
 <script src="x3f-music.js"></script>
 <script>
@@ -145,6 +146,7 @@ function onSample(){
   if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
   if(baseline==null)baseline=raw;
   force=Math.max(0,raw-baseline);
+  if(typeof running!=='undefined'&&running&&force>setPeak)setPeak=force;
 }
 let demoF=0,pull=false;
 function startDemo(){demo=true;connected=false;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
@@ -215,12 +217,15 @@ function buildBG(){
 // ---------- game state (mirrors Flow) ----------
 let running=false,setStart=0,period=3000,reps=0,hitF=0,totF=0;
 let curHi=0,fullReps=0,burnoutReps=0,dead=0,burnout=false; // diminishing-range (the X3 way)
+let setPeak=0;   // peak force this set, for PBs and challenges
 let phasePrev=0,repMax=0,repHit=0,repFrames=0,miss=0;
 let critScale=1,critMood=0,critDroop=0; // visual smoothing
 let prevForce=0,critVel=0,wobStart=-9999,wobDur=380,wobStr=1,lastOnT=null,cheerUntil=0,popT=0;
 function triggerWobble(str){wobStart=performance.now();wobStr=str;}
 $('tempoSel').onchange=()=>{period=+$('tempoSel').value};
 
+// which X3 movement this set belongs to, if we were launched for one
+const EXSLUG=(new URLSearchParams(location.search)).get('ex')||null;
 // ---------- milestone moments + soundtrack ----------
 // Reps are the currency here, so the ladder is reps and your personal best gets
 // its own callout. Intensity for the music is simply how hard you are pulling.
@@ -246,12 +251,35 @@ const music=window.X3FMusic?X3FMusic.create({mood:'bloom',
 $('startBtn').onclick=()=>{ if(running){endSet(false);return;}
   running=true;setStart=performance.now();reps=0;hitF=0;totF=0;phasePrev=0;repMax=0;repHit=0;repFrames=0;miss=0;
   if(hype)hype.reset();
-  curHi=ref()*0.78;fullReps=0;burnoutReps=0;dead=0;burnout=false;
+  curHi=ref()*0.78;fullReps=0;burnoutReps=0;dead=0;burnout=false;setPeak=0;
   $('startBtn').textContent='Stop Set';toast('Grow!');beep(660,0.12); };
 function endSet(fail){ running=false;burnout=false;$('startBtn').textContent='Start Set';
   if(reps>bestSet){bestSet=reps;xset('bloomBest',bestSet);$('hBest').textContent=bestSet;}
-  logSession({g:'bloom',reps:reps,full:fullReps,burnout:burnoutReps,acc:totF?Math.round(hitF/totF*100):0});cue(false);beep(360,0.2);
-  toast(fail?('Failure · '+reps+' reps  ('+fullReps+' full + '+burnoutReps+' burnout)'):('Set done · '+reps+' reps')); }
+  const acc=totF?Math.round(hitF/totF*100):0;
+  /* One entry per set. X3FProg.logSet below writes to the same x3f_history, so
+     also calling the legacy logSession would double-count every rep in the
+     dashboard totals. */
+  /* The program's payoff is what happens AFTER full-range failure, so the
+     partials are logged as a first-class number and the dashboard, challenges and
+     achievements all read them. */
+  if(window.X3FProg){
+    try{
+      X3FProg.logSet({g:'bloom',ex:EXSLUG,band:band,reps:reps,full:fullReps,acc:acc,
+        part:burnoutReps,peak:Math.round(setPeak),secs:Math.round((performance.now()-setStart)/1000)});
+      const fresh=X3FProg.checkAchievements();
+      if(fresh.length&&hype){
+        let i=0;
+        const showNext=()=>{ if(i>=fresh.length||i>=3)return;
+          const a=fresh[i++]; hype.say('🏅 '+a.name,a.desc,a.tier>=3); setTimeout(showNext,2400); };
+        setTimeout(showNext,1800);
+      }
+    }catch(e){}
+  }
+  else { logSession({g:'bloom',reps:reps,full:fullReps,burnout:burnoutReps,acc:acc}); }
+  cue(false);beep(360,0.2);
+  toast(burnoutReps
+    ? ('Failure · '+burnoutReps+' partials past it  ('+fullReps+' full)')
+    : ('Set done · '+reps+' reps')); }
 let toastT=0;
 function toast(t){$('toast').textContent=t;$('toast').classList.add('show');toastT=performance.now()+1400;}
 
@@ -394,11 +422,13 @@ function loop(now){
     if(ph<phasePrev){ // one rep cycle -> diminishing-range scoring (the X3 way)
       const R2=ref(),reached=repMax>=curHi*0.78,meaningful=repMax>=R2*0.17;
       if(reached){reps++;dead=0;if(curHi>=R2*0.60)fullReps++;else burnoutReps++;
+        if(hype&&burnoutReps>0)hype.setBurn(burnoutReps);
         $('hReps').textContent=reps;cue(true);popT=now+280;cheerUntil=now+650;triggerWobble(1.3);
         if(hype)hype.set(reps); if(music)music.duck(.5);
         spawnBurst(NOWX(),mapY(repMax),BAND_HUE[band]||320);
         if(reps%5===0)toast(reps+' reps');}
       else if(meaningful){reps++;burnoutReps++;dead=0;
+        if(hype)hype.setBurn(burnoutReps);
         curHi=Math.max(R2*0.22,curHi*0.85,Math.min(curHi,repMax*1.03));
         if(!burnout){burnout=true;toast('🔥 BURNOUT');}
         $('hReps').textContent=reps;cue(true);popT=now+220;triggerWobble(1);
