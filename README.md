@@ -37,6 +37,8 @@ Same as the web games: BLE service `e3458900`, force characteristic `e3458901` (
   Library / Progress pages on the TV
 - v0.7 — couch fixes: launcher D-pad stays in its row, illustrated Bloom/Splash art
   actually bundled, long pages scroll from the remote
+- v1.2 — every game feeds the program (shared set reporter), history that never
+  truncates, day-aware challenges, undo, eccentric/tension tracking, 10-foot HUDs
 - v1.1 — the program brain: 12-week program, streak with a weekly rest day, daily
   challenges pegged to a percentage of your PBs, ~130 generated achievements, band
   coaching, failure-scoring, a real dashboard, music on every screen, and a free

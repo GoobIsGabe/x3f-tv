@@ -59,6 +59,16 @@
         window.alert = oldAlert;
         ok('import restored the history (' + P.sets().length + ' of ' + before + ')', P.sets().length === before);
         ok('import re-populated the dashboard', document.querySelectorAll('#pbs .pbrow').length >= 3);
+        // recent sets list, and its delete
+        ok('recent sets are listed', document.querySelectorAll('#recent .pbrow').length >= 3,
+           document.querySelectorAll('#recent .pbrow').length + ' rows');
+        ok('each recent row offers a delete', !!document.querySelector('#recent [data-del]'));
+        var setsBefore = P.sets().length;
+        var oldConfirm = window.confirm; window.confirm = function () { return true; };
+        document.querySelector('#recent [data-del]').click();
+        window.confirm = oldConfirm;
+        ok('deleting a set removes it (' + P.sets().length + ' of ' + setsBefore + ')',
+           P.sets().length === setsBefore - 1);
         // band coaching
         localStorage.setItem('x3f_history', JSON.stringify([
           { t: Date.now() - 86400000, k: 'set', ex: 'chest-press', band: 'Dark Gray', reps: 44 },
@@ -103,10 +113,16 @@
             ok('skipping rest closes it', !document.getElementById('rest').classList.contains('show'));
             click('cSkip');
             ok('skip lift keeps the coach open', document.getElementById('coach').classList.contains('show'));
+            // undo must remove the set AND the progress mark
+            var afterLog = P.sets().length;
             click('cClose');
             wait(function () {
               ok('ending the session shows the summary', document.getElementById('done').classList.contains('show'));
               ok('summary counts sets', /\d/.test(txt('dSets')), 'sets=' + txt('dSets'));
+              ok('undo button exists', has('dUndo'));
+              click('dUndo');
+              ok('undo removes the logged set (' + P.sets().length + ' vs ' + afterLog + ')',
+                 P.sets().length === afterLog - 1);
               window.alert = oldAlert;
               F.report(page);
             }, 200);
@@ -171,6 +187,44 @@
           ok('achievements were evaluated', Object.keys(JSON.parse(localStorage.getItem('x3f_ach') || '{}')).length > 0);
           F.report(page);
         }, 400);
+        return;
+      }
+
+      /* ================= flow: a rep game via the shared reporter ================= */
+      if (page.indexOf('flow') >= 0) {
+        ok('reporter loaded', !!window.X3FSet);
+        ok('engine loaded', !!P);
+        var before = P.sets().length;
+        try { X3FSet.watch(function () { return 300; }, function () { return 400; }); } catch (e) {}
+        click('startBtn');
+        try { reps = 17; } catch (e) {}
+        try { endSet ? endSet(true) : stop(); } catch (e) {
+          try { $('startBtn').click(); } catch (e2) {}
+        }
+        wait(function () {
+          ok('a Flow set reaches the log (' + P.sets().length + ' vs ' + before + ')', P.sets().length > before);
+          var last = P.sets()[P.sets().length - 1];
+          ok('it is attributed to the game', last.g === 'flow', last.g);
+          ok('the watcher supplied a peak without Flow measuring one', (+last.peak || 0) > 0, 'peak=' + last.peak);
+          F.report(page);
+        }, 500);
+        return;
+      }
+
+      /* ================= splash: a score game ================= */
+      if (page.indexOf('splash') >= 0) {
+        ok('reporter loaded', !!window.X3FSet);
+        var before2 = P.sets().length;
+        try { X3FSet.watch(function () { return 250; }, function () { return 400; }); } catch (e) {}
+        try { startRun(); score = 640; endRun(); } catch (e) { ok('could not drive a run: ' + e.message, false); }
+        wait(function () {
+          ok('a Splash run reaches the log (' + P.sets().length + ' vs ' + before2 + ')', P.sets().length > before2);
+          var last2 = P.sets()[P.sets().length - 1];
+          ok('the score is recorded', (+last2.score || 0) === 640, 'score=' + last2.score);
+          ok('peak came from the watcher', (+last2.peak || 0) > 0, 'peak=' + last2.peak);
+          ok('a score game logs no rep count', last2.reps == null, 'reps=' + last2.reps);
+          F.report(page);
+        }, 500);
         return;
       }
 

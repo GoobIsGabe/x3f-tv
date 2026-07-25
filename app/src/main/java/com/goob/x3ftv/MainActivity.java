@@ -492,7 +492,24 @@ public class MainActivity extends Activity {
         WebView is already fullscreen and the activity is locked to landscape, so
         it does nothing at all - a button that lies. Hide it here rather than in
         the game, which still needs it in a phone browser. */
-     +'.tvbtn{display:none!important}';
+     +'.tvbtn{display:none!important}'
+     /* 10-foot pass for the GAMES. The menu pages scale their own type; the games
+        were still phone-sized across a room - a 21px force number on a 55" screen
+        three metres away. Only bumps type and padding, never layout, and only on a
+        big viewport so a phone browser is untouched. */
+     +'@media (min-width:1200px){'
+     +'.chip .v{font-size:30px!important}.chip .k{font-size:13px!important;letter-spacing:2px!important}'
+     +'.chip{padding:10px 16px!important;border-radius:18px!important}'
+     +'.status{font-size:15px!important;padding:9px 16px!important}'
+     +'.mini,select{font-size:15px!important;padding:11px 14px!important}'
+     +'.cta{font-size:19px!important;padding:16px 24px!important}'
+     +'.brand{font-size:23px!important}'
+     +'.toast{font-size:clamp(2.4rem,8vw,4rem)!important}'
+     +'.huge{font-size:clamp(3rem,11vw,7rem)!important}'
+     +'.eyebrow{font-size:15px!important}'
+     +'.card h1{font-size:38px!important}.card p{font-size:17px!important;line-height:1.6!important}'
+     +'.card .tag{font-size:14px!important}'
+     +'}';
    (document.head||document.documentElement).appendChild(st); } }catch(e){}
  try{ if(window.__x3fDrv)clearInterval(window.__x3fDrv);
    window.__x3fDrv=setInterval(function(){ try{ force=+window.__x3fForce||0; }catch(e){} },16); }catch(e){}

@@ -140,7 +140,8 @@ $('startBtn').onclick=()=>{ if(running){endSet(false);return;}
   $('startBtn').textContent='Stop Set';toast('GO');beep(660,0.12); };
 function endSet(fail){ running=false;$('startBtn').textContent='Start Set';
   if(reps>bestSet){bestSet=reps;xset('flowBest',bestSet);$('hBest').textContent=bestSet;}
-  logSession({g:'flow',reps:reps,acc:totF?Math.round(hitF/totF*100):0});cue(false);beep(400,0.18);
+  if(window.X3FSet)X3FSet.report({g:'flow',reps:reps,acc:totF?Math.round(hitF/totF*100):0});
+  else logSession({g:'flow',reps:reps,acc:totF?Math.round(hitF/totF*100):0});cue(false);beep(400,0.18);
   toast(fail?('Failure - '+reps+' reps'):('Set done - '+reps+' reps')); }
 let toastT=0;
 function toast(t){$('toast').textContent=t;$('toast').classList.add('show');toastT=performance.now()+1400;}
@@ -188,11 +189,15 @@ resize();requestAnimationFrame(loop);
 </script>
 <script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
-<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script><script src="x3f-music.js"></script>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script><script src="x3f-progress.js"></script>
+<script src="x3f-set.js"></script>
+<script src="x3f-music.js"></script>
 <script>/* soundtrack: reacts to your pull where the page exposes one */
 addEventListener("load",function(){try{
   var f=function(){ try{ return Math.min(1,(force/ref())*1.05); }catch(e){ return 0.25; } };
   X3FMusic.attach({mood:"flow",getIntensity:f,
     buttonHost:document.querySelector(".topbar")||document.body,buttonClass:"mini"});
 }catch(e){}});</script>
+<script>/* let the reporter measure peak force and time under tension itself */
+addEventListener('load',function(){try{X3FSet.watch(function(){return force},function(){return ref()});}catch(e){}});</script>
 </body></html>

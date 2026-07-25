@@ -55,7 +55,7 @@ h2:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--brd
 .vollab{display:flex;gap:5px;font-family:var(--n);font-size:9.5px;color:var(--dim);margin-top:4px}
 .vollab span{flex:1;text-align:center}
 .pbs{display:flex;flex-direction:column;gap:7px}
-.pbrow{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:10px 12px}
+.pbrow{display:grid;grid-template-columns:1fr auto auto auto auto;gap:10px;align-items:center;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:10px 12px}
 .pbrow .nm{font-weight:800;font-size:14.5px}
 .pbrow .bd{font-family:var(--n);font-size:11px;color:var(--dim)}
 .pbrow .v{font-family:var(--n);font-weight:700;font-size:16px;text-align:right;min-width:44px}
@@ -113,6 +113,9 @@ textarea{width:100%;min-height:70px;font-family:var(--n);font-size:12px;backgrou
 <h2>Personal bests</h2>
 <div class="pbs" id="pbs"></div>
 
+<h2>Recent sets</h2>
+<div class="pbs" id="recent"></div>
+
 <h2>Achievements</h2>
 <div class="achhead"><span class="cnt" id="achCnt"></span></div>
 <div class="filters" id="achFilters"></div>
@@ -151,6 +154,7 @@ function renderToday(){
       : 'Run one set and the 12-week program starts tracking itself.')+'</div>'+
     '<div class="bar"><i style="width:'+Math.round(pr.weekProgress*100)+'%"></i></div></div>'+
     '<div class="flame"><div class="n">'+st.current+'</div><div class="k">day streak</div>'+
+    (pr.active&&pr.thisWeek>=pr.perWeek?'<div class="k" style="color:var(--accent);margin-top:4px">rest earned</div>':'')+
     (st.best>st.current?'<div class="k" style="margin-top:4px">best '+st.best+'</div>':'')+'</div>';
 }
 
@@ -219,11 +223,37 @@ function renderPBs(){
     ? rows.map(r=>'<div class="pbrow"><div><div class="nm">'+nameOf(r.ex)+'</div><div class="bd">'+r.band+' band · '+r.count+' set'+(r.count>1?'s':'')+'</div></div>'+
         '<div class="v">'+r.reps+'<small>reps</small></div>'+
         '<div class="v">'+(r.part||'–')+'<small>partials</small></div>'+
-        '<div class="v">'+(Math.round(r.peak)||'–')+'<small>peak</small></div></div>').join('')
+        '<div class="v">'+(Math.round(r.peak)||'–')+'<small>peak</small></div>'+
+        '<div class="v">'+(r.ecc?r.ecc+'s':'–')+'<small>negative</small></div></div>').join('')
     : '<div class="card"><div class="empty">No sets logged yet. Play any game from Routines or the Library and your bests appear here, per movement and per band.</div></div>';
 }
 
 let achFilter='all';
+function renderRecent(){
+  const rows=P.sets().slice(-12).reverse();
+  $('recent').innerHTML=rows.length
+    ? rows.map(r=>{
+        const when=new Date(r.t), day=P.dayKey(r.t);
+        const bits=[];
+        if(r.reps)bits.push(r.reps+' reps');
+        if(r.part)bits.push(r.part+' partials');
+        if(r.peak)bits.push(Math.round(r.peak)+' peak');
+        if(r.tut)bits.push(Math.round(r.tut)+'s tension');
+        if(r.ecc)bits.push(r.ecc+'s negative');
+        if(!bits.length&&r.score)bits.push(r.score+' score');
+        return '<div class="pbrow"><div><div class="nm">'+(r.ex?nameOf(r.ex):(r.g||'set'))+
+          (r.k==='roll'?' <small style="color:var(--dim)">· '+r.n+' sets rolled up</small>':'')+'</div>'+
+          '<div class="bd">'+day+' · '+((r.band||r.b)||'no band')+(r.g?' · '+r.g:'')+'</div></div>'+
+          '<div class="bd" style="text-align:right">'+(bits.join(' · ')||'—')+'</div>'+
+          '<button class="home" data-del="'+r.t+'" data-nav title="Remove this set">✕</button></div>';
+      }).join('')
+    : '<div class="card"><div class="empty">Nothing logged yet.</div></div>';
+  $('recent').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
+    if(!confirm('Remove this set from your history?'))return;
+    P.removeSet(+b.dataset.del);refresh();
+  });
+}
+
 function renderAch(){
   const all=P.achievements();
   const got=all.filter(a=>a.got).length;
@@ -281,7 +311,7 @@ function refresh(){
   // marking a challenge changes what has been earned, and a badge that only
   // appears after a reload looks broken.
   try{ P.checkAchievements(); }catch(e){}
-  renderToday();renderChal();renderGrid();renderCharts();renderAdvice();renderPBs();renderAch();
+  renderToday();renderChal();renderGrid();renderCharts();renderAdvice();renderPBs();renderRecent();renderAch();
   if(window.X3FNav)X3FNav.refresh();
 }
 refresh();

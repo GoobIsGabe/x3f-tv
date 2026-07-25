@@ -131,6 +131,87 @@ eq('exercise round-trips', s[0].ex, 'calf-raise');
 eq('partials round-trip', s[0].part, 18);
 eq('pb sees it', P.pb('calf-raise','Light Gray').reps, 48);
 
+
+// ---------- compaction ----------
+L.push('');L.push('--- history compaction ---');
+(function(){
+  var many=[];
+  for(var d=120;d>=0;d--){
+    for(var k=0;k<4;k++){
+      var key=P.keyMinus(P.today(),d).split('-');
+      var t=new Date(+key[0],+key[1]-1,+key[2],10+k,0,0).getTime();
+      many.push({t:t,k:'set',g:'bloom',ex:'deadlift',band:'Black',b:'Black',reps:20+(d%7),part:3+(k%4),peak:400+k});
+    }
+  }
+  localStorage.setItem('x3f_history',JSON.stringify(many));
+  P.bust();
+  var beforeLen=P.history().length, beforeReps=P.stats().totalReps, beforeDays=P.stats().days;
+  var out=P.compact(P.history());
+  localStorage.setItem('x3f_history',JSON.stringify(out));P.bust();
+  ok('compaction shrinks a long history ('+beforeLen+' -> '+out.length+')', out.length<beforeLen);
+  ok('recent days are left alone', out.filter(function(e){return e.k==='set'}).length>0);
+  ok('older days became rollups', out.filter(function(e){return e.k==='roll'}).length>0);
+  eq('training days survive compaction', P.stats().days, beforeDays);
+  ok('rollups keep the best reps (max 26 seen)', P.pb('deadlift','Black').reps>=26, P.pb('deadlift','Black').reps);
+  ok('session count still counts rolled-up sets ('+P.stats().sessions+')', P.stats().sessions>=beforeLen*0.9);
+})();
+
+// ---------- undo ----------
+L.push('');L.push('--- undo ---');
+seed([at(1,{ex:'deadlift',band:'Black',reps:20}),at(0,{ex:'bent-row',band:'Dark Gray',reps:25})]);
+eq('two sets to start', P.sets().length, 2);
+var last=P.lastSet();
+eq('lastSet is the most recent', last.ex, 'bent-row');
+eq('removing it takes one away', P.removeSet(last.t), 1);
+eq('one set left', P.sets().length, 1);
+eq('removing a missing timestamp is a no-op', P.removeSet(123), 0);
+
+// ---------- previous() ----------
+L.push('');L.push('--- previous set, for "what improved" ---');
+seed([at(3,{ex:'deadlift',band:'Black',reps:20,part:4}),
+      at(1,{ex:'deadlift',band:'Black',reps:26,part:7}),
+      at(1,{ex:'deadlift',band:'Elite Black',reps:9})]);
+var prev=P.previous('deadlift','Black');
+eq('previous() finds the latest for that movement+band', prev.reps, 26);
+ok('previous() respects the band', P.previous('deadlift','Elite Black').reps===9);
+ok('previous() can skip the set being reported', P.previous('deadlift','Black',prev.t).reps===20);
+
+// ---------- day-aware challenges ----------
+L.push('');L.push('--- challenges follow the day ---');
+localStorage.removeItem('x3f_routine2');
+var push=P.dayMovements('Push'), pull=P.dayMovements('Pull');
+ok('push day has movements ('+push.length+')', push.length>=3);
+ok('pull day has movements ('+pull.length+')', pull.length>=3);
+ok('chest press is a push movement', push.indexOf('chest-press')>=0);
+ok('deadlift is a pull movement', pull.indexOf('deadlift')>=0);
+ok('deadlift is not a push movement', push.indexOf('deadlift')<0);
+localStorage.setItem('x3f_routine2',JSON.stringify({'Push Day':{list:['chest-press'],per:{}},'Pull Day':{list:['deadlift'],per:{}}}));
+eq('an edited day list wins', P.dayMovements('Push').join(), 'chest-press');
+localStorage.removeItem('x3f_routine2');
+
+// only today's lifts get named, when there is history for them
+seed([at(2,{ex:'deadlift',band:'Black',reps:30,peak:420}),
+      at(2,{ex:'chest-press',band:'Dark Gray',reps:28,peak:300})]);
+var pr3=P.program(), ch=P.challenge();
+ok('challenge names a movement from today ('+pr3.nextType+' -> '+ch.slug+')',
+   P.dayMovements(pr3.nextType).indexOf(ch.slug)>=0);
+
+// ---------- tension + eccentric ----------
+L.push('');L.push('--- tension and negatives ---');
+seed([]);
+P.logSet({g:'bloom',ex:'deadlift',band:'Black',reps:24,part:8,peak:430,tut:96,ecc:3.2});
+var row=P.pbTable()[0];
+eq('tension is stored', row.tut, 96);
+eq('eccentric average is stored', row.ecc, 3.2);
+var st2=P.stats();
+eq('stats track best tension', st2.bestTut, 96);
+eq('stats track best negative', st2.bestEcc, 3.2);
+var names=P.checkAchievements().map(function(a){return a.name});
+ok('a slow-negative badge unlocks at 3.2s: '+names.filter(function(n){return /Negative/.test(n)}).join(','),
+   names.some(function(n){return /Slow Negative/.test(n)}));
+ok('an under-tension badge unlocks at 96s',
+   names.some(function(n){return /Under Tension/.test(n)}));
+
 document.getElementById('log').textContent =
   'X3F-PROGRESS ENGINE  '+pass+' passed, '+fail+' failed'+String.fromCharCode(10,10)+L.join(String.fromCharCode(10));
 </script>

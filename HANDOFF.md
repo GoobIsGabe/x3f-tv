@@ -19,7 +19,7 @@ tools/  sync-from-web.py, which does the generating
 
 `E:\Fun\X3 Bar` was the old separate home of the web games. It is **retired** — it had a git remote pointing at this same repo and a DEPLOY.md telling you to force-push, which would have overwritten the Android app. Everything that matters was moved into `web/`. Don't develop there.
 
-Current status: **v1.1**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
+Current status: **v1.2**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -90,6 +90,16 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - `routine.html` — pick Push / Pull / Custom, then run the day. Per movement it coaches the setup + strongest-range start, shows the form demonstrator, launches the chosen game pre-configured (`?from=routine&band=…&ex=…`), logs the set and runs a rest timer to the next lift. Days are editable (add / reorder / remove from the 11 movements); sets, bands, tempo and progress persist. Back → launcher → Workout resumes the session and asks whether the set counted.
 - `x3f-form.js` — the animated figure. Poses are authored as hip/hand/foot targets with the knees and elbows solved by two-bone IK, driven by live force: it rises, holds, eases, flushes and trembles near max, and flips to "diminishing range" when your rep tops start collapsing (the X3 burnout). The foot hinges on the ball with the contact pinned to the floor, so a calf raise really rises onto the toes.
 - `library.html` + `progress.html` bundled; launcher gained Workout (hero card), Library and Progress.
+
+**v1.2 — the whole suite feeds the program.** `x3f-set.js` is now the single way a game reports a finished set: Flow, Arena (max/boss/zone), Duel, Rhythm, Splash and Nova all call it, so PBs, challenges and achievements see everything instead of only Bloom. It resolves the movement from `?ex=` and the band from shared storage, **measures peak force and time-under-tension itself** (no per-game tracker), names what improved against your last set of that movement, and announces unlocks through the hype layer — never a dialog.
+- History no longer truncates: entries older than 8 weeks fold into one rollup per day+movement+band, keeping bests and an `n` so session counts stay honest.
+- Challenges follow the day — a push day asks for push movements (your edited Routines day list wins, else the library's day tags, legs counting for both).
+- Undo: "Undo last set" on the summary, and a delete on every row of a new Recent Sets list on the dashboard.
+- Bloom times each lowering phase (eccentric average) and reports tension; new Slow Negative and Under Tension badges, a tension challenge, and a negative column in the PB table.
+- 10-foot pass for game HUDs, injected from the shell so the phone build is untouched.
+- Perf: nav audit 6-8 min -> 30 s; `sets()`/`pbTable()`/`stats()` memoised on a log revision key; `x3f-nav.js` reuses its item list for 50 ms.
+- Fixed: the session summary was counted as a SET (inflating session/day counts, and undo removed the summary instead of your last set); the peak watcher missed sets shorter than one sample interval.
+- Suites: 67 engine, 79 functional across 7 screens, 12 screens / 27 nav states.
 
 **v1.1 — the program brain.** `x3f-progress.js` is now the source of truth for everything about your training, derived entirely from `localStorage['x3f_history']`. Local only: no account, no server, nothing that can collide with another project.
 - **12-week program** derived from what you have *done*, not the calendar, so a missed day shifts the plan instead of desyncing it. Weeks 1-4 are four workouts a week, 5-12 are six, Push/Pull alternating.

@@ -59,87 +59,97 @@ per lift.
 
 ---
 
+## Shipped in v1.2 — the whole suite feeds the program
+
+- **`x3f-set.js`** — one way for any game to say "a set finished" (was roadmap #1,
+  the highest-value item). Flow, Arena (max / boss / zone), Duel, Rhythm, Splash
+  and Nova all report now, so personal bests, challenges and achievements finally
+  see the whole suite instead of only Bloom. It resolves the movement from `?ex=`
+  and the band from shared storage, measures **peak force and time under tension
+  itself** so no game needs its own tracker, names what improved versus your last
+  set of that movement, and announces unlocks through the hype layer (never a
+  dialog).
+- **History no longer truncates** (#2). Anything older than eight weeks folds into
+  one rollup per day+movement+band — bests survive, `n` keeps session counts
+  honest — so a 12-week cycle at five lifts a day cannot push real history off the
+  front any more.
+- **Challenges follow the day** (#3). Push day asks for push movements. Your edited
+  Routines day list wins; otherwise the library's day tags decide, with legs
+  counting for both.
+- **Undo** (#4). "Undo last set" on the session summary, and a delete on every row
+  of a new Recent Sets list on the dashboard. A mis-tap no longer poisons a PB.
+- **Eccentric timing and time under tension** (#5). Bloom times each lowering
+  phase and reports the average; the reporter tracks tension everywhere. Two new
+  badge families (Slow Negative, Under Tension), a new challenge shape, and a
+  negative-seconds column in the PB table.
+- **Optimisation** — the nav audit went from 6–8 minutes to **30 seconds** (#6:
+  a blocking `alert()` plus an unbounded BFS), `sets()`/`pbTable()`/`stats()` are
+  memoised on a log revision key (#7, #10), and `x3f-nav.js` reuses its item list
+  for 50ms, saving a style recalc per item per keypress.
+- **What improved, said out loud** (#11) and **rest day earned** (#14) on both the
+  launcher strip and the dashboard.
+- **10-foot pass for game HUDs** (#16) — force numbers, chips, toasts and cards
+  scale up at ≥1200px wide, injected from the shell so the phone build is
+  untouched.
+- Fixed along the way: the session summary was being counted as a *set*, inflating
+  session and day counts and making undo remove the summary instead of your last
+  set; the watcher missed sets shorter than one sample interval.
+
+Tests now: 67 engine, 79 functional across 7 screens, 12 screens / 27 states of
+navigation.
+
+---
+
 ## Next
 
-### Correctness and data — do these first
+### Correctness
 
-**1. Only Bloom and guided sets report rich data.** Flow, Arena, Duel, Rhythm,
-Splash and Nova still log a score, not reps/partials/peak against a movement. So
-PBs, challenges and achievements are blind to most of the suite, and a challenge
-can only ever name a movement you happened to train in Bloom. Fix: one shared
-`X3FSet.report()` each game calls when a set ends. *Highest value item on this
-list — everything else in v1.1 gets better the moment it lands.*
+**1. Calibrate does not report.** By design — it measures a band's true max rather
+than training a movement — but that max is the input to every force percentage in
+the app, and nothing records *when* it was last calibrated. A stale White-band max
+silently skews every intensity reading. Log a calibration event and surface "last
+calibrated 6 weeks ago".
 
-**2. History truncates.** `x3f_history` keeps 600 entries and drops the oldest. A
-12-week cycle at five lifts, six days a week is ~360 entries; two cycles and real
-history starts falling off the front. Fix: compact anything older than ~8 weeks
-into per-day rollups (day, movement, band, best reps, partials, peak) so the grid
-and PBs survive indefinitely at a fraction of the size.
+**2. Score games log per run.** Splash and Nova report on every run end, so three
+quick attempts read as three sets. Days and streaks are unaffected (same day) but
+session counts inflate. Either debounce to one entry per movement per day, or mark
+run entries so `sessions` counts them once.
 
-**3. Challenges ignore Push vs Pull.** The engine knows today's day type but the
-challenge picker does not use it, so it can ask for Bent Row on a push day. Bias
-selection to today's movements, and fall back to anything if there is no history
-for them.
-
-**4. No undo.** A mis-tapped "Log set" is permanent and silently pollutes PBs.
-Needs an undo on the summary and a delete on the dashboard's recent list.
-
-**5. No time-under-tension or eccentric timing.** The bar can see both, and both
-are central to the method — slow negatives especially. Nothing logs them, so
-challenges cannot ask for holds and the eccentric-quality idea has no data. Log
-per-rep down-phase duration and a smoothness score.
-
-### Optimisation
-
-**6. The nav audit takes 6–8 minutes** because it launches a browser per screen.
-One browser driven over CDP, or screens in parallel, would make it a pre-commit
-check instead of a coffee break.
-
-**7. Recomputation.** `streak()` calls `bestStreak()` every time, and the
-dashboard calls both repeatedly; achievements rebuild all ~130 closures on each
-refresh. Cache a stats snapshot keyed on the log length and timestamp.
-
-**8. Three animation loops on a TV SoC.** The game's own rAF, the form rig's rAF
-and the music scheduler's interval all run at once. Measure it on the Hisense;
-if it costs frames, drive the form rig from the game's existing loop via the
-`frame(dt)` hook that already exists.
-
-**9. The bundle is 4.68 MB and ~2.5 MB of that is PNG art.** WebP would roughly
-halve it, with a PNG fallback for anything that cannot decode it.
-
-**10. `pbTable()` walks the whole log per call** and the dashboard calls it three
-times per refresh. One pass, shared.
+**3. Legacy `logSession` is now dead code** in most games — still defined, still
+called only as a fallback. Remove it once the reporter has a release of real use
+behind it.
 
 ### Engagement
 
-**11. Post-set summary that names what improved.** "Chest press: 3 more full reps
-than last Tuesday, and 2 more partials." The data is there now; nothing says it.
+**4. Weekly review card.** Volume, new PBs, adherence, one sentence. Fires on the
+last day of *your* week, not on Sunday.
 
-**12. Weekly review card.** Volume, new PBs, adherence, one sentence of praise or
-a nudge. Fires on the last day of your week, not on Sunday.
+**5. Household profiles.** A profile prefix on the storage keys, a picker on the
+launcher, separate histories. Same-band head-to-head only.
 
-**13. Unlocks should use the hype layer everywhere.** Bloom shows a proper
-callout; Routine still uses `alert()`, which is jarring and blocks the page.
+**6. The form demonstrator only appears with `?ex=`.** Launch a game from the
+launcher and there is nothing to mirror. Offer the last-trained movement as a
+default so the guidance is there unless you turn it off.
 
-**14. Rest day earned.** The engine knows the weekly target. When you have hit it,
-say so — "rest day earned, streak safe" — instead of leaving a gap that looks like
-failure.
+### Optimisation
 
-**15. Household profiles.** A profile prefix on the storage keys, a picker on the
-launcher, separate histories. Same-band head-to-head only; no leaderboards.
+**7. Three animation loops on a TV SoC** — the game's rAF, the form rig's rAF and
+the music scheduler. The rig already exposes `frame(dt)`; drive it from the game's
+loop if the Hisense drops frames.
+
+**8. The bundle is 4.7 MB and ~2.5 MB is PNG.** WebP roughly halves it.
 
 ### TV polish
 
-**16. 10-foot pass for game HUDs.** The menus scale their type at ≥1200px; the
-games do not. Force numbers and chips are still phone-sized across a room.
+**9. Music restarts on every navigation** because each page is a fresh document.
+Either hand playback to the native side or keep the menu mood identical everywhere
+so it reads as continuous.
 
-**17. Music restarts on every navigation** because each page is a fresh document
-in the WebView. Either hand playback to the native side, or accept it and make the
-menu mood identical everywhere so it reads as continuous.
+**10. The 10-foot pass is verified headlessly only.** Type scale is a judgement
+call that needs eyes on the actual couch; expect one round of adjustment.
 
-**18. Import on the TV is impractical** — no keyboard. Export shows text to copy;
-realistically the phone (gh-pages) is the device you import on. A pairing code
-would need a server, which is the thing we are deliberately not building.
+**11. Import on the TV is impractical** — no keyboard. The phone build
+(`gh-pages`) is the realistic device for that.
 
 ---
 

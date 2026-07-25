@@ -242,6 +242,7 @@ addEventListener('load',function(){setTimeout(function(){
     <div><div class="k">Minutes</div><div class="v" id="dMin">0</div></div></div>
   <div class="nx" id="dNote"></div>
   <button class="cta" id="dClose" data-nav>Back to the day</button>
+  <button class="cta ghost" id="dUndo" data-nav>Undo last set</button>
   <a class="cta ghost" href="progress.html" data-nav>See progress →</a>
 </div></div>
 
@@ -323,6 +324,8 @@ function renderProgram(){
       '<span class="pd">'+(pr.active?('<b>'+(pr.doneToday?'Done today':pr.nextType+' day')+'</b>'):'<b>Start the program</b>')+'</span>'+
       '<span class="pw">'+(pr.active?('Week '+pr.week+' · '+pr.phase+' · '+pr.thisWeek+'/'+pr.perWeek+' this week'):'12 weeks · one all-out set per lift')+'</span>'+
       '<span class="ps">'+st.current+' day streak</span>'+
+      (pr.active&&pr.thisWeek>=pr.perWeek&&!pr.doneToday
+        ? '<span class="pw" style="color:var(--accent)">Rest day earned — streak stays safe</span>' : '')+
       '<span class="pc'+(c.done?' done':'')+'"><b>'+(c.done?'✅ Challenge complete':'🎯 '+c.title)+'</b> — '+c.detail+'</span>';
   }catch(e){}
 }
@@ -489,7 +492,7 @@ function endSession(){
   const sets=(S&&S.sets)||0, l=listFor();
   $('dSets').textContent=sets;$('dLifts').textContent=l.filter(isDone).length;$('dMin').textContent=mins;
   $('dNote').innerHTML=sets?`${day} logged. Bands and results are shared with the rest of the app.`:'Nothing logged this time.';
-  if(sets)try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push({t:Date.now(),g:'routine',day:day,sets:sets,mins:mins});while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}
+  if(sets)try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push({t:Date.now(),k:'session',g:'routine',day:day,sets:sets,mins:mins});while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}
   S={active:false};xset('session',S);
   closeCoach();stopRest();
   $('done').classList.add('show');beep(880,.2);setTimeout(()=>beep(1170,.22),150);
@@ -505,6 +508,18 @@ $('cNext').onclick=()=>stepLift(1);
 $('cPendYes').onclick=logSet;
 $('cPendNo').onclick=()=>{S.pending=null;saveS();$('cPending').classList.remove('show')};
 $('dClose').onclick=()=>$('done').classList.remove('show');
+/* A mis-tapped "Log set" used to be permanent, and it quietly poisons personal
+   bests. Undo removes the most recent logged set and the progress mark with it. */
+$('dUndo').onclick=()=>{
+  if(!window.X3FProg)return;
+  const last=X3FProg.lastSet();
+  if(!last){toastAch([{name:'Nothing to undo',desc:'no sets logged yet'}]);return;}
+  X3FProg.removeSet(last.t);
+  if(last.ex){const d=doneSets(last.ex);if(d>0)setDoneSets(last.ex,d-1);}
+  if(S&&S.sets>0)S.sets--;
+  toastAch([{name:'Set removed',desc:(EXD.get(last.ex)?EXD.get(last.ex).name:'that set')+' is no longer counted'}]);
+  render();
+};
 
 /* ---------- rest timer ---------- */
 let restT=null;

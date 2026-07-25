@@ -53,17 +53,94 @@
     o = o || {};
     var h = history();
     var e = { t: o.t || Date.now(), k: 'set' };
-    ['g', 'ex', 'band', 'reps', 'full', 'part', 'peak', 'secs', 'score', 'acc'].forEach(function (f) {
+    ['g', 'ex', 'band', 'reps', 'full', 'part', 'peak', 'secs', 'score', 'acc',
+     'tut', 'ecc', 'n'].forEach(function (f) {
       if (o[f] != null) e[f] = o[f];
     });
     if (o.band) e.b = o.band;                 // keep the old field name too
     h.push(e);
-    while (h.length > 600) h.shift();
+    h = compact(h);
     set(K_HIST, h);
     return e;
   }
+
+  /* Twelve weeks at five lifts, six days a week is ~360 entries, so a hard cap of
+     600 quietly ate real history after two cycles. Instead, fold anything older
+     than KEEP_DAYS into one rollup per day+movement+band - max reps, max
+     partials, max peak, and n so session counts stay honest - and only then
+     trim. The grid, the PBs and the totals all survive indefinitely. */
+  var KEEP_DAYS = 56, SOFT_CAP = 700;
+  function compact(h) {
+    if (h.length <= 420) return h;
+    var cutoff = keyMinus(today(), KEEP_DAYS);
+    var keep = [], roll = {};
+    h.forEach(function (e) {
+      var day = dayKey(e.t);
+      if (day > cutoff) { keep.push(e); return; }
+      var k = day + '|' + (e.ex || '') + '|' + (bandOf(e) || '');
+      var r = roll[k];
+      if (!r) {
+        roll[k] = {
+          t: e.t, k: 'roll', n: (+e.n || 1), g: e.g, ex: e.ex, band: bandOf(e), b: bandOf(e),
+          reps: +e.reps || 0, full: +e.full || 0, part: +e.part || 0,
+          peak: +e.peak || 0, secs: +e.secs || 0, tut: +e.tut || 0, ecc: +e.ecc || 0
+        };
+        return;
+      }
+      r.n += (+e.n || 1);
+      ['reps', 'full', 'part', 'peak', 'tut', 'ecc'].forEach(function (f) {
+        if ((+e[f] || 0) > r[f]) r[f] = +e[f] || 0;      // bests survive
+      });
+      r.secs += (+e.secs || 0);
+    });
+    var out = Object.keys(roll).map(function (k) { return roll[k]; }).concat(keep);
+    out.sort(function (a, b) { return a.t - b.t; });
+    while (out.length > SOFT_CAP) out.shift();
+    return out;
+  }
+
+  /* Remove one entry by timestamp - the undo path. */
+  function removeSet(t) {
+    var h = history(), before = h.length;
+    h = h.filter(function (e) { return e.t !== t; });
+    if (h.length !== before) { set(K_HIST, h); bust(); }
+    return before - h.length;
+  }
+  function lastSet() {
+    var s = sets();
+    return s.length ? s[s.length - 1] : null;
+  }
+  /* The set before the most recent one for this movement+band, so a summary can
+     say what actually improved. */
+  function previous(slug, band, skipT) {
+    var s = sets().filter(function (e) {
+      return e.ex === slug && (!band || bandOf(e) === band) && e.t !== skipT;
+    });
+    return s.length ? s[s.length - 1] : null;
+  }
+  /* sets(), pbTable() and stats() each walk the whole log, and a dashboard render
+     calls them repeatedly. Cache on a cheap revision key - length plus the last
+     timestamp - and bust it on any write. */
+  var memo = {}, memoKey = '';
+  function rev() {
+    var h = history();
+    return h.length + ':' + (h.length ? h[h.length - 1].t : 0);
+  }
+  function cached(name, fn) {
+    var r = rev();
+    if (r !== memoKey) { memo = {}; memoKey = r; }
+    if (!(name in memo)) memo[name] = fn();
+    return memo[name];
+  }
+  function bust() { memo = {}; memoKey = ''; }
+
   function sets() {
-    return history().filter(function (e) { return e && (e.k === 'set' || e.reps != null || e.g); });
+    return cached('sets', function () {
+      return history().filter(function (e) {
+        if (!e || e.k === 'session') return false;      // a summary, not a set
+        return e.k === 'set' || e.k === 'roll' || e.reps != null || e.g;
+      });
+    });
   }
   function bandOf(e) { return e.band || e.b || null; }
 
@@ -79,19 +156,22 @@
     });
     return best;
   }
-  function pbTable() {
+  function pbTable() { return cached('pbTable', pbTableRaw); }
+  function pbTableRaw() {
     var out = {};
     sets().forEach(function (e) {
       if (!e.ex) return;
       var b = bandOf(e) || '?';
       var key = e.ex + '|' + b;
       var r = +e.reps || 0, p = +e.peak || 0, pa = +e.part || 0;
-      if (!out[key]) out[key] = { ex: e.ex, band: b, reps: 0, peak: 0, part: 0, count: 0, last: 0 };
+      if (!out[key]) out[key] = { ex: e.ex, band: b, reps: 0, peak: 0, part: 0, tut: 0, ecc: 0, count: 0, last: 0 };
       var row = out[key];
-      row.count++;
+      row.count += (+e.n || 1);
       if (r > row.reps) row.reps = r;
       if (p > row.peak) row.peak = p;
       if (pa > row.part) row.part = pa;
+      if ((+e.tut || 0) > row.tut) row.tut = +e.tut || 0;
+      if ((+e.ecc || 0) > row.ecc) row.ecc = +e.ecc || 0;
       if (e.t > row.last) row.last = e.t;
     });
     return Object.keys(out).map(function (k) { return out[k]; });
@@ -100,7 +180,7 @@
   /* ---------- days worked ---------- */
   function workoutDays() {
     var d = {};
-    sets().forEach(function (e) { d[dayKey(e.t)] = (d[dayKey(e.t)] || 0) + 1; });
+    sets().forEach(function (e) { var k = dayKey(e.t); d[k] = (d[k] || 0) + (+e.n || 1); });
     return d;
   }
 
@@ -207,12 +287,22 @@
     var day = today();
     var st = get(K_CHAL, {});
     var moves = (window.X3FEX ? window.X3FEX.list : []).map(function (e) { return e; });
-    var rows = pbTable().filter(function (r) { return r.reps > 0; });
+    /* Ask for work you are actually about to do. Without this the challenge could
+       name Bent Row on a push day, which is either ignored or it damages the
+       programme. Prefer today's day list from Routines; fall back to the library's
+       day tags (legs counts for both, being in both default days). */
+    var pr = program();
+    var todaySlugs = dayMovements(pr.nextType);
+    var all = pbTable().filter(function (r) { return r.reps > 0 || r.peak > 0; });
+    var rows = all.filter(function (r) { return todaySlugs.indexOf(r.ex) >= 0; });
+    if (!rows.length) rows = all;                      // nothing logged for today's lifts yet
     var r = rng(seedFrom('x3f-challenge-' + day));
     var c;
 
     if (!rows.length) {
-      var seedMove = moves.length ? moves[Math.floor(r() * moves.length)] : null;
+      var pool = moves.filter(function (m) { return todaySlugs.indexOf(m.slug) >= 0; });
+      if (!pool.length) pool = moves;
+      var seedMove = pool.length ? pool[Math.floor(r() * pool.length)] : null;
       c = {
         id: 'first-' + day,
         kind: 'baseline',
@@ -245,6 +335,14 @@
           detail: pt + ' partial reps past failure on ' + name + '. Your best is ' + row.part + '.',
           slug: row.ex, band: row.band, target: pt, metric: 'part'
         };
+      } else if (roll < 0.9 && row.tut > 20) {
+        var tt = Math.max(20, Math.round(row.tut * 0.8));
+        c = {
+          id: 'tut-' + day, kind: 'tut',
+          title: 'Time under tension',
+          detail: tt + ' seconds of tension on ' + name + ' (' + row.band + '). Your best is ' + Math.round(row.tut) + 's.',
+          slug: row.ex, band: row.band, target: tt, metric: 'tut'
+        };
       } else {
         var fpct = [0.8, 0.85, 0.9][Math.floor(r() * 3)];
         var ft = Math.max(10, Math.round(row.peak * fpct));
@@ -270,6 +368,20 @@
     }
     return c;
   }
+  /* Which movements belong to a Push or Pull day. Routines is authoritative if the
+     user has edited their days; otherwise use the library's tags. */
+  function dayMovements(type) {
+    var key = type + ' Day';
+    try {
+      var cfg = get('x3f_routine2', null);
+      if (cfg && cfg[key] && cfg[key].list && cfg[key].list.length) return cfg[key].list.slice();
+    } catch (e) {}
+    var tag = (type === 'Pull') ? 'pull' : 'push';
+    var list = (window.X3FEX ? window.X3FEX.list : []);
+    return list.filter(function (m) { return m.day === tag || m.day === 'legs'; })
+               .map(function (m) { return m.slug; });
+  }
+
   function markChallenge() {
     var st = get(K_CHAL, {});
     st[today()] = { done: true, at: Date.now() };
@@ -285,12 +397,16 @@
   function stats() {
     var s = sets(), days = workoutDays();
     var totalReps = 0, totalPart = 0, byEx = {}, byBand = {}, bestPart = 0, bestReps = 0, peak = 0, guided = 0;
+    var bestTut = 0, bestEcc = 0;
     s.forEach(function (e) {
       var r = +e.reps || 0, p = +e.part || 0;
-      totalReps += r; totalPart += p;
+      var mult = (+e.n || 1);
+      totalReps += r * (e.k === 'roll' ? mult : 1); totalPart += p * (e.k === 'roll' ? mult : 1);
       if (r > bestReps) bestReps = r;
       if (p > bestPart) bestPart = p;
       if ((+e.peak || 0) > peak) peak = +e.peak || 0;
+      if ((+e.tut || 0) > bestTut) bestTut = +e.tut || 0;
+      if ((+e.ecc || 0) > bestEcc) bestEcc = +e.ecc || 0;
       if (e.ex) byEx[e.ex] = (byEx[e.ex] || 0) + r;
       var b = bandOf(e); if (b) byBand[b] = (byBand[b] || 0) + r;
       if (e.g === 'routine') guided++;
@@ -326,8 +442,10 @@
       }
     }
     return {
+      bestTut: bestTut, bestEcc: bestEcc,
       bestDayVariety: bestDayVariety, burnSets: burnSets, fullWeeks: fullWeeks, comeback: comeback,
-      sessions: s.length, days: Object.keys(days).length, totalReps: totalReps,
+      sessions: s.reduce(function (a, e) { return a + (+e.n || 1); }, 0),
+      days: Object.keys(days).length, totalReps: totalReps,
       totalPart: totalPart, bestReps: bestReps, bestPart: bestPart, peak: peak,
       byEx: byEx, byBand: byBand, streak: st.current, bestStreak: st.best,
       week: pr.week, guided: guided, challenges: challengesDone(),
@@ -428,6 +546,17 @@
     // 15. coming back after time off, which matters more than never missing
     add('comeback', 'Back At It', 'Return to training after a week or more away', 2,
       function (s) { return s.comeback; });
+    // 16a. slow negatives - the technique the bar can actually measure
+    [2.0, 3.0, 4.0].forEach(function (n, i) {
+      add('ecc' + String(n).replace('.', ''), 'Slow Negative ' + (i + 1),
+        'Average a ' + n + 's lowering phase across a set', i + 1,
+        function (s) { return s.bestEcc >= n; });
+    });
+    // 16b. time under tension
+    [60, 120, 240].forEach(function (n, i) {
+      add('tut' + n, 'Under Tension ' + (i + 1), n + ' seconds of tension in one set', i + 1,
+        function (s) { return s.bestTut >= n; });
+    });
     // 16. movements taken deep into burnout
     [10, 25].forEach(function (n, i) {
       add('exburn' + n, 'Burnout Specialist' + (i ? ' II' : ''), n + ' sets that went past failure', i + 2,
@@ -474,11 +603,13 @@
 
   window.X3FProg = {
     dayKey: dayKey, today: today, keyMinus: keyMinus, daysBetween: daysBetween,
-    history: history, sets: sets, logSet: logSet,
+    history: history, sets: sets, logSet: logSet, compact: compact,
+    removeSet: removeSet, lastSet: lastSet, previous: previous, bust: bust,
     pb: pb, pbTable: pbTable, workoutDays: workoutDays,
     streak: streak, program: program, grid: grid,
     challenge: challenge, markChallenge: markChallenge, challengesDone: challengesDone,
     stats: stats, achievements: achievements, checkAchievements: checkAchievements,
+    dayMovements: dayMovements,
     catalogue: catalogue, bandAdvice: bandAdvice, BANDS: BANDS,
     reset: function () { [K_ACH, K_CHAL, K_PROG].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} }); }
   };

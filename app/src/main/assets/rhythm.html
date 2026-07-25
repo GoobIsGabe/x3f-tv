@@ -126,7 +126,7 @@ function mapY(f){const top=58,bot=H-70,R=ref();return bot-(bot-top)*Math.max(0,M
 $('bpmSel').onchange=()=>{period=60000/ +$('bpmSel').value};
 $('startBtn').onclick=()=>{ if(running){stop();return;}
   period=60000/ +$('bpmSel').value;running=true;beats=[];idx=0;score=0;combo=0;nextBeat=performance.now()+800;$('startBtn').textContent='Stop';$('hScore').textContent=0;$('hCombo').textContent='x0';toast('GO');beep(660,0.12)}
-function stop(){running=false;$('startBtn').textContent='Start';if(combo>bestCombo){bestCombo=combo;xset('rhythmBest',bestCombo);$('hBest').textContent=bestCombo}logSession({g:'rhythm',combo:bestCombo,score:score})}
+function stop(){running=false;$('startBtn').textContent='Start';if(combo>bestCombo){bestCombo=combo;xset('rhythmBest',bestCombo);$('hBest').textContent=bestCombo}(window.X3FSet?X3FSet.report({g:'rhythm',score:score}):logSession({g:'rhythm',combo:bestCombo,score:score}))}
 function loop(now){
   if(!W)resize();
   const R=ref(),hi=R*0.72,lo=R*0.14,tol=R*0.17;
@@ -161,6 +161,8 @@ resize();requestAnimationFrame(loop);
 <script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
 
+<script src="x3f-progress.js"></script>
+<script src="x3f-set.js"></script>
 <script src="x3f-music.js"></script>
 <script>/* soundtrack: reacts to your pull where the page exposes one */
 addEventListener("load",function(){try{
@@ -168,4 +170,6 @@ addEventListener("load",function(){try{
   X3FMusic.attach({mood:"rhythm",getIntensity:f,
     buttonHost:document.querySelector(".topbar")||document.body,buttonClass:"mini"});
 }catch(e){}});</script>
+<script>/* let the reporter measure peak force and time under tension itself */
+addEventListener('load',function(){try{X3FSet.watch(function(){return force},function(){return ref()});}catch(e){}});</script>
 </body></html>

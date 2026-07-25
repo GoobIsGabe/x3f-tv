@@ -119,7 +119,9 @@ const cv=$('cv'),ctx=cv.getContext('2d');let W=0,H=0,DPR=1;
 function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0)}
 addEventListener('resize',resize);
 let running=false,round=1,flag=0,reps=0,st='down',peakF=0,aiNext=0,reason='';
-function startMatch(){running=true;round=1;newRound();$('startBtn').textContent='Restart';toast('ROUND 1');beep(660,0.12)}
+let duelRounds=0;
+function startMatch(){ if(duelRounds>0&&window.X3FSet){X3FSet.report({g:'duel',score:duelRounds});duelRounds=0;}
+  running=true;round=1;newRound();$('startBtn').textContent='Restart';toast('ROUND 1');beep(660,0.12)}
 function newRound(){flag=0;reps=0;st='down';peakF=0;aiNext=performance.now()+aiPeriod();$('hReps').textContent=0;$('hRound').textContent=round}
 function aiPeriod(){return Math.max(820,1900-round*150)}
 function aiPull(){return 0.055+round*0.008}
@@ -133,10 +135,12 @@ function loop(now){
     else if(st==='up'&&force<lo){ // rep complete
       const qual=Math.max(0,Math.min(1,(peakF-hi)/(R-hi)));
       flag+=0.07+0.07*qual;reps++;$('hReps').textContent=reps;peakF=0;st='down';beep(760,0.05);if(navigator.vibrate)navigator.vibrate(25);
-      if(flag>=1){round++;if(round-1>bestRound){bestRound=round-1;xset('duelBest',bestRound);$('hBest').textContent=bestRound;}logSession({g:'duel',round:round-1});toast('ROUND '+round);beep(900,0.18);newRound();}
+      if(flag>=1){round++;if(round-1>bestRound){bestRound=round-1;xset('duelBest',bestRound);$('hBest').textContent=bestRound;}duelRounds=round-1;toast('ROUND '+round);beep(900,0.18);newRound();}
     }
     if(now>=aiNext){flag-=aiPull();aiNext=now+aiPeriod();
-      if(flag<=-1){running=false;reason='lose';toast('CPU wins - round '+round);beep(300,0.3);$('startBtn').textContent='New Match';}}
+      if(flag<=-1){running=false;reason='lose';toast('CPU wins - round '+round);beep(300,0.3);$('startBtn').textContent='New Match';
+        // one log entry per MATCH, not per round
+        if(window.X3FSet){X3FSet.report({g:'duel',score:duelRounds});duelRounds=0;}}}
   }
   // draw
   ctx.clearRect(0,0,W,H);
@@ -168,6 +172,8 @@ resize();requestAnimationFrame(loop);
 <script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
 <script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
+<script src="x3f-progress.js"></script>
+<script src="x3f-set.js"></script>
 <script src="x3f-music.js"></script>
 <script>/* soundtrack: reacts to your pull where the page exposes one */
 addEventListener("load",function(){try{
@@ -175,4 +181,6 @@ addEventListener("load",function(){try{
   X3FMusic.attach({mood:"duel",getIntensity:f,
     buttonHost:document.querySelector(".topbar")||document.body,buttonClass:"mini"});
 }catch(e){}});</script>
+<script>/* let the reporter measure peak force and time under tension itself */
+addEventListener('load',function(){try{X3FSet.watch(function(){return force},function(){return ref()});}catch(e){}});</script>
 </body></html>

@@ -25,7 +25,7 @@ REPO = Path(__file__).resolve().parents[2]
 ASSETS = REPO / "app" / "src" / "main" / "assets"
 HERE = Path(__file__).resolve().parent
 
-SCREENS = ["launcher", "routine", "library", "progress", "bloom"]
+SCREENS = ["launcher", "routine", "library", "progress", "bloom", "flow", "splash"]
 
 BROWSERS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
