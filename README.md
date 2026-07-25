@@ -21,3 +21,8 @@ Same as the web games: BLE service `e3458900`, force characteristic `e3458901` (
 - v0.1 — probe: auto-connect + live force (this build)
 - v0.2 — WebView + Nova, force injected natively, auto-reconnect
 - v0.3 — D-pad game launcher, all games bundled for offline play
+- v0.4 — logo (icon / banner / launcher), shop-scroll nav fix
+- v0.5 — bubbly web launcher, in-app updater, stable signing
+- v0.6 — **guided workout mode**: Push/Pull days that coach each X3 movement, plus a live
+  form demonstrator — an animated figure that moves with your actual force — and the
+  Library / Progress pages on the TV

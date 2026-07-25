@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<!-- X3F ROUTINES - guided workout mode.
+ Pick a day (Push / Pull / Custom), set the game + band + tempo + sets for each
+ movement, then run the day: for every movement it coaches the setup and the
+ strongest-range start, shows a live form demonstrator, launches the chosen game
+ pre-configured, logs the set and runs the rest timer to the next lift.
+ Exercise data comes from x3f-exercises.js (shared with the Library). -->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>X3F Routines</title>
+<meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--cyan:#37d6ff;--hot:#ff5d78;--orange:#ff9a5c;--navring:#2ff0b0;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);--e:cubic-bezier(.2,.9,.25,1)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:var(--d);color:var(--txt);background:radial-gradient(120vw 60vh at 80% -10%,rgba(47,240,176,.09),transparent 60%),var(--bg);min-height:100dvh;padding:calc(16px + var(--sat)) 16px calc(28px + var(--sab));-webkit-user-select:none;user-select:none}
+.wrap{max-width:780px;margin:0 auto}
+.top{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.brand{font-weight:800;font-size:19px;letter-spacing:2px}.brand b{color:var(--accent)}
+.spacer{flex:1}
+a.home,button.home{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 14px;cursor:pointer;transition:border-color .18s,background .18s}
+a.home:hover,button.home:hover{border-color:var(--accent)}
+.days{display:flex;gap:8px;margin-bottom:12px}
+.day{flex:1;padding:13px 10px;border-radius:14px;background:var(--panel);border:1px solid var(--brd);color:var(--dim);font-weight:800;font-size:15px;text-align:center;cursor:pointer;transition:background .2s var(--e),color .2s,border-color .2s,transform .12s var(--e)}
+.day:hover{color:var(--txt)}
+.day.active{background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;border-color:transparent}
+.day small{display:block;font-family:var(--n);font-weight:600;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;opacity:.75;margin-top:2px}
+.bar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.prog{flex:1;font-family:var(--n);color:var(--dim);font-size:13px;min-width:96px}
+.prog b{color:var(--accent)}
+.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);border:1px solid var(--brd2);color:var(--txt);border-radius:10px;padding:9px 11px;cursor:pointer;transition:border-color .18s,background .18s}
+.mini:hover{border-color:var(--accent)}
+.mini.on{background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;border-color:transparent}
+select{font-family:var(--n);font-weight:600;font-size:12.5px;background:var(--bg2);color:var(--txt);border:1px solid var(--brd2);border-radius:10px;padding:8px 9px;cursor:pointer}
+.gostrip{display:flex;gap:8px;margin-bottom:14px}
+.go{flex:1;font-family:var(--d);font-weight:800;font-size:16px;border:none;border-radius:14px;padding:15px;cursor:pointer;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;box-shadow:0 8px 26px rgba(47,240,176,.22);transition:transform .1s var(--e),box-shadow .2s}
+.go:hover{box-shadow:0 10px 32px rgba(47,240,176,.32)}.go:active{transform:translateY(1px)}
+.ex{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--brd);border-radius:16px;padding:14px;margin-bottom:10px;transition:border-color .22s,opacity .22s,transform .16s var(--e),box-shadow .22s}
+.ex.cur{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset,0 10px 30px rgba(47,240,176,.1)}
+.ex.done{opacity:.48}
+.exnum{width:32px;height:32px;flex:0 0 auto;border-radius:10px;background:var(--bg2);border:1px solid var(--brd);display:grid;place-items:center;font-family:var(--n);font-weight:700;font-size:14px;transition:background .25s,color .25s}
+.ex.done .exnum{background:var(--accentD);color:#04120c;border-color:transparent}
+.exmain{flex:1;min-width:0}
+.exname{font-weight:800;font-size:16px}
+.exhint{color:var(--dim);font-size:12.5px;margin-bottom:5px;font-family:var(--n)}
+.pips{display:flex;gap:4px;margin-bottom:9px}
+.pip{width:16px;height:5px;border-radius:3px;background:rgba(255,255,255,.13);transition:background .25s var(--e)}
+.pip.f{background:var(--accent)}
+.exrow{display:flex;gap:7px;flex-wrap:wrap}
+.exrow select{max-width:47%}
+.exact{display:flex;flex-direction:column;gap:7px;align-items:stretch;min-width:98px}
+.play{font-family:var(--d);font-weight:700;font-size:14px;text-decoration:none;text-align:center;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;border-radius:11px;padding:10px;border:none;cursor:pointer;transition:transform .1s var(--e),filter .18s}
+.play:active{transform:translateY(1px)}
+.set{font-family:var(--n);font-weight:700;font-size:13px;background:var(--bg2);border:1px solid var(--brd2);color:var(--txt);border-radius:11px;padding:9px;cursor:pointer;transition:border-color .18s,background .25s}
+.ex.done .set{background:var(--accentD);color:#04120c;border-color:transparent}
+.edit{display:flex;gap:6px}
+.edit button{flex:1;font-family:var(--n);font-weight:700;font-size:12px;background:var(--bg2);border:1px solid var(--brd2);color:var(--dim);border-radius:9px;padding:7px 0;cursor:pointer}
+.edit button:hover{color:var(--txt);border-color:var(--accent)}
+.adder{display:flex;gap:8px;margin:4px 0 10px}
+.adder select{flex:1}
+.note{color:var(--dim);font-size:12.5px;line-height:1.5;margin-top:14px;text-align:center;font-family:var(--n)}
+.note a{color:var(--accent)}
+
+/* ---------- guided coach ---------- */
+.coach{position:fixed;inset:0;z-index:50;background:radial-gradient(90vw 60vh at 70% -10%,rgba(47,240,176,.1),transparent 60%),rgba(4,7,13,.94);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;flex-direction:column;padding:calc(14px + var(--sat)) 14px calc(14px + var(--sab));opacity:0;pointer-events:none;transition:opacity .3s var(--e)}
+.coach.show{opacity:1;pointer-events:auto}
+.cwrap{max-width:780px;margin:0 auto;width:100%;flex:1;display:flex;flex-direction:column;gap:12px;min-height:0}
+.chead{display:flex;align-items:center;gap:10px}
+.cstep{font-family:var(--n);font-size:12px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim);flex:1}
+.cstep b{color:var(--accent)}
+.ctrack{height:4px;border-radius:4px;background:rgba(255,255,255,.1);overflow:hidden}
+.ctrack i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--cyan));transition:width .45s var(--e)}
+.cbody{flex:1;min-height:0;display:flex;gap:14px;overflow:auto}
+.cdemo{flex:0 0 40%;max-width:290px;display:flex;flex-direction:column;gap:6px}
+.demobox{position:relative;border-radius:16px;overflow:hidden;background:linear-gradient(180deg,rgba(47,240,176,.07),rgba(255,255,255,.03));border:1px solid var(--brd);aspect-ratio:1/1.15}
+@supports not (aspect-ratio:1/1){.demobox{height:300px}}
+.demobox canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.demobox .art{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .5s;pointer-events:none}
+.demotag{font-family:var(--n);font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim);text-align:center}
+.cinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px}
+.cname{font-weight:800;font-size:clamp(20px,5.4vw,27px);line-height:1.1}
+.cmuscle{font-family:var(--n);font-size:12.5px;color:var(--dim)}
+.strong{display:inline-block;align-self:flex-start;font-family:var(--n);font-size:11.5px;font-weight:700;color:var(--gold);background:rgba(255,211,92,.1);border:1px solid rgba(255,211,92,.28);border-radius:8px;padding:5px 9px}
+.strong.mid{color:var(--orange);background:rgba(255,154,92,.12);border-color:rgba(255,154,92,.35)}
+.detail{font-family:var(--n);font-size:12.5px;line-height:1.55;color:var(--dim)}
+.detail .lbl{display:inline-block;font-weight:700;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--cyan);margin-right:6px;vertical-align:1px}
+.detail.cue .lbl{color:var(--accent)}
+.detail b{color:var(--txt)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.chip{font-family:var(--n);font-weight:700;font-size:11px;letter-spacing:.4px;color:var(--txt);background:var(--bg2);border:1px solid var(--brd2);border-radius:100px;padding:6px 11px}
+.chip.a{color:var(--accent);border-color:rgba(47,240,176,.4)}
+.cfoot{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cta{font-family:var(--d);font-weight:800;font-size:15px;border:none;border-radius:13px;padding:14px 18px;cursor:pointer;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;text-decoration:none;text-align:center;transition:transform .1s var(--e),box-shadow .2s;box-shadow:0 6px 22px rgba(47,240,176,.22)}
+.cta:active{transform:translateY(1px)}
+.cta.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--brd2);box-shadow:none}
+.cta.grow{flex:1;min-width:150px}
+.pending{display:none;align-items:center;gap:8px;background:rgba(255,211,92,.1);border:1px solid rgba(255,211,92,.32);border-radius:13px;padding:10px 12px;font-family:var(--n);font-size:12.5px;color:var(--gold)}
+.pending.show{display:flex}
+.pending .spacer{flex:1}
+
+/* ---------- rest + summary ---------- */
+.rest{position:fixed;inset:0;background:rgba(4,6,11,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;opacity:0;pointer-events:none;transition:opacity .28s var(--e);padding:24px}
+.rest.show{opacity:1;pointer-events:auto}
+.rest .lbl{font-family:var(--n);letter-spacing:3px;text-transform:uppercase;color:var(--dim);font-size:13px}
+.rest .cd{font-family:var(--n);font-weight:700;font-size:clamp(4rem,22vw,7.5rem);line-height:1;font-variant-numeric:tabular-nums;transition:color .3s}
+.rest .cd.low{color:var(--gold)}
+.rest .nx{font-family:var(--n);font-size:14px;color:var(--txt)}
+.rest .nx b{color:var(--accent)}
+.ring{width:120px;height:120px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:7;stroke-linecap:round}
+.ring .bg{stroke:rgba(255,255,255,.1)}
+.ring .fg{stroke:var(--accent);transition:stroke-dashoffset 1s linear}
+.sum{max-width:420px;width:100%;display:flex;flex-direction:column;gap:12px;text-align:center}
+.sum h1{font-size:28px}.sum h1 b{color:var(--accent)}
+.sumgrid{display:flex;gap:8px}
+.sumgrid div{flex:1;background:var(--panel);border:1px solid var(--brd);border-radius:14px;padding:12px 8px}
+.sumgrid .k{font-family:var(--n);font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim)}
+.sumgrid .v{font-family:var(--n);font-weight:700;font-size:24px;color:var(--accent)}
+@media (max-width:620px){.cbody{flex-direction:column}.cdemo{flex:0 0 auto;max-width:none;display:grid;grid-template-columns:44% 1fr;gap:10px;align-items:center}.demobox{aspect-ratio:1/1.05}.demotag{text-align:left}}
+</style><script>
+/* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames */
+window.X3FFILES={bloom:'bloom.html',splash:'splash.html',nova:'nova.html',flow:'flow.html',
+ zone:'arena.html',max:'arena.html',boss:'arena.html',duel:'duel.html',rhythm:'rhythm.html',
+ ascent:'ascent.html'};
+</script>
+<style>
+/* 10-foot pass: wider columns and bigger type for couch distance. The native
+   shell only widens .app, so the menu pages scale themselves here. */
+@media (min-width:1200px){
+  .wrap,.cwrap{max-width:1240px!important}
+  body{font-size:17px}
+  .exname,.cname{font-size:1.15em}
+  .detail,.exhint,.muscle,.note,.prog{font-size:14px!important}
+  .day{font-size:17px;padding:16px 12px}
+  .mini,.set,.play,select{font-size:14px!important}
+  .cta{font-size:17px!important;padding:16px 22px!important}
+  .go{font-size:19px!important;padding:18px!important}
+}
+</style>
+<script>
+/* the remote has nothing focused until the first D-pad press - fix that */
+addEventListener('load',function(){setTimeout(function(){
+  try{ if(window.X3FNav && !X3FNav.current()) X3FNav.focusFirst(); }catch(e){}
+},180)});
+</script>
+</head>
+<body>
+<div class="wrap">
+<div class="top"><div class="brand">X3F <b>ROUTINES</b></div><div class="spacer"></div>
+<a class="home" href="library.html" data-nav>Library</a>
+<a class="home" href="launcher.html" data-nav data-nav-back>All games</a></div>
+
+<div class="days" id="days"></div>
+
+<div class="gostrip"><button class="go" id="startSession" data-nav data-nav-first>▶ Start guided session</button></div>
+
+<div class="bar">
+<div class="prog" id="prog">0 / 0 sets done</div>
+<select id="restSel" title="Rest between sets" data-nav></select>
+<button class="mini" id="editBtn" data-nav>Edit day</button>
+<button class="mini" id="resetDay" data-nav>Reset</button>
+</div>
+
+<div id="adder" class="adder" style="display:none">
+<select id="addSel" data-nav></select><button class="mini" id="addBtn" data-nav>+ Add movement</button>
+</div>
+
+<div id="list"></div>
+<div class="note">Each movement remembers its game, band, tempo and sets. <b>Start guided session</b> walks the whole day: setup + cue + a live form guide for every lift, then the game, then the rest timer. Bands and history are shared across the app — see <a href="library.html">Library</a> for the full method.</div>
+</div>
+
+<!-- guided coach -->
+<div class="coach" id="coach"><div class="cwrap">
+  <div class="chead">
+    <button class="mini" id="cClose">✕ End</button>
+    <div class="cstep" id="cStep">—</div>
+    <button class="mini" id="cPrev">◀</button>
+    <button class="mini" id="cNext">▶</button>
+  </div>
+  <div class="ctrack"><i id="cFill"></i></div>
+  <div class="pending" id="cPending"><span id="cPendingTxt">Finished that set?</span><span class="spacer"></span>
+    <button class="mini on" id="cPendYes">Log it</button><button class="mini" id="cPendNo">Not yet</button></div>
+  <div class="cbody">
+    <div class="cdemo">
+      <div class="demobox"><canvas id="demoCv"></canvas><img class="art" id="demoArt" alt=""></div>
+      <div class="demotag" id="demoTag">Live form guide</div>
+    </div>
+    <div class="cinfo">
+      <div class="cname" id="cName">—</div>
+      <div class="cmuscle" id="cMuscle"></div>
+      <div class="strong" id="cRange"></div>
+      <div class="detail"><span class="lbl">Setup</span><span id="cSetup"></span></div>
+      <div class="detail cue"><span class="lbl">Cue</span><span id="cCue"></span></div>
+      <div class="chips" id="cChips"></div>
+    </div>
+  </div>
+  <div class="cfoot">
+    <button class="cta grow" id="cPlay">Play</button>
+    <button class="cta ghost" id="cLog">Log set ✓</button>
+    <button class="cta ghost" id="cSkip">Skip lift</button>
+  </div>
+</div></div>
+
+<!-- rest -->
+<div class="rest" id="rest">
+  <div class="lbl">Rest</div>
+  <svg class="ring" viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"></circle><circle class="fg" id="ringFg" cx="60" cy="60" r="52"></circle></svg>
+  <div class="cd" id="restCd">90</div>
+  <div class="nx" id="restNext"></div>
+  <button class="cta ghost" id="restSkip" data-nav>Skip rest</button>
+</div>
+
+<!-- summary -->
+<div class="rest" id="done"><div class="sum">
+  <div class="lbl">Session complete</div>
+  <h1>X3 <b>DAY DONE</b></h1>
+  <div class="sumgrid"><div><div class="k">Sets</div><div class="v" id="dSets">0</div></div>
+    <div><div class="k">Lifts</div><div class="v" id="dLifts">0</div></div>
+    <div><div class="k">Minutes</div><div class="v" id="dMin">0</div></div></div>
+  <div class="nx" id="dNote"></div>
+  <button class="cta" id="dClose" data-nav>Back to the day</button>
+  <a class="cta ghost" href="progress.html" data-nav>See progress →</a>
+</div></div>
+
+<script src="x3f-exercises.js"></script>
+<script src="x3f-form.js"></script>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+function xget(k,d){try{const v=JSON.parse(localStorage.getItem('x3f_'+k));return v==null?d:v}catch(e){return d}}
+function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
+const EXD=window.X3FEX, BANDS=EXD.bands;
+const GAMEKEYS=['bloom','splash','nova','flow','zone','max','boss','duel','rhythm','ascent'];
+const GAMES=GAMEKEYS.map(k=>[k,EXD.games[k].name+' · '+EXD.games[k].sub]);
+const TEMPOS=[['4000','Controlled 4s'],['3000','Standard 3s'],['2000','Brisk 2s']];
+const SETS=[['1','1 set'],['2','2 sets'],['3','3 sets'],['4','4 sets'],['5','5 sets']];
+const RESTS=[['45','Rest 45s'],['60','Rest 60s'],['90','Rest 90s'],['120','Rest 120s'],['150','Rest 150s']];
+
+/* ---------- persisted config ---------- */
+const DAYNAMES=EXD.days.map(d=>d[0]).concat(['Custom Day']);
+function freshCfg(){const o={};EXD.days.forEach(([n,l])=>o[n]={list:l.slice(),per:{}});o['Custom Day']={list:[],per:{}};return o}
+let cfg=xget('routine2',null); if(!cfg){cfg=freshCfg();xset('routine2',cfg)}
+DAYNAMES.forEach(n=>{if(!cfg[n])cfg[n]={list:[],per:{}}});
+let prog=xget('routineProg2',{});
+let day=xget('routineDay','Push Day'); if(!cfg[day])day=DAYNAMES[0];
+let restSec=+xget('restSec',90);
+let editing=false;
+let S=xget('session',null);   // active guided session
+
+function per(slug){
+  const d=cfg[day]; d.per=d.per||{};
+  const ex=EXD.get(slug)||{};
+  const c=d.per[slug]||{};
+  return {game:c.game||(ex.games&&ex.games[0])||'bloom',band:c.band||ex.band||'White',tempo:c.tempo||'3000',sets:c.sets||'3'};
+}
+function setPer(slug,patch){const d=cfg[day];d.per=d.per||{};d.per[slug]=Object.assign(per(slug),patch);xset('routine2',cfg)}
+function doneSets(slug){return (prog[day]&&prog[day][slug])||0}
+function setDoneSets(slug,v){prog[day]=prog[day]||{};prog[day][slug]=v;xset('routineProg2',prog)}
+function isDone(slug){return doneSets(slug)>=+per(slug).sets}
+function listFor(){return cfg[day].list}
+function launchUrl(slug){const c=per(slug);return EXD.gameUrl(c.game,{from:'routine',band:c.band,tempo:c.tempo,ex:slug})}
+function opts(list,sel){return list.map(([v,l])=>`<option value="${v}"${String(v)===String(sel)?' selected':''}>${l}</option>`).join('')}
+
+/* ---------- sound ---------- */
+let ac=null;
+function beep(f,d,type){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.type=type||'sine';o.frequency.value=f;o.connect(g);g.connect(ac.destination);g.gain.setValueAtTime(0.001,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.28,ac.currentTime+0.012);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+d);o.start();o.stop(ac.currentTime+d+0.03)}catch(e){}}
+function buzz(ms){if(navigator.vibrate)try{navigator.vibrate(ms)}catch(e){}}
+
+/* ---------- day list ---------- */
+function render(){
+  $('days').innerHTML=DAYNAMES.map(dn=>{
+    const l=cfg[dn].list, n=l.filter(s=>{const c=(cfg[dn].per||{})[s]||{};const tot=+(c.sets||3);return ((prog[dn]&&prog[dn][s])||0)>=tot}).length;
+    return `<div class="day${dn===day?' active':''}" data-d="${dn}" data-nav>${dn.replace(' Day','')}<small>${l.length?n+'/'+l.length:'empty'}</small></div>`;
+  }).join('');
+  const rs=$('restSel'); if(!rs.options.length)rs.innerHTML=opts(RESTS,String(restSec));
+  const list=listFor(); let setsDone=0,setsTotal=0,curSeen=false;
+  $('list').innerHTML=list.map((slug,i)=>{
+    const ex=EXD.get(slug); if(!ex)return '';
+    const c=per(slug),done=isDone(slug),sd=doneSets(slug),tot=+c.sets;
+    setsDone+=Math.min(sd,tot); setsTotal+=tot;
+    const cur=!done&&!curSeen; if(cur)curSeen=true;
+    const pips=Array.from({length:tot},(_,k)=>`<div class="pip${k<sd?' f':''}"></div>`).join('');
+    return `<div class="ex${done?' done':''}${cur?' cur':''}" data-n="${slug}">
+      <div class="exnum">${done?'✓':i+1}</div>
+      <div class="exmain"><div class="exname">${ex.name}</div>
+        <div class="exhint">${ex.muscle}</div>
+        <div class="pips">${pips}</div>
+        <div class="exrow">
+          <select data-k="game" data-n="${slug}" data-nav>${opts(GAMES,c.game)}</select>
+          <select data-k="band" data-n="${slug}" data-nav>${opts(BANDS.map(b=>[b,b+' band']),c.band)}</select>
+          <select data-k="tempo" data-n="${slug}" data-nav style="${EXD.games[c.game].tempo?'':'display:none'}">${opts(TEMPOS,c.tempo)}</select>
+          <select data-k="sets" data-n="${slug}" data-nav>${opts(SETS,c.sets)}</select>
+        </div>
+        ${editing?`<div class="edit" style="margin-top:8px">
+          <button data-mv="-1" data-n="${slug}" data-nav>↑ up</button>
+          <button data-mv="1" data-n="${slug}" data-nav>↓ down</button>
+          <button data-rm="${slug}" data-nav>✕ remove</button></div>`:''}
+      </div>
+      <div class="exact"><button class="play" data-go="${slug}" data-nav>Play</button>
+        <button class="set" data-set="${slug}" data-nav>${done?'Done':'Set '+(sd+1)+'/'+tot}</button></div>
+    </div>`;
+  }).join('')||`<div class="note">This day is empty — hit <b>Edit day</b> and add movements.</div>`;
+  $('prog').innerHTML=`<b>${setsDone}</b> / ${setsTotal} sets done · ${list.filter(isDone).length}/${list.length} lifts`;
+  $('startSession').textContent=(S&&S.active&&S.day===day)?'▶ Resume guided session':'▶ Start guided session';
+  const used=listFor();
+  $('addSel').innerHTML=EXD.list.filter(e=>used.indexOf(e.slug)<0).map(e=>`<option value="${e.slug}">${e.name} — ${e.muscle}</option>`).join('')||'<option value="">every movement is already in this day</option>';
+  bind();
+  if(window.X3FNav)X3FNav.refresh();
+}
+function bind(){
+  $('days').querySelectorAll('.day').forEach(el=>el.onclick=()=>{day=el.dataset.d;xset('routineDay',day);render()});
+  $('list').querySelectorAll('select').forEach(s=>s.onchange=()=>{setPer(s.dataset.n,{[s.dataset.k]:s.value});render()});
+  $('list').querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>play(b.dataset.go));
+  $('list').querySelectorAll('[data-set]').forEach(b=>b.onclick=()=>{
+    const slug=b.dataset.set;
+    if(isDone(slug)){setDoneSets(slug,0);render();return}
+    setDoneSets(slug,Math.min(+per(slug).sets,doneSets(slug)+1));beep(680,.09);render();
+  });
+  $('list').querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{
+    const l=cfg[day].list,i=l.indexOf(b.dataset.rm);if(i>=0)l.splice(i,1);xset('routine2',cfg);render();
+  });
+  $('list').querySelectorAll('[data-mv]').forEach(b=>b.onclick=()=>{
+    const l=cfg[day].list,i=l.indexOf(b.dataset.n),j=i+ +b.dataset.mv;
+    if(i<0||j<0||j>=l.length)return;const t=l[i];l[i]=l[j];l[j]=t;xset('routine2',cfg);render();
+  });
+}
+$('restSel').onchange=()=>{restSec=+$('restSel').value;xset('restSec',restSec)};
+$('resetDay').onclick=()=>{prog[day]={};xset('routineProg2',prog);render()};
+$('editBtn').onclick=()=>{editing=!editing;$('editBtn').classList.toggle('on',editing);$('adder').style.display=editing?'flex':'none';render()};
+$('addBtn').onclick=()=>{const v=$('addSel').value;if(!v)return;cfg[day].list.push(v);xset('routine2',cfg);render()};
+
+/* ---------- the form demonstrator ---------- */
+let demo=null;
+function demoFor(slug,tempo){
+  if(!window.X3FForm)return;
+  if(!demo)demo=X3FForm.create($('demoCv'),{exercise:slug,mode:'tempo',tempo:+tempo,
+    theme:{accent:'#2ff0b0',band:'#ffd35c',dim:'#8593a9'}});
+  else{demo.setExercise(slug);demo.setTempo(+tempo)}
+  demo.resize();
+  // optional illustrated plate, if one has been generated into assets/form/
+  const art=$('demoArt');art.style.opacity=0;art.onload=()=>{art.style.opacity=.9};art.onerror=()=>{art.style.opacity=0};
+  art.src='assets/form/'+slug+'.png';
+  $('demoTag').textContent=X3FForm.has(slug)?'Live form guide · '+ (+tempo/1000)+'s tempo':'Form guide';
+}
+
+/* ---------- guided session ---------- */
+function nextIncomplete(from){
+  const l=listFor();
+  for(let k=0;k<l.length;k++){const i=(from+k)%l.length;if(!isDone(l[i]))return i}
+  return -1;
+}
+function startSession(){
+  const l=listFor();
+  if(!l.length){alert('Add some movements to this day first (Edit day).');return}
+  if(!(S&&S.active&&S.day===day)){
+    const i=Math.max(0,nextIncomplete(0));
+    S={active:true,day:day,i:i,started:Date.now(),sets:0,pending:null};
+    xset('session',S);
+  }
+  openCoach();
+}
+function saveS(){xset('session',S)}
+function curSlug(){const l=cfg[S.day].list;return l[Math.min(S.i,l.length-1)]}
+function openCoach(){
+  if(!S||!S.active)return;
+  if(S.day!==day){day=S.day;xset('routineDay',day);render()}
+  $('coach').classList.add('show');
+  paintCoach();
+  if(window.X3FNav)X3FNav.refresh();
+}
+function closeCoach(){$('coach').classList.remove('show');if(demo)demo.setMode('tempo')}
+function paintCoach(){
+  const l=listFor(), slug=curSlug(), ex=EXD.get(slug);
+  if(!ex){endSession();return}
+  const c=per(slug), sd=doneSets(slug), tot=+c.sets, g=EXD.games[c.game];
+  $('cStep').innerHTML=`Lift <b>${S.i+1}</b> / ${l.length} · Set <b>${Math.min(sd+1,tot)}</b> of ${tot}`;
+  const totalSets=l.reduce((a,s)=>a+ +per(s).sets,0)||1;
+  const doneAll=l.reduce((a,s)=>a+Math.min(doneSets(s),+per(s).sets),0);
+  $('cFill').style.width=Math.round(doneAll/totalSets*100)+'%';
+  $('cName').textContent=ex.name;
+  $('cMuscle').textContent=ex.muscle;
+  $('cRange').innerHTML='💪 '+ex.range; $('cRange').className='strong'+(ex.mid?' mid':'');
+  $('cSetup').innerHTML=ex.setup;
+  $('cCue').innerHTML=ex.cue;
+  $('cChips').innerHTML=`<span class="chip a">${c.band} band</span><span class="chip">${g.name}</span>`+
+    (g.tempo?`<span class="chip">${(+c.tempo/1000)}s tempo</span>`:'')+
+    `<span class="chip">${tot} set${tot>1?'s':''}</span>`;
+  $('cPlay').textContent='Play in '+g.name+' →';
+  $('cLog').textContent=sd+1>=tot?'Log final set ✓':'Log set ✓';
+  demoFor(slug,c.tempo);
+  $('cPending').classList.toggle('show',!!(S.pending&&S.pending.slug===slug));
+  if(S.pending)$('cPendingTxt').textContent='Back from '+(EXD.games[S.pending.game]||{name:'the game'}).name+' — did you finish that set of '+ex.name+'?';
+}
+function play(slug){
+  if(S&&S.active){S.i=Math.max(0,listFor().indexOf(slug));S.pending={slug:slug,game:per(slug).game,at:Date.now()};saveS()}
+  location.href=launchUrl(slug);
+}
+function logSet(){
+  const slug=curSlug(),tot=+per(slug).sets;
+  const sd=Math.min(tot,doneSets(slug)+1);
+  setDoneSets(slug,sd);
+  S.sets=(S.sets||0)+1;S.pending=null;saveS();
+  beep(760,.1);buzz(35);render();
+  const lastOfLift=sd>=tot;
+  const nx=nextIncomplete(lastOfLift?S.i+1:S.i);
+  if(nx<0){endSession();return}
+  if(lastOfLift){S.i=nx;saveS()}
+  paintCoach();
+  startRest(lastOfLift);
+}
+function skipLift(){
+  const nx=nextIncomplete(S.i+1);
+  if(nx<0||nx===S.i){endSession();return}
+  S.i=nx;S.pending=null;saveS();paintCoach();
+}
+function stepLift(d){
+  const l=listFor();S.i=(S.i+d+l.length)%l.length;S.pending=null;saveS();paintCoach();
+}
+function endSession(){
+  const mins=Math.max(1,Math.round(((Date.now()-(S&&S.started||Date.now()))/60000)));
+  const sets=(S&&S.sets)||0, l=listFor();
+  $('dSets').textContent=sets;$('dLifts').textContent=l.filter(isDone).length;$('dMin').textContent=mins;
+  $('dNote').innerHTML=sets?`${day} logged. Bands and results are shared with the rest of the app.`:'Nothing logged this time.';
+  if(sets)try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push({t:Date.now(),g:'routine',day:day,sets:sets,mins:mins});while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}
+  S={active:false};xset('session',S);
+  closeCoach();stopRest();
+  $('done').classList.add('show');beep(880,.2);setTimeout(()=>beep(1170,.22),150);
+  render();
+}
+$('startSession').onclick=startSession;
+$('cClose').onclick=()=>{if((S&&S.sets)>0)endSession();else{S={active:false};xset('session',S);closeCoach();render()}};
+$('cPlay').onclick=()=>play(curSlug());
+$('cLog').onclick=logSet;
+$('cSkip').onclick=skipLift;
+$('cPrev').onclick=()=>stepLift(-1);
+$('cNext').onclick=()=>stepLift(1);
+$('cPendYes').onclick=logSet;
+$('cPendNo').onclick=()=>{S.pending=null;saveS();$('cPending').classList.remove('show')};
+$('dClose').onclick=()=>$('done').classList.remove('show');
+
+/* ---------- rest timer ---------- */
+let restT=null;
+const RC=2*Math.PI*52;
+$('ringFg').style.strokeDasharray=RC;
+function startRest(betweenLifts){
+  let s=restSec;const total=restSec;
+  const nx=curSlug(),ex=EXD.get(nx);
+  $('restNext').innerHTML=betweenLifts?`Next up: <b>${ex?ex.name:'—'}</b> · ${per(nx).band} band`:`Same lift · set ${Math.min(doneSets(nx)+1,+per(nx).sets)} of ${per(nx).sets}`;
+  const paint=()=>{$('restCd').textContent=s;$('restCd').classList.toggle('low',s<=5);$('ringFg').style.strokeDashoffset=RC*(1-s/total)};
+  paint();$('rest').classList.add('show');beep(620,.1);
+  clearInterval(restT);
+  restT=setInterval(()=>{s--;if(s<=0){stopRest();beep(940,.25);buzz(140);return}paint();if(s<=3)beep(520,.07)},1000);
+}
+function stopRest(){clearInterval(restT);$('rest').classList.remove('show')}
+$('restSkip').onclick=stopRest;
+
+/* ---------- boot ---------- */
+render();
+if(S&&S.active&&cfg[S.day]){
+  day=S.day;xset('routineDay',day);render();
+  openCoach();
+}
+addEventListener('keydown',e=>{
+  if(!$('coach').classList.contains('show'))return;
+  if(e.key==='Escape'){if($('rest').classList.contains('show'))stopRest();}
+});
+</script>
+<script src="x3f-nav.js"></script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+
+</body></html>

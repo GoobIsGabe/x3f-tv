@@ -38,6 +38,10 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
 .card .nm{font-family:var(--d);font-weight:700;font-size:2.5vh;letter-spacing:.5px}
 .card .tag{font-family:var(--n);font-size:1.6vh;color:var(--dim)}
 .card .glow{position:absolute;inset:-40% -40% auto -40%;height:120%;background:radial-gradient(closest-side,var(--c,#8f7dff),transparent);opacity:.16;pointer-events:none}
+/* the guided workout is the headline card, not just another game */
+.card.hero{border-color:rgba(57,245,196,.5);background:linear-gradient(165deg,rgba(24,60,52,.92),rgba(10,22,26,.92))}
+.card.hero .glow{opacity:.26}
+.card.hero .nm{color:var(--mint)}
 .foc{outline:none}
 .card.foc{transform:scale(1.075) translateY(-2px);border-color:var(--c,#8f7dff);box-shadow:0 0 0 3px rgba(255,255,255,.08),0 18px 44px rgba(0,0,0,.55),0 0 34px var(--c,#8f7dff)}
 .pill.foc{transform:scale(1.09);border-color:#fff;box-shadow:0 0 22px rgba(143,125,255,.7)}
@@ -85,7 +89,9 @@ let band=xget('band','White'); if(BANDS.indexOf(band)<0)band='White';
 let bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
 function ref(){return Math.max(60,bandMax[band]||BAND_DEF[band]||130)}
 
+// Workout first, then the games, then the tools. Card 1 takes initial focus.
 const GAMES=[
+ {nm:'Workout',   f:'routine.html',   ic:'📋', c:'#39f5c4', tag:'guided push / pull', hero:1},
  {nm:'Nova',      f:'nova.html',      ic:'🚀', c:'#8f7dff', tag:'space defense'},
  {nm:'Splash',    f:'splash.html',    ic:'🌊', c:'#37c8ff', tag:'underwater'},
  {nm:'Bloom',     f:'bloom.html',     ic:'🌸', c:'#ff9ecf', tag:'rep garden'},
@@ -93,6 +99,8 @@ const GAMES=[
  {nm:'Arena',     f:'arena.html',     ic:'⚔️', c:'#ff8a5c', tag:'survive'},
  {nm:'Duel',      f:'duel.html',      ic:'⚡', c:'#ff5d78', tag:'head to head'},
  {nm:'Rhythm',    f:'rhythm.html',    ic:'🎵', c:'#ffd23f', tag:'hit the beat'},
+ {nm:'Library',   f:'library.html',   ic:'📚', c:'#ffb45c', tag:'every movement'},
+ {nm:'Progress',  f:'progress.html',  ic:'📈', c:'#9be36f', tag:'your history'},
  {nm:'Calibrate', f:'calibrate.html', ic:'🎯', c:'#8fe0c4', tag:'set your bands'},
 ];
 
@@ -104,7 +112,7 @@ function selectBand(b){band=b;xset('band',b);[...bandrow.children].forEach(p=>p.
 
 // ---- game cards ----
 const grid=$('grid');
-GAMES.forEach(g=>{const el=document.createElement('div');el.className='card nav';el.style.setProperty('--c',g.c);el.dataset.f=g.f;
+GAMES.forEach(g=>{const el=document.createElement('div');el.className='card nav'+(g.hero?' hero':'');el.style.setProperty('--c',g.c);el.dataset.f=g.f;
   el.innerHTML='<div class="glow" style="--c:'+g.c+'"></div><div class="ic">'+g.ic+'</div><div class="nm">'+g.nm+'</div><div class="tag">'+g.tag+'</div>';
   el.onclick=()=>{try{xset('band',band);}catch(e){} location.href=g.f;};
   grid.appendChild(el);});

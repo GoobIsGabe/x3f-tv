@@ -9,7 +9,7 @@
 1. **The web games** (original) — HTML games in `E:\Fun\X3 Bar` (Nova, Splash, Bloom, Flow, Arena, Duel, Rhythm, Calibrate, …). They read the X3 Force bar over **Web Bluetooth** and run on phone / PC / Netlify. This is what your other session has been living in.
 2. **The native TV app** (new — this handoff) — a GitHub repo **`github.com/GoobIsGabe/x3f-tv`** that wraps those games into an **Android TV app** so the bar drives them on the Hisense Google TV with **no phone**. Turn on TV → open app → bar auto-connects → play. **This was NOT in your local filesystem**, which is what caused the confusion.
 
-Current status: **v0.5**, working on the TV.
+Current status: **v0.6**, working on the TV.
 
 ---
 
@@ -27,7 +27,10 @@ Clone it wherever you like (e.g. `E:\Fun\x3f-tv`). That's the complete source �
 
 - Native **Android TV** app, **Java**, package `com.goob.x3ftv`, minSdk 24 / target 34, **no third-party dependencies** (framework only).
 - **Architecture:** a single full-screen **WebView** + native **BLE**. On launch it loads a bubbly HTML home (`app/src/main/assets/launcher.html`); picking a game card navigates the WebView to that game's bundled HTML. Native connects to the bar over BLE and **injects force as `window.__x3fForce`**; the TV remote's D-pad is captured natively and drives `window.__x3fNav(dir)` (focus/select). **Back** returns to the launcher.
-- **The 8 games are bundled copies** of the web games in `app/src/main/assets/` (nova.html, splash.html, …), unchanged except the service-worker line stripped. A small **bootstrap** JS (the `BOOTSTRAP` constant in `MainActivity.java`) is injected into each game on load — it copies `window.__x3fForce` into the game's `force` variable each frame, overrides the mobile `max-width` to go full-screen, sets `baseline=0` (so Calibrate works in the WebView), and adds D-pad spatial navigation scoped to whatever menu is open.
+- **The bundled pages are copies** of the web pages in `app/src/main/assets/`, unchanged except the service-worker line stripped (see the sync tool below). As of v0.6 that is the 8 games (nova.html, splash.html, …) **plus three menu pages** — `routine.html` (guided workout), `library.html`, `progress.html` — and three shared scripts they load: `x3f-exercises.js` (the 11 X3 movements, one source of truth with the web build), `x3f-form.js` (live form demonstrator) and `x3f-nav.js` (menu D-pad nav).
+- **Nav, and who owns it:** the bootstrap installs its fallback spatial nav **only `if(!window.__x3fNav)`**. `x3f-nav.js` claims `window.__x3fNav` first, so on the menu pages the remote drives *its* geometry-aware nav (same-row Left/Right, `data-nav` items, one focus ring); the games have no `x3f-nav.js` and keep the bootstrap's. Don't add `x3f-nav.js` to a game — its Enter/Space handling would fight Space-to-pull in the browser build.
+- **Live form demonstrator:** games launched with `?ex=<slug>` (from `routine.html` or `library.html`) mount an animated figure that mirrors your live force. It needs no TV-specific code: the bootstrap already assigns `force = window.__x3fForce`, and the panel reads `force/ref()`.
+- A small **bootstrap** JS (the `BOOTSTRAP` constant in `MainActivity.java`) is injected into each game on load — it copies `window.__x3fForce` into the game's `force` variable each frame, overrides the mobile `max-width` to go full-screen, sets `baseline=0` (so Calibrate works in the WebView), and adds D-pad spatial navigation scoped to whatever menu is open.
 - **In-app updater:** the launcher's "Check for updates" reads `version.txt` on the `dist` branch, compares to `BuildConfig.VERSION_CODE`, and if newer downloads the APK (DownloadManager) → system installer.
 - **Signing:** a committed debug keystore (`app/x3f-debug.keystore`) + `signingConfigs.debug` gives every build the **same signature**, so updates install **in place** (no uninstall).
 
@@ -42,6 +45,8 @@ Two paths:
 
 **A) Local (fastest dev loop):** open the project in **Android Studio** and hit Run — your machine can reach Google's SDK servers and build directly. Install the resulting APK on the TV.
 
+> **Bump `versionCode` in `app/build.gradle` for anything you want the TV to pull.** The in-app updater compares `version.txt` on `dist` against `BuildConfig.VERSION_CODE`. Push new assets without bumping it and CI will happily rebuild while the TV still reports "You're on the latest" — the games would never update.
+
 **B) GitHub Actions (what the cloud session uses):** push to `main` → CI builds the APK and publishes it to the repo's **`latest` release** and the **`dist` branch** (as `x3f-tv.apk` + `version.txt`) in ~1-2 min. Fixed APK URL:
 ```
 https://github.com/GoobIsGabe/x3f-tv/releases/download/latest/x3f-tv.apk
@@ -54,7 +59,14 @@ https://github.com/GoobIsGabe/x3f-tv/releases/download/latest/x3f-tv.apk
 
 ## Relationship between the two projects (important)
 
-The TV app **bundles copies** of the web games. If you improve a web game in `E:\Fun\X3 Bar`, copy the updated HTML into the TV repo's `app/src/main/assets/` (and delete its `<script>…serviceWorker…register('sw.js')…</script>` line) to get it on the TV. Nothing in the TV app changes the original web games. *(Future option: load the games from your Netlify site instead of bundling, so there's one copy.)*
+The TV app **bundles copies** of the web games. Improve a web game in `E:\Fun\X3 Bar`, then re-sync the bundle:
+
+```
+python tools/sync-from-web.py            # or: ... "E:\Fun\X3 Bar"
+python tools/sync-from-web.py --check    # report drift without writing
+```
+
+That copies every mapped page, strips the service worker and PWA manifest, rewrites cross-page links to the bundle's lowercase filenames (and "home" to `launcher.html`), and injects the TV block on the menu pages — the `window.X3FFILES` launch map that `x3f-exercises.js` reads, 10-foot type scaling, and initial D-pad focus. Doing it by hand is how a step gets forgotten. Nothing in the TV app changes the original web games. *(Future option: load the games from your Netlify site instead of bundling, so there's one copy.)*
 
 Also: ignore `E:\Fun\X3 Bar\tv-poc\` — that was an **older, superseded** "phone-as-relay" approach. The native TV app replaced it.
 
@@ -62,13 +74,19 @@ Also: ignore `E:\Fun\X3 Bar\tv-poc\` — that was an **older, superseded** "phon
 
 ## Status & roadmap
 
-Shipped: v0.1 probe → **v0.5** = all 8 games, bubbly game-style launcher, D-pad navigation, logo (icon/banner/home), Calibrate fix, in-app updater, stable signing.
+Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad navigation, logo (icon/banner/home), Calibrate fix, in-app updater, stable signing.
+
+**v0.6 — guided workout mode + live form demonstrator** (roadmap item 2):
+- `routine.html` — pick Push / Pull / Custom, then run the day. Per movement it coaches the setup + strongest-range start, shows the form demonstrator, launches the chosen game pre-configured (`?from=routine&band=…&ex=…`), logs the set and runs a rest timer to the next lift. Days are editable (add / reorder / remove from the 11 movements); sets, bands, tempo and progress persist. Back → launcher → Workout resumes the session and asks whether the set counted.
+- `x3f-form.js` — the animated figure. Poses are authored as hip/hand/foot targets with the knees and elbows solved by two-bone IK, driven by live force: it rises, holds, eases, flushes and trembles near max, and flips to "diminishing range" when your rep tops start collapsing (the X3 burnout). The foot hinges on the ball with the contact pinned to the floor, so a calf raise really rises onto the toes.
+- `library.html` + `progress.html` bundled; launcher gained Workout (hero card), Library and Progress.
+- Menu pages claim `window.__x3fNav`, so the remote drives the geometry-aware nav; `tools/sync-from-web.py` makes future web→TV syncs one command.
 
 Next (Gabe's priorities):
-1. Keep polishing the game-style UI.
-2. **Guided workout mode + live form demonstrator** — an animated figure that moves *with your live force* (not a bundled video), doubling as real-time form feedback.
-3. **Firebase phone-sync + progress dashboard** — sets logged on the TV show up on your phone (PRs, volume, streaks). Firebase because you already run it for TMT; likely a new dedicated project.
-4. Per-band calibration onboarding.
+1. Keep polishing the game-style UI (10-foot pass is only partial: the menu pages scale type at ≥1200px, the games don't yet).
+2. **Firebase phone-sync + progress dashboard** — sets logged on the TV show up on your phone (PRs, volume, streaks). Firebase because you already run it for TMT; likely a new dedicated project.
+3. Per-band calibration onboarding.
+4. Authentic X3 set engine everywhere — make the full-reps → partials → failure model the spine of every game, not just Bloom.
 
 (A full prioritized roadmap also exists as the Cowork artifact **"x3f-tv-roadmap"**.)
 

@@ -11,7 +11,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>X3F Bloom</title>
-<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#120a26"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#120a26"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
@@ -62,6 +62,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
 <select id="bandSel" title="Band"></select>
 <button class="mini" id="cueBtn">Cues on</button>
+<button class="mini" id="formBtn" style="display:none" title="Live form guide">Form on</button>
 </div>
 <div class="stage" id="stage">
 <canvas id="cv"></canvas>
@@ -87,6 +88,8 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <button class="cta" id="frConnect">Connect Bar</button>
 <button class="cta ghost" id="frDemo">Try Demo (hold to pull)</button>
 </div></div>
+<script src="x3f-exercises.js"></script>
+<script src="x3f-form.js"></script>
 <script>
 "use strict";
 const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_BATT='e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6';
@@ -215,6 +218,16 @@ let prevForce=0,critVel=0,wobStart=-9999,wobDur=380,wobStr=1,lastOnT=null,cheerU
 function triggerWobble(str){wobStart=performance.now();wobStr=str;}
 $('tempoSel').onchange=()=>{period=+$('tempoSel').value};
 (function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;xset('band',band);bandSel.value=band;}const tp=p.get('tempo');if(tp){$('tempoSel').value=tp;period=+tp;}})();
+// ---------- live form demonstrator ----------
+// If we were launched for a specific X3 movement (Library / guided Routine), mirror
+// it in the corner: the figure rises, strains and eases with your actual force.
+(function(){
+  const p=new URLSearchParams(location.search);let slug=p.get('ex');
+  if(!slug){try{const s=JSON.parse(localStorage.getItem('x3f_session')||'null');if(s&&s.active&&s.pending)slug=s.pending.slug}catch(e){}}
+  if(!slug||!window.X3FForm||!X3FForm.has(slug))return;
+  X3FForm.mount({exercise:slug,host:$('stage'),toggleBtn:$('formBtn'),
+    getN:()=>force/ref(),theme:{accent:'#59f5c4',band:'#ffd35c',dim:'#9aa8c4',skin:'#eaf0fa',deep:'#6f6a9c'}});
+})();
 $('startBtn').onclick=()=>{ if(running){endSet(false);return;}
   running=true;setStart=performance.now();reps=0;hitF=0;totF=0;phasePrev=0;repMax=0;repHit=0;repFrames=0;miss=0;
   curHi=ref()*0.78;fullReps=0;burnoutReps=0;dead=0;burnout=false;

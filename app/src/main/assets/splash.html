@@ -8,7 +8,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>X3F Splash</title>
-<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#02243a"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#02243a"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
@@ -64,6 +64,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
 <select id="bandSel" title="Band"></select>
 <button class="mini" id="cueBtn">Cues on</button>
+<button class="mini" id="formBtn" style="display:none" title="Live form guide">Form on</button>
 </div>
 <div class="stage" id="stage">
 <canvas id="cv"></canvas>
@@ -91,6 +92,8 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <button class="cta" id="frConnect">Connect Bar</button>
 <button class="cta ghost" id="frDemo">Try Demo (hold to swim up)</button>
 </div></div>
+<script src="x3f-exercises.js"></script>
+<script src="x3f-form.js"></script>
 <script>
 "use strict";
 const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_BATT='e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6';
@@ -374,6 +377,16 @@ function loop(now){
 }
 resize();dolY=forceY(0);requestAnimationFrame(loop);
 (function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;xset('band',band);bandSel.value=band;}})();
+// ---------- live form demonstrator ----------
+// If we were launched for a specific X3 movement (Library / guided Routine), mirror
+// it in the corner: the figure rises, strains and eases with your actual force.
+(function(){
+  const p=new URLSearchParams(location.search);let slug=p.get('ex');
+  if(!slug){try{const s=JSON.parse(localStorage.getItem('x3f_session')||'null');if(s&&s.active&&s.pending)slug=s.pending.slug}catch(e){}}
+  if(!slug||!window.X3FForm||!X3FForm.has(slug))return;
+  X3FForm.mount({exercise:slug,host:$('stage'),toggleBtn:$('formBtn'),
+    getN:()=>force/ref(),theme:{accent:'#31e8ff',band:'#ffd23f',dim:'#a9d8ec',skin:'#eafcff',deep:'#4f7f9c'}});
+})();
 </script>
 <script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
