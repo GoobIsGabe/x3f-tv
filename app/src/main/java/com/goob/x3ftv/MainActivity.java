@@ -61,6 +61,9 @@ public class MainActivity extends Activity {
 
     private static final UUID SERVICE  = UUID.fromString("e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6");
     private static final UUID CH_FORCE = UUID.fromString("e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6");
+    /* Cell millivolts, uint16 little-endian — the same characteristic the web
+       build's Arena already reads, so the percentage matches across builds. */
+    private static final UUID CH_BATT  = UUID.fromString("e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6");
     private static final UUID CCCD     = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final int  REQ_PERMS = 42;
     private static final String LAUNCHER = "file:///android_asset/launcher.html";
@@ -88,6 +91,9 @@ public class MainActivity extends Activity {
     private final Map<String, String> seen = new LinkedHashMap<>();
     private boolean triedKnown = false;
     private long watchdog = 0;
+    private int battMv = -1;          // last battery reading, -1 = unknown
+    private long battPoll = 0;        // generation counter for the re-read timer
+    private boolean overlayOpen = false;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -124,8 +130,10 @@ public class MainActivity extends Activity {
             @Override public void onPageFinished(WebView v, String url) {
                 currentUrl = url != null ? url : LAUNCHER;
                 webReady = true;
+                overlayOpen = false;              // a fresh page has nothing open
                 if (isLauncher(url)) {
                     pushBar();
+                    pushBattery();
                     v.evaluateJavascript("window.__x3fVersion&&window.__x3fVersion('" + BuildConfig.VERSION_NAME + "')", null);
                 } else if (url != null && url.startsWith("file")) {
                     v.evaluateJavascript(BOOTSTRAP, null);
@@ -287,6 +295,7 @@ public class MainActivity extends Activity {
             if (newState == BluetoothGatt.STATE_CONNECTED) { setBar("wait", "Connected…"); try { g.discoverServices(); } catch (SecurityException ignored) {} }
             else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 connected = false; connecting = false; setBar("", "Bar disconnected");
+                battMv = -1; battPoll++; pushBattery();
                 ui.post(() -> { if (web != null && webReady) { try { web.evaluateJavascript("window.__x3fForce=0;", null); } catch (Exception ignored) {} } });
                 closeGatt(); ui.postDelayed(MainActivity.this::reconnect, 1200);
             }
@@ -306,9 +315,32 @@ public class MainActivity extends Activity {
                 try { if (prefs != null && targetAddress != null) prefs.edit().putString("lastBar", targetAddress).apply(); } catch (Exception ignored) {}
             } catch (SecurityException e) { setBar("", "Connect permission?"); }
         }
-        @Override public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic ch, byte[] value) { handleForce(value); }
-        @Override public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic ch) { handleForce(ch.getValue()); }
+        /* One GATT operation at a time: the battery subscription has to wait for
+           the force CCCD write to come back, or the stack silently drops it. */
+        @Override public void onDescriptorWrite(BluetoothGatt g, BluetoothGattDescriptor d, int status) {
+            try {
+                UUID of = (d != null && d.getCharacteristic() != null) ? d.getCharacteristic().getUuid() : null;
+                if (CH_FORCE.equals(of)) subscribeBattery(g);
+                else if (CH_BATT.equals(of)) readBattery(g);   // don't wait for the first notify
+            } catch (Exception ignored) {}
+        }
+        @Override public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic ch, int status) {
+            if (ch != null && CH_BATT.equals(ch.getUuid())) handleBattery(ch.getValue());
+        }
+        @Override public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic ch, byte[] value, int status) {
+            if (ch != null && CH_BATT.equals(ch.getUuid())) handleBattery(value);
+        }
+        @Override public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic ch, byte[] value) { route(ch, value); }
+        @Override public void onCharacteristicChanged(BluetoothGatt g, BluetoothGattCharacteristic ch) { route(ch, ch != null ? ch.getValue() : null); }
     };
+
+    /* Both characteristics notify on the same connection, so a packet has to be
+       told apart by UUID before it is read as a float64. */
+    private void route(BluetoothGattCharacteristic ch, byte[] v) {
+        UUID u = (ch != null) ? ch.getUuid() : null;
+        if (CH_BATT.equals(u)) handleBattery(v);
+        else if (u == null || CH_FORCE.equals(u)) handleForce(v);
+    }
 
     private void handleForce(byte[] v) {
         if (v == null || v.length < 8) return;
@@ -322,6 +354,62 @@ public class MainActivity extends Activity {
         if (now - lastInject < 16) return; lastInject = now;
         final String js = "window.__x3fForce=" + (Math.round(force * 100) / 100.0) + ";";
         web.post(() -> { try { web.evaluateJavascript(js, null); } catch (Exception ignored) {} });
+    }
+
+    /* Battery is optional: a bar without the characteristic simply shows no
+       percentage, it must never stop the force stream from coming up. */
+    private void subscribeBattery(BluetoothGatt g) {
+        try {
+            BluetoothGattCharacteristic b = battChar(g);
+            if (b == null) return;
+            if ((b.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
+                g.setCharacteristicNotification(b, true);
+                BluetoothGattDescriptor cccd = b.getDescriptor(CCCD);
+                if (cccd != null) {
+                    cccd.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                    g.writeDescriptor(cccd);          // the read follows in onDescriptorWrite
+                    return;
+                }
+            }
+            readBattery(g);
+        } catch (SecurityException ignored) {}
+    }
+    private BluetoothGattCharacteristic battChar(BluetoothGatt g) {
+        if (g == null) return null;
+        BluetoothGattService svc = g.getService(SERVICE);
+        return (svc != null) ? svc.getCharacteristic(CH_BATT) : null;
+    }
+    /* A notify-only bar says nothing until the level actually moves, so the first
+       number has to be read, and a slow re-read keeps it honest over a session. */
+    private void readBattery(BluetoothGatt g) {
+        try {
+            BluetoothGattCharacteristic b = battChar(g);
+            if (b != null && (b.getProperties() & BluetoothGattCharacteristic.PROPERTY_READ) != 0) g.readCharacteristic(b);
+            armBattPoll();
+        } catch (SecurityException ignored) {}
+    }
+    private void armBattPoll() {
+        final long id = ++battPoll;
+        ui.postDelayed(new Runnable() { @Override public void run() {
+            if (id != battPoll || !connected || gatt == null) return;
+            try {
+                BluetoothGattCharacteristic b = battChar(gatt);
+                if (b != null && (b.getProperties() & BluetoothGattCharacteristic.PROPERTY_READ) != 0) gatt.readCharacteristic(b);
+            } catch (Exception ignored) {}
+            armBattPoll();
+        } }, 300000);
+    }
+    private void handleBattery(byte[] v) {
+        if (v == null || v.length < 2) return;
+        int mv = (v[0] & 0xff) | ((v[1] & 0xff) << 8);
+        if (mv <= 0 || mv > 10000) return;            // not a plausible cell voltage
+        battMv = mv;
+        pushBattery();
+    }
+    private void pushBattery() {
+        if (web == null) return;
+        final String js = "window.__x3fSetBattery&&window.__x3fSetBattery(" + battMv + ")";
+        ui.post(() -> { if (web != null && webReady) { try { web.evaluateJavascript(js, null); } catch (Exception ignored) {} } });
     }
 
     private void setBar(String state, String text) {
@@ -352,6 +440,10 @@ public class MainActivity extends Activity {
                 } catch (Exception e) { setBar("", "Could not connect"); }
             } });
         }
+        /* The launcher tells us when a modal is up. Back has to close it rather
+           than send the whole app to the home screen, and evaluateJavascript is
+           async, so the answer has to be here before the key arrives. */
+        @JavascriptInterface public void setOverlay(boolean open) { overlayOpen = open; }
         /* Start over cleanly - drops any half-open GATT, which is what gets the
            stack unstuck without reopening the app. */
         @JavascriptInterface public void rescan() {
@@ -459,7 +551,10 @@ public class MainActivity extends Activity {
                 case KeyEvent.KEYCODE_ENTER:
                 case KeyEvent.KEYCODE_BUTTON_A:   nav("enter"); return true;
                 case KeyEvent.KEYCODE_BACK:
-                    if (isLauncher(currentUrl)) { moveTaskToBack(true); } else { web.loadUrl(LAUNCHER); }
+                    if (overlayOpen) {
+                        overlayOpen = false;
+                        web.evaluateJavascript("window.__x3fCloseOverlay&&window.__x3fCloseOverlay()", null);
+                    } else if (isLauncher(currentUrl)) { moveTaskToBack(true); } else { web.loadUrl(LAUNCHER); }
                     return true;
             }
         }

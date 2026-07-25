@@ -236,11 +236,28 @@
         ok('11 cards', document.querySelectorAll('.card').length === 11);
         ok('workout is the hero card', document.querySelectorAll('.card')[0].classList.contains('hero'));
         ok('music toggle exists', !!document.getElementById('musicBtn'));
-        ok('device picker is hidden while all is well', !document.getElementById('finder').classList.contains('on'));
+        ok('device picker is closed while all is well', !document.getElementById('finder').classList.contains('show'));
+        // It used to open itself after 9s as a block in this column, stealing
+        // height from .grid (flex:1) and squashing every card. It is a modal off
+        // the bar chip now, so nothing else may move when it opens.
+        var gridH = document.getElementById('grid').getBoundingClientRect().height;
         window.__x3fDevices([{ a: 'AA:BB:CC:DD:EE:01', n: 'X3 Force' }]);
-        document.getElementById('finder').classList.add('on');
-        window.__x3fDevices([{ a: 'AA:BB:CC:DD:EE:01', n: 'X3 Force' }]);
+        document.getElementById('barChip').click();
+        ok('the bar chip opens the picker', document.getElementById('finder').classList.contains('show'));
         ok('picker lists what the scan saw', document.querySelectorAll('#findList .dev').length === 1);
+        var gridH2 = document.getElementById('grid').getBoundingClientRect().height;
+        ok('picker does not squash the card grid', Math.abs(gridH2 - gridH) < 1, gridH + ' -> ' + gridH2);
+        document.getElementById('closeFind').click();
+        ok('close puts the picker away', !document.getElementById('finder').classList.contains('show'));
+
+        // battery: the bar reports cell millivolts, the chip shows a percentage
+        window.__x3fSetBar('on', 'Bar: LIVE');
+        window.__x3fSetBattery(4020);
+        ok('battery shows as a percentage', /80%/.test(txt('battTxt')), txt('battTxt'));
+        window.__x3fSetBattery(3350);
+        ok('a flat cell reads low', document.getElementById('battTxt').classList.contains('low'), txt('battTxt'));
+        window.__x3fSetBattery(-1);
+        ok('no battery shown when the bar is not reporting one', txt('battTxt') === '');
         return F.report(page);
       }
 

@@ -19,7 +19,7 @@ tools/  sync-from-web.py, which does the generating
 
 `E:\Fun\X3 Bar` was the old separate home of the web games. It is **retired** — it had a git remote pointing at this same repo and a DEPLOY.md telling you to force-push, which would have overwritten the Android app. Everything that matters was moved into `web/`. Don't develop there.
 
-Current status: **v1.2**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
+Current status: **v1.3**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -91,6 +91,14 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - `x3f-form.js` — the animated figure. Poses are authored as hip/hand/foot targets with the knees and elbows solved by two-bone IK, driven by live force: it rises, holds, eases, flushes and trembles near max, and flips to "diminishing range" when your rep tops start collapsing (the X3 burnout). The foot hinges on the ball with the contact pinned to the floor, so a calf raise really rises onto the toes.
 - `library.html` + `progress.html` bundled; launcher gained Workout (hero card), Library and Progress.
 
+**v1.3 — the bar chip: battery, and a picker that stops squashing the launcher.**
+- **The manual bar picker is a modal, not an inline panel.** It lived in the launcher's flex column, so opening it stole height from `.grid` (`flex:1`) and squashed all 11 cards — and it opened *itself* after 9 seconds, unasked. It is now a `.scrim` modal opened from the **bar chip** in the top row; nothing else on the page moves. After 9s without a connection the chip just turns gold and says "· OK to pick", which is the prompt without the layout damage.
+- **The status pill is now a control** (`#barChip`, `data-nav`), so the remote can reach it from the top row.
+- **Battery.** The bar publishes cell millivolts on `e3458902-…` (uint16 LE) — the characteristic the web Arena already read and the TV build ignored. Native subscribes after the force CCCD write comes back (one GATT operation at a time, or the stack drops it), reads once so a notify-only bar doesn't stay blank until the level moves, and re-reads every 5 min. The chip shows `🔋 nn%` on the same 3.30–4.20 V map the games use, red at ≤20%. A bar without the characteristic simply shows no percentage — it must never block the force stream. `onCharacteristicChanged` now routes by UUID, since two characteristics notify on one connection.
+- **Back closes the modal** instead of dropping the app to the TV home screen: `evaluateJavascript` is async, so the launcher tells native an overlay is up (`X3F.setOverlay`) before the key can arrive.
+- **Music is ~2× louder** (master `0.16` → `0.34`). It was mixed for a phone at arm's length; across a room, over TV speakers, under a bar you're pulling on, it vanished.
+- Suites: 85 functional (14 on the launcher, up from 8 — including a guard that the picker cannot change the card grid's height), 12 screens / 28 nav states.
+
 **v1.2 — the whole suite feeds the program.** `x3f-set.js` is now the single way a game reports a finished set: Flow, Arena (max/boss/zone), Duel, Rhythm, Splash and Nova all call it, so PBs, challenges and achievements see everything instead of only Bloom. It resolves the movement from `?ex=` and the band from shared storage, **measures peak force and time-under-tension itself** (no per-game tracker), names what improved against your last set of that movement, and announces unlocks through the hype layer — never a dialog.
 - History no longer truncates: entries older than 8 weeks fold into one rollup per day+movement+band, keeping bests and an `n` so session counts stay honest.
 - Challenges follow the day — a push day asks for push movements (your edited Routines day list wins, else the library's day tags, legs counting for both).
@@ -124,7 +132,7 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - **Why "scanning forever" happens:** a BLE peripheral that is already connected — to this TV from a previous run, or to your phone — **stops advertising**, so a scan can never see it, no matter how long it runs. Same story if its advertisement carries neither the name nor the service UUID (a wiped name cache is enough to flip that). Reopening the app used to be the only way out. The BLE code itself had not changed since v0.5; the scan-only strategy was simply blind to those states.
 - Now, before scanning, it goes straight at devices it can address without an advertisement: anything the system already reports connected on GATT, the address that worked last time (remembered in prefs), then any bonded bar. A 9s watchdog falls back to scanning if a direct attempt stalls, so it can no longer sit on "Reconnecting…" forever.
 - Name matching is case-insensitive and also accepts FORCE / JAQUISH; the old check was `toUpperCase().contains("X3")` only.
-- Escape hatch: if it is still not live after 9s the launcher shows **every device the scan saw**, remote-navigable — pick the bar by hand (`X3F.pickDevice`). **Scan again** (`X3F.rescan`) drops any half-open GATT, which is what a restart was really fixing.
+- Escape hatch: if it is still not live after 9s the launcher shows **every device the scan saw**, remote-navigable — pick the bar by hand (`X3F.pickDevice`). **Scan again** (`X3F.rescan`) drops any half-open GATT, which is what a restart was really fixing. *(v1.3 moved this out of the page flow into a modal off the bar chip — as an inline panel it squashed the card grid.)*
 - The **TV** button in games is hidden in the TV build: it asks for fullscreen and an orientation lock, and this shell is already fullscreen and locked to landscape, so it did nothing. It still works in a phone browser.
 - The audit now extracts the **live** BOOTSTRAP from MainActivity instead of keeping a copy (a copy would drift and the audit would be testing fiction), which also means a syntax error in the injected JS fails the audit. Verified with a mutation test: reintroducing the Arena bug makes it fail, restoring the fix makes it pass.
 

@@ -15,7 +15,17 @@
   later(function () {
     if (isLauncher) {
       A.audit('launcher home');
-      return A.report();
+      // The bar picker is a modal off the bar chip now, not an inline panel that
+      // squashed the card grid. As a modal it has to trap the cursor.
+      var chip = document.getElementById('barChip');
+      if (!chip) return A.report();
+      try { window.__x3fDevices([{ a: 'AA:BB:CC:DD:EE:F1', n: 'X3 FORCE' },
+                                 { a: 'AA:BB:CC:DD:EE:F2', n: '' }]); } catch (e) {}
+      chip.click();
+      return later(function () {
+        A.audit('launcher: bar picker open');
+        A.report();
+      });
     }
 
     if (page.indexOf('routine') >= 0) {

@@ -172,7 +172,9 @@
       // volume, with ducking while a cue or fanfare is playing
       var now = performance.now();
       duckAmt += ((now < duckUntil ? 0.28 : 1) - duckAmt) * 0.2;
-      try { master.gain.value = 0.16 * vol * duckAmt; } catch (e) {}
+      // 0.16 was mixed on a phone held at arm's length; across a room, over a TV's
+      // speakers and under a bar you are pulling on, it disappeared. ~2x from here.
+      try { master.gain.value = 0.34 * vol * duckAmt; } catch (e) {}
 
       var spb = 60 / M.bpm / 4;                  // seconds per sixteenth
       var horizon = ctx.currentTime + 0.35;
