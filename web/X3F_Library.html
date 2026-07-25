@@ -47,6 +47,9 @@ select{font-family:var(--n);font-weight:600;font-size:12.5px;background:var(--bg
 .gm.bloom{border-left:3px solid var(--accent)}.gm.max{border-left:3px solid var(--gold)}.gm.zone{border-left:3px solid var(--cyan)}.gm.boss{border-left:3px solid var(--hot)}.gm.duel{border-left:3px solid #ff9a6a}.gm.rhythm{border-left:3px solid var(--violet)}.gm.splash{border-left:3px solid var(--gold)}.gm.nova{border-left:3px solid var(--violet)}
 .note{color:var(--dim);font-size:12.5px;line-height:1.5;margin-top:16px;text-align:center}
 .note a{color:var(--accent)}
+/* end of a scrollable list: breathing room plus a hairline, so hitting the
+   bottom reads as the bottom instead of the page just refusing to move */
+.endcap{height:1px;width:min(140px,40%);margin:30px auto calc(80px + var(--sab));background:linear-gradient(90deg,transparent,var(--brd2),transparent)}
 </style></head>
 <body>
 <div class="wrap">
@@ -58,7 +61,8 @@ select{font-family:var(--n);font-weight:600;font-size:12.5px;background:var(--bg
 <p><b>Variable resistance</b> loads you heavy in the strong range, light in the weak range. Keep <b>constant tension</b> — never lock out at the top, never rest at the bottom. Slow &amp; controlled, ~2–3s each way. Do <b>15–40 full reps</b>, then keep going with <b>diminishing range</b> — shorter and shorter partials — to <b>true failure</b>. The goal is exhausting the muscle, not hitting a number. (Bloom's burnout phase is built on exactly this.)</p>
 </div>
 <div id="lib"></div>
-<div class="note">Pick a band, then tap a game to launch it pre-configured. Want the whole day coached end to end? Use <a href="X3F_Routine.html">guided Routines</a>.</div>
+<div class="note">Pick a band, then tap a game to launch it pre-configured. Want the whole day coached end to end? Use <a href="X3F_Routine.html" data-nav>guided Routines</a>.</div>
+<div class="endcap"></div>
 </div>
 <script src="x3f-exercises.js"></script>
 <script>

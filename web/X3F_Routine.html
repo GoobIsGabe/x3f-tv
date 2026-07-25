@@ -119,6 +119,9 @@ select{font-family:var(--n);font-weight:600;font-size:12.5px;background:var(--bg
 .sumgrid .k{font-family:var(--n);font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim)}
 .sumgrid .v{font-family:var(--n);font-weight:700;font-size:24px;color:var(--accent)}
 @media (max-width:620px){.cbody{flex-direction:column}.cdemo{flex:0 0 auto;max-width:none;display:grid;grid-template-columns:44% 1fr;gap:10px;align-items:center}.demobox{aspect-ratio:1/1.05}.demotag{text-align:left}}
+/* end of a scrollable list: breathing room plus a hairline, so hitting the
+   bottom reads as the bottom instead of the page just refusing to move */
+.endcap{height:1px;width:min(140px,40%);margin:30px auto calc(80px + var(--sab));background:linear-gradient(90deg,transparent,var(--brd2),transparent)}
 </style></head>
 <body>
 <div class="wrap">
@@ -142,20 +145,21 @@ select{font-family:var(--n);font-weight:600;font-size:12.5px;background:var(--bg
 </div>
 
 <div id="list"></div>
-<div class="note">Each movement remembers its game, band, tempo and sets. <b>Start guided session</b> walks the whole day: setup + cue + a live form guide for every lift, then the game, then the rest timer. Bands and history are shared across the app — see <a href="X3F_Library.html">Library</a> for the full method.</div>
+<div class="note">Each movement remembers its game, band, tempo and sets. <b>Start guided session</b> walks the whole day: setup + cue + a live form guide for every lift, then the game, then the rest timer. Bands and history are shared across the app — see <a href="X3F_Library.html" data-nav>Library</a> for the full method.</div>
+<div class="endcap"></div>
 </div>
 
 <!-- guided coach -->
 <div class="coach" id="coach"><div class="cwrap">
   <div class="chead">
-    <button class="mini" id="cClose">✕ End</button>
+    <button class="mini" id="cClose" data-nav>✕ End</button>
     <div class="cstep" id="cStep">—</div>
-    <button class="mini" id="cPrev">◀</button>
-    <button class="mini" id="cNext">▶</button>
+    <button class="mini" id="cPrev" data-nav>◀</button>
+    <button class="mini" id="cNext" data-nav>▶</button>
   </div>
   <div class="ctrack"><i id="cFill"></i></div>
   <div class="pending" id="cPending"><span id="cPendingTxt">Finished that set?</span><span class="spacer"></span>
-    <button class="mini on" id="cPendYes">Log it</button><button class="mini" id="cPendNo">Not yet</button></div>
+    <button class="mini on" id="cPendYes" data-nav>Log it</button><button class="mini" id="cPendNo" data-nav>Not yet</button></div>
   <div class="cbody">
     <div class="cdemo">
       <div class="demobox"><canvas id="demoCv"></canvas><img class="art" id="demoArt" alt=""></div>
@@ -171,9 +175,9 @@ select{font-family:var(--n);font-weight:600;font-size:12.5px;background:var(--bg
     </div>
   </div>
   <div class="cfoot">
-    <button class="cta grow" id="cPlay">Play</button>
-    <button class="cta ghost" id="cLog">Log set ✓</button>
-    <button class="cta ghost" id="cSkip">Skip lift</button>
+    <button class="cta grow" id="cPlay" data-nav data-nav-first>Play</button>
+    <button class="cta ghost" id="cLog" data-nav>Log set ✓</button>
+    <button class="cta ghost" id="cSkip" data-nav>Skip lift</button>
   </div>
 </div></div>
 

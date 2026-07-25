@@ -355,7 +355,17 @@ public class MainActivity extends Activity {
   if(!window.__x3fNav){
    var cur=null, lastScope=null;
    function scope(){ var m=document.querySelectorAll('.scrim.show,.modal.show'); if(m&&m.length)return m[m.length-1]; return document; }
-   function vis(el){ try{ if(!el||el.disabled)return false; if(el.tagName!=='BODY'&&el.offsetParent===null)return false; var r=el.getBoundingClientRect(); if(r.width<4||r.height<4)return false; var sc=el.closest&&el.closest('.scrim'); if(sc&&!sc.classList.contains('show'))return false; var cs=getComputedStyle(el); if(cs&&(cs.visibility==='hidden'||cs.display==='none'))return false; return true; }catch(e){return false;} }
+   /* Walk the ANCESTORS, not just the element: panels here hide with opacity and
+      pointer-events while keeping their layout box (Arena's inactive mode tabs,
+      every .scrim), so an element-only check happily focuses buttons nobody can
+      see - and OK would press them. */
+   function vis(el){ try{ if(!el||el.disabled)return false; if(el.tagName!=='BODY'&&el.offsetParent===null)return false; var r=el.getBoundingClientRect(); if(r.width<4||r.height<4)return false; var sc=el.closest&&el.closest('.scrim'); if(sc&&!sc.classList.contains('show'))return false;
+     for(var n=el;n&&n.nodeType===1;n=n.parentElement){ var cs=getComputedStyle(n); if(!cs)break;
+       if(cs.visibility==='hidden'||cs.display==='none')return false;
+       if(parseFloat(cs.opacity)<0.05)return false;
+       if(cs.pointerEvents==='none')return false;
+       if(n===document.body)break; }
+     return true; }catch(e){return false;} }
    function items(){ var rootEl=scope(); var q=rootEl.querySelectorAll('button,select,input,a[href],.cta,.buy,.mini,.iconbtn,[role=button],[onclick]'); var a=[]; for(var i=0;i<q.length;i++) if(vis(q[i])) a.push(q[i]); return a; }
    function clear(){ if(cur){ cur.classList.remove('x3f-focus'); } cur=null; }
    function setFocus(el){ if(cur)cur.classList.remove('x3f-focus'); cur=el; if(cur){ cur.classList.add('x3f-focus'); try{cur.scrollIntoView({block:'nearest'});}catch(e){} try{cur.focus({preventScroll:true});}catch(e){} } }

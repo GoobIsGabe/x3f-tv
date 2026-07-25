@@ -42,6 +42,18 @@ https://github.com/GoobIsGabe/x3f-tv/releases/download/latest/x3f-tv.apk
 `python tools/sync-from-web.py --check` reports drift without writing, and exits
 non-zero if the bundle is stale — handy before a release.
 
+## Check the remote can still drive everything
+
+```bash
+python tools/nav-audit/run.py
+```
+
+Walks every bundled screen with a simulated D-pad (real BOOTSTRAP injected, fake
+native force) and fails if any visible control is unreachable, if the cursor can
+land on something invisible, or if an open overlay doesn't trap it. Run it after
+touching menus, overlays or `x3f-nav.js`. See `tools/nav-audit/run.py` for the
+three shipped bugs that motivated it.
+
 ## Change only the Android side
 
 Editing `MainActivity.java`, the manifest, gradle or resources needs no sync. Bump

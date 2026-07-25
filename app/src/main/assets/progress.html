@@ -32,6 +32,9 @@ canvas{width:100%;height:140px;display:block}
 .row .dt{font-family:var(--n);font-size:11px;color:var(--dim);min-width:74px;text-align:right}
 .empty{color:var(--dim);text-align:center;padding:30px;line-height:1.6}
 @media(max-width:560px){.cards{grid-template-columns:repeat(2,1fr)}}
+/* end of a scrollable list: breathing room plus a hairline, so hitting the
+   bottom reads as the bottom instead of the page just refusing to move */
+.endcap{height:1px;width:min(140px,40%);margin:30px auto calc(80px + var(--sab));background:linear-gradient(90deg,transparent,var(--brd2),transparent)}
 </style><script>
 /* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames */
 window.X3FFILES={bloom:'bloom.html',splash:'splash.html',nova:'nova.html',flow:'flow.html',
@@ -75,6 +78,7 @@ addEventListener('load',function(){setTimeout(function(){
 <div class="panel"><h2>Max Force over time</h2><canvas id="chPeak"></canvas></div>
 <div class="panel"><h2>Flow reps over time</h2><canvas id="chReps"></canvas></div>
 <div class="panel"><h2>Recent sessions</h2><div class="list" id="list"></div></div>
+<div class="endcap"></div>
 </div>
 <script>
 "use strict";

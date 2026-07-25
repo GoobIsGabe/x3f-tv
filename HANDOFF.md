@@ -19,7 +19,7 @@ tools/  sync-from-web.py, which does the generating
 
 `E:\Fun\X3 Bar` was the old separate home of the web games. It is **retired** — it had a git remote pointing at this same repo and a DEPLOY.md telling you to force-push, which would have overwritten the Android app. Everything that matters was moved into `web/`. Don't develop there.
 
-Current status: **v0.7**, working on the TV (repo consolidated in v0.7.1 — no app change).
+Current status: **v0.8**, working on the TV.
 
 ---
 
@@ -90,6 +90,15 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - `routine.html` — pick Push / Pull / Custom, then run the day. Per movement it coaches the setup + strongest-range start, shows the form demonstrator, launches the chosen game pre-configured (`?from=routine&band=…&ex=…`), logs the set and runs a rest timer to the next lift. Days are editable (add / reorder / remove from the 11 movements); sets, bands, tempo and progress persist. Back → launcher → Workout resumes the session and asks whether the set counted.
 - `x3f-form.js` — the animated figure. Poses are authored as hip/hand/foot targets with the knees and elbows solved by two-bone IK, driven by live force: it rises, holds, eases, flushes and trembles near max, and flips to "diminishing range" when your rep tops start collapsing (the X3 burnout). The foot hinges on the ball with the contact pinned to the floor, so a calf raise really rises onto the toes.
 - `library.html` + `progress.html` bundled; launcher gained Workout (hero card), Library and Progress.
+
+**v0.8 — navigation audit + the fixes it found.** `python tools/nav-audit/run.py` walks all 12 screens and 27 UI states with a simulated remote and fails on unreachable controls, focusable-but-invisible controls, or an overlay that doesn't trap the cursor. What it caught:
+- The **guided coach had 8 controls and none were focusable**, and because the nav wasn't scoped to overlays the cursor silently walked the day list underneath it. Coach controls are now `data-nav`, and `x3f-nav.js` scopes to the topmost open overlay (`.coach.show`, `.rest.show`, `.scrim.show`, `.modal.show`, `[data-nav-scope]`) and lands the cursor inside when one opens.
+- **Arena** let the D-pad focus `Fight` and `Start Max Effort` on *inactive* mode tabs: `.view` panels hide with `opacity:0;pointer-events:none` but keep their layout box, and the bootstrap's `vis()` only inspected the element itself. It now walks ancestors — the same rule `x3f-nav.js` uses.
+- A cursor dropped for leaving scope kept its focus ring, so two rings could be lit at once, one of them a lie.
+- The inline links inside the note text on Routine and Library were unreachable.
+- Scrollable pages end with a hairline `.endcap` and 80px of breathing room, so hitting the bottom reads as the bottom.
+
+> **Watch out:** the source of truth for game code is `web/`, NOT the retired `E:\Fun\X3 Bar`. Editing the old copy is exactly how v0.7's scoping fix got stranded and shipped broken — the audit is what caught it.
 
 **v0.7 — TV fixes from the first real session on the couch:**
 - Launcher nav: dropped its hand-rolled spatial nav for the shared `x3f-nav.js` (reusing its own `.foc` look via `window.X3FNAV_CLASS`), so Left/Right stay in the card row. Same row-overlap rule added to the bootstrap fallback that governs in-game menus.

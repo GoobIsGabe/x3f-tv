@@ -14,7 +14,7 @@
      focus styling (the TV launcher does: it already has a .foc look). */
   var CUR = window.X3FNAV_CLASS || 'x3f-nav-cur';
   var OWN_RING = !window.X3FNAV_CLASS;
-  var items = [], cursor = null, engaged = false;
+  var items = [], cursor = null, engaged = false, justScoped = false;
 
   /* ---------- styling (injected so every page gets the same focus ring) ---------- */
   var css = document.createElement('style');
@@ -46,9 +46,41 @@
     }
     return true;
   }
+  /* ---------- modal scoping ----------
+     A full-screen overlay must trap the cursor. Without this the remote happily
+     walks the page UNDERNEATH an open overlay: nothing appears to move, and OK
+     presses a control you cannot see. Topmost open overlay wins. */
+  var SCOPES = '.coach.show,.rest.show,.scrim.show,.modal.show,[data-nav-scope]';
+  var scope = null;
+  function boxed(el) {
+    var r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return false;
+    var cs = getComputedStyle(el);
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && parseFloat(cs.opacity) >= 0.05;
+  }
+  function scopeRoot() {
+    var open = document.querySelectorAll(SCOPES);
+    for (var i = open.length - 1; i >= 0; i--) if (boxed(open[i])) return open[i];
+    return document;
+  }
+
   function refresh() {
-    items = [].slice.call(document.querySelectorAll('[data-nav]')).filter(visible);
-    if (cursor && items.indexOf(cursor) < 0) cursor = null;
+    var root = scopeRoot();
+    items = [].slice.call(root.querySelectorAll('[data-nav]')).filter(visible);
+    // The cursor left the scope (an overlay opened over it, or it was hidden).
+    // Drop the ring with it, or it stays lit on something we no longer control -
+    // two focus rings on screen, one of them a lie.
+    if (cursor && items.indexOf(cursor) < 0) { cursor.classList.remove(CUR); cursor = null; }
+    if (root !== scope) {
+      scope = root;
+      // An overlay just opened or closed. Land somewhere visible inside the new
+      // scope, but only once the user is actually driving with keys/remote -
+      // a mouse user should not get a focus ring thrown at them.
+      if (!cursor && items.length && (engaged || window.__x3fNative)) {
+        justScoped = true;
+        setCursor(first());
+      }
+    }
     return items;
   }
   function mid(r) { return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
@@ -65,8 +97,9 @@
       catch (e) { el.scrollIntoView(); }
     }
   }
+  /* Preferred landing spot inside the CURRENT scope. Assumes items are fresh -
+     it must not call refresh(), which calls this. */
   function first() {
-    refresh();
     if (!items.length) return null;
     var pref = items.filter(function (i) { return i.hasAttribute('data-nav-first'); });
     return pref[0] || items[0];
@@ -74,8 +107,11 @@
 
   /* ---------- geometric move ---------- */
   function move(dir) {
+    justScoped = false;
     refresh();
     if (!items.length) return;
+    // an overlay just took the cursor - that keypress was the landing, not a move
+    if (justScoped) return;
     if (!cursor) { setCursor(first()); return; }
 
     var horiz = (dir === 'left' || dir === 'right');
@@ -252,7 +288,7 @@
 
   window.X3FNav = {
     refresh: refresh,
-    focusFirst: function () { setCursor(first()); },
+    focusFirst: function () { refresh(); setCursor(first()); },
     set: setCursor,
     current: function () { return cursor; },
     engaged: function () { return engaged; }

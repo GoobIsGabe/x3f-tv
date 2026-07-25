@@ -37,3 +37,6 @@ Same as the web games: BLE service `e3458900`, force characteristic `e3458901` (
   Library / Progress pages on the TV
 - v0.7 — couch fixes: launcher D-pad stays in its row, illustrated Bloom/Splash art
   actually bundled, long pages scroll from the remote
+- v0.8 — a real navigation audit (`tools/nav-audit/run.py`, 12 screens / 27 states) and
+  the bugs it found: the guided coach was unreachable by remote, overlays didn't trap the
+  cursor, Arena could focus buttons on hidden tabs
