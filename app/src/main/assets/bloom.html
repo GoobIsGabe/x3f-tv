@@ -63,6 +63,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <select id="bandSel" title="Band"></select>
 <button class="mini" id="cueBtn">Cues on</button>
 <button class="mini" id="formBtn" style="display:none" title="Live form guide">Form on</button>
+<button class="mini" id="musicBtn" title="Soundtrack">Music</button>
 </div>
 <div class="stage" id="stage">
 <canvas id="cv"></canvas>
@@ -90,6 +91,8 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 </div></div>
 <script src="x3f-exercises.js"></script>
 <script src="x3f-form.js"></script>
+<script src="x3f-hype.js"></script>
+<script src="x3f-music.js"></script>
 <script>
 "use strict";
 const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_BATT='e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6';
@@ -217,6 +220,18 @@ let critScale=1,critMood=0,critDroop=0; // visual smoothing
 let prevForce=0,critVel=0,wobStart=-9999,wobDur=380,wobStr=1,lastOnT=null,cheerUntil=0,popT=0;
 function triggerWobble(str){wobStart=performance.now();wobStr=str;}
 $('tempoSel').onchange=()=>{period=+$('tempoSel').value};
+
+// ---------- milestone moments + soundtrack ----------
+// Reps are the currency here, so the ladder is reps and your personal best gets
+// its own callout. Intensity for the music is simply how hard you are pulling.
+const hype=window.X3FHype?X3FHype.create({host:$('stage'),unit:'reps',
+  theme:{hot:'#ffd35c',cool:'#59f5c4',text:'#eaf0fa'},
+  best:()=>bestSet}):null;
+const music=window.X3FMusic?X3FMusic.create({mood:'bloom',
+  getIntensity:()=>Math.min(1,(force/ref())*1.1)}):null;
+(function(){const b=$('musicBtn');if(!b)return;
+  const sync=()=>{b.textContent=(music&&music.isOn())?'Music on':'Music off';};
+  sync();b.onclick=()=>{if(music)music.toggle();sync();};})();
 (function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;xset('band',band);bandSel.value=band;}const tp=p.get('tempo');if(tp){$('tempoSel').value=tp;period=+tp;}})();
 // ---------- live form demonstrator ----------
 // If we were launched for a specific X3 movement (Library / guided Routine), mirror
@@ -230,6 +245,7 @@ $('tempoSel').onchange=()=>{period=+$('tempoSel').value};
 })();
 $('startBtn').onclick=()=>{ if(running){endSet(false);return;}
   running=true;setStart=performance.now();reps=0;hitF=0;totF=0;phasePrev=0;repMax=0;repHit=0;repFrames=0;miss=0;
+  if(hype)hype.reset();
   curHi=ref()*0.78;fullReps=0;burnoutReps=0;dead=0;burnout=false;
   $('startBtn').textContent='Stop Set';toast('Grow!');beep(660,0.12); };
 function endSet(fail){ running=false;burnout=false;$('startBtn').textContent='Start Set';
@@ -379,12 +395,14 @@ function loop(now){
       const R2=ref(),reached=repMax>=curHi*0.78,meaningful=repMax>=R2*0.17;
       if(reached){reps++;dead=0;if(curHi>=R2*0.60)fullReps++;else burnoutReps++;
         $('hReps').textContent=reps;cue(true);popT=now+280;cheerUntil=now+650;triggerWobble(1.3);
+        if(hype)hype.set(reps); if(music)music.duck(.5);
         spawnBurst(NOWX(),mapY(repMax),BAND_HUE[band]||320);
         if(reps%5===0)toast(reps+' reps');}
       else if(meaningful){reps++;burnoutReps++;dead=0;
         curHi=Math.max(R2*0.22,curHi*0.85,Math.min(curHi,repMax*1.03));
         if(!burnout){burnout=true;toast('🔥 BURNOUT');}
         $('hReps').textContent=reps;cue(true);popT=now+220;triggerWobble(1);
+        if(hype)hype.set(reps); if(music)music.duck(.4);
         spawnBurst(NOWX(),mapY(repMax),35);}
       else{dead++;curHi=Math.max(R2*0.22,curHi*0.9);if(!burnout){burnout=true;toast('🔥 BURNOUT');}
         if(dead>=2)endSet(true);}

@@ -68,6 +68,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <select id="bandSel" title="Band"></select>
 <button class="mini" id="cueBtn">Cues on</button>
 <button class="mini" id="formBtn" style="display:none" title="Live form guide">Form on</button>
+<button class="mini" id="musicBtn" title="Soundtrack">Music</button>
 </div>
 <div class="stage" id="stage">
 <canvas id="cv"></canvas>
@@ -102,6 +103,8 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 </div></div>
 <script src="x3f-exercises.js"></script>
 <script src="x3f-form.js"></script>
+<script src="x3f-hype.js"></script>
+<script src="x3f-music.js"></script>
 <script>
 "use strict";
 const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_BATT='e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6';
@@ -276,6 +279,8 @@ function gameOver(){
 function openShop(){
   $('shopTitle').textContent='Upgrade Bay';$('shopSub').textContent='Sector '+(sectorIdx+1)+' cleared. Spend stardust, then launch Sector '+(sectorIdx+2)+'.';
   $('launchBtn').textContent='Launch Sector '+(sectorIdx+2)+' →';
+  if(hype)hype.say('SECTOR '+(sectorIdx+1)+' CLEAR','core holding · upgrade up',true);
+  if(music)music.duck(1.2);
   renderShop();$('shop').classList.add('show');
 }
 function renderShop(){
@@ -312,6 +317,7 @@ function killEnemy(e){
   if(e.type==='boss'){bossActive=false;boss=null;boom();shake=Math.max(shake,18);novaFlash=performance.now()+1;$('flash').style.background='radial-gradient(circle at 50% 45%,rgba(255,120,150,.6),transparent 60%)';$('flash').style.opacity='0.8';setTimeout(()=>$('flash').style.opacity='0',80);}
   else boom();
   combo=Math.min(99,combo+1);const gained=Math.round(e.sc*combo);score+=gained;kills++;
+  if(hype)hype.set(score);
   popText(e.x,e.y-e.r,'+'+gained,e.type==='boss'?'#ffd23f':'#eee9ff');
   for(let i=0;i<e.du;i++)dust.push({x:e.x+(Math.random()-0.5)*e.r,y:e.y+(Math.random()-0.5)*e.r,vx:(Math.random()-0.5)*60,vy:(Math.random()-0.5)*60,life:0});
   if(Math.random()<(e.type==='boss'?1:0.06))dropPup(e.x,e.y);
@@ -520,6 +526,17 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 resize();player.x=W/2;player.y=H*0.86;aimX=W/2;aimY=H*0.3;requestAnimationFrame(loop);
+
+// ---------- milestone moments + soundtrack ----------
+const hype=window.X3FHype?X3FHype.create({host:$('stage'),unit:'points',
+  theme:{hot:'#ffd35c',cool:'#8f7dff',text:'#e7ecff'},
+  ladder:[250,500,1000,2000,3500,5000,7500,10000,15000,25000],
+  best:()=>(typeof bestScore!=='undefined'?bestScore:0)}):null;
+const music=window.X3FMusic?X3FMusic.create({mood:'nova',
+  getIntensity:()=>Math.min(1,(force/ref())*1.05)}):null;
+(function(){const b=$('musicBtn');if(!b)return;
+  const sync=()=>{b.textContent=(music&&music.isOn())?'Music on':'Music off';};
+  sync();b.onclick=()=>{if(music)music.toggle();sync();};})();
 (function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;xset('band',band);bandSel.value=band;}})();
 // ---------- live form demonstrator ----------
 // If we were launched for a specific X3 movement (Library / guided Routine), mirror

@@ -171,7 +171,7 @@ addEventListener('load',function(){setTimeout(function(){
 </div>
 
 <div id="list"></div>
-<div class="note">Each movement remembers its game, band, tempo and sets. <b>Start guided session</b> walks the whole day: setup + cue + a live form guide for every lift, then the game, then the rest timer. Bands and history are shared across the app — see <a href="library.html" data-nav>Library</a> for the full method.</div>
+<div class="note"><b>One set per movement</b> is the X3 prescription — taken to failure with diminishing range, not three sets of ten. Each movement remembers its game, band, tempo and sets. <b>Start guided session</b> walks the whole day: setup + cue + a live form guide for every lift, then the game, then the rest timer. Bands and history are shared across the app — see <a href="library.html" data-nav>Library</a> for the full method.</div>
 <div class="endcap"></div>
 </div>
 
@@ -239,7 +239,10 @@ const EXD=window.X3FEX, BANDS=EXD.bands;
 const GAMEKEYS=['bloom','splash','nova','flow','zone','max','boss','duel','rhythm','ascent'];
 const GAMES=GAMEKEYS.map(k=>[k,EXD.games[k].name+' · '+EXD.games[k].sub]);
 const TEMPOS=[['4000','Controlled 4s'],['3000','Standard 3s'],['2000','Brisk 2s']];
-const SETS=[['1','1 set'],['2','2 sets'],['3','3 sets'],['4','4 sets'],['5','5 sets']];
+/* The X3 protocol is ONE all-out set per movement, taken to failure with
+   diminishing range - not a multi-set scheme. Extra sets stay available for
+   anyone who wants them, but 1 is the default and the program's answer. */
+const SETS=[['1','1 set · X3 standard'],['2','2 sets'],['3','3 sets'],['4','4 sets'],['5','5 sets']];
 const RESTS=[['45','Rest 45s'],['60','Rest 60s'],['90','Rest 90s'],['120','Rest 120s'],['150','Rest 150s']];
 
 /* ---------- persisted config ---------- */
@@ -257,7 +260,7 @@ function per(slug){
   const d=cfg[day]; d.per=d.per||{};
   const ex=EXD.get(slug)||{};
   const c=d.per[slug]||{};
-  return {game:c.game||(ex.games&&ex.games[0])||'bloom',band:c.band||ex.band||'White',tempo:c.tempo||'3000',sets:c.sets||'3'};
+  return {game:c.game||(ex.games&&ex.games[0])||'bloom',band:c.band||ex.band||'White',tempo:c.tempo||'3000',sets:c.sets||'1'};
 }
 function setPer(slug,patch){const d=cfg[day];d.per=d.per||{};d.per[slug]=Object.assign(per(slug),patch);xset('routine2',cfg)}
 function doneSets(slug){return (prog[day]&&prog[day][slug])||0}

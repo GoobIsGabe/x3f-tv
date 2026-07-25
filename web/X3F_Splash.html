@@ -65,6 +65,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <select id="bandSel" title="Band"></select>
 <button class="mini" id="cueBtn">Cues on</button>
 <button class="mini" id="formBtn" style="display:none" title="Live form guide">Form on</button>
+<button class="mini" id="musicBtn" title="Soundtrack">Music</button>
 </div>
 <div class="stage" id="stage">
 <canvas id="cv"></canvas>
@@ -94,6 +95,8 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 </div></div>
 <script src="x3f-exercises.js"></script>
 <script src="x3f-form.js"></script>
+<script src="x3f-hype.js"></script>
+<script src="x3f-music.js"></script>
 <script>
 "use strict";
 const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_BATT='e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6';
@@ -188,6 +191,7 @@ function spawnCol(now){
 let toastT=0;
 function toast(t){$('toast').textContent=t;$('toast').classList.add('show');toastT=performance.now()+1300;}
 function startRun(){running=true;runStart=performance.now();score=0;combo=1;comboT=0;elapsed=0;cols.length=0;spawnT=0;
+  if(hype)hype.reset();
   $('startBtn').textContent='Surface';$('hScore').textContent='0';$('hCombo').textContent='x1';toast('Dive in!');beep(620,0.12);}
 function endRun(){running=false;$('startBtn').textContent='Dive In';$('cbar').classList.remove('on');
   if(score>bestScore){bestScore=score;xset('splashBest',bestScore);$('hBest').textContent=bestScore;}
@@ -361,8 +365,9 @@ function loop(now){
       sparkle(c.x,c.y,col,14);foamRing(c.x,c.y);plus(c.x,c.y-c.r,'+'+gained,c.t==='star'?'#ffe27a':'#eafcff');
       collectSfx(c.val);$('hScore').textContent=Math.round(score);$('hCombo').textContent='x'+combo;$('hCombo').style.color=combo>=5?'#ffd23f':'';
       $('cbar').classList.add('on');$('cbarFill').style.width=Math.min(100,combo/12*100)+'%';
+      if(hype)hype.set(score);
       if(c.t==='star'){shake=Math.max(shake,6);}
-      if(combo>0&&combo%10===0){toast('COMBO x'+combo+'!');shockwave(dx,dolY,'rgba(255,220,120,');shake=Math.max(shake,12);flashT=now+120;$('flash').style.opacity='0.7';setTimeout(()=>$('flash').style.opacity='0',60);}
+      if(combo>0&&combo%10===0){toast('COMBO x'+combo+'!');if(hype)hype.say('x'+combo+' COMBO','keep it flowing',combo>=20);if(music)music.duck(.7);shockwave(dx,dolY,'rgba(255,220,120,');shake=Math.max(shake,12);flashT=now+120;$('flash').style.opacity='0.7';setTimeout(()=>$('flash').style.opacity='0',60);}
       cols.splice(i,1);continue;
     }
     if(c.x<-50){cols.splice(i,1);continue;}
@@ -376,6 +381,19 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 resize();dolY=forceY(0);requestAnimationFrame(loop);
+
+// ---------- milestone moments + soundtrack ----------
+// Score climbs fast here, so the ladder is coarse; the combo gets its own
+// callouts because that is the thing worth protecting.
+const hype=window.X3FHype?X3FHype.create({host:$('stage'),unit:'points',
+  theme:{hot:'#ffd23f',cool:'#31e8ff',text:'#eafcff'},
+  ladder:[100,250,500,750,1000,1500,2000,3000,5000,7500,10000],
+  best:()=>bestScore}):null;
+const music=window.X3FMusic?X3FMusic.create({mood:'splash',
+  getIntensity:()=>Math.min(1,Math.max(force/ref()*0.8,(combo-1)/12))}):null;
+(function(){const b=$('musicBtn');if(!b)return;
+  const sync=()=>{b.textContent=(music&&music.isOn())?'Music on':'Music off';};
+  sync();b.onclick=()=>{if(music)music.toggle();sync();};})();
 (function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;xset('band',band);bandSel.value=band;}})();
 // ---------- live form demonstrator ----------
 // If we were launched for a specific X3 movement (Library / guided Routine), mirror

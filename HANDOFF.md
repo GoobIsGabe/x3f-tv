@@ -19,7 +19,7 @@ tools/  sync-from-web.py, which does the generating
 
 `E:\Fun\X3 Bar` was the old separate home of the web games. It is **retired** — it had a git remote pointing at this same repo and a DEPLOY.md telling you to force-push, which would have overwritten the Android app. Everything that matters was moved into `web/`. Don't develop there.
 
-Current status: **v0.9**, working on the TV.
+Current status: **v1.0**, working on the TV. Roadmap: [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -90,6 +90,12 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - `routine.html` — pick Push / Pull / Custom, then run the day. Per movement it coaches the setup + strongest-range start, shows the form demonstrator, launches the chosen game pre-configured (`?from=routine&band=…&ex=…`), logs the set and runs a rest timer to the next lift. Days are editable (add / reorder / remove from the 11 movements); sets, bands, tempo and progress persist. Back → launcher → Workout resumes the session and asks whether the set counted.
 - `x3f-form.js` — the animated figure. Poses are authored as hip/hand/foot targets with the knees and elbows solved by two-bone IK, driven by live force: it rises, holds, eases, flushes and trembles near max, and flips to "diminishing range" when your rep tops start collapsing (the X3 burnout). The foot hinges on the ball with the contact pinned to the floor, so a calf raise really rises onto the toes.
 - `library.html` + `progress.html` bundled; launcher gained Workout (hero card), Library and Progress.
+
+**v1.0 — milestone moments, generated soundtrack, and one set per lift.**
+- **One set is the X3 prescription**, not three. Routines defaulted to 3 sets; it now defaults to 1, the option is labelled "1 set · X3 standard", and the page says why.
+- **`x3f-hype.js`** — milestone moments on a two-tier ladder. Rungs (10/15/20/…) get a quick nod; **majors** (50/75/100…) and **your personal best** get the escalating approach: "4 MORE", "2 MORE", "ONE MORE!", each bigger and shakier, then a full callout with flash, confetti, fanfare and haptics. Verified cadence over a 52-rep walk: 18 reps say something, 34 stay quiet — deliberately not per-rep.
+- **`x3f-music.js`** — the soundtrack is *generated* in WebAudio, not downloaded (the whole APK is under 5MB and must work offline). Per-game moods (bloom / splash / nova), and the arrangement responds to `getIntensity()`: filter brightens, bass joins above a threshold, hats double, pads give way to arpeggios. Ducks under cues and fanfares; toggled from a **Music** button in each game's topbar, remembered in `x3f_music`.
+- Wired into Bloom (reps), Splash (score + combo callouts) and Nova (score + "SECTOR n CLEAR").
 
 **v0.9 — the bar connects itself again, and the TV button stopped lying.**
 - **Why "scanning forever" happens:** a BLE peripheral that is already connected — to this TV from a previous run, or to your phone — **stops advertising**, so a scan can never see it, no matter how long it runs. Same story if its advertisement carries neither the name nor the service UUID (a wiped name cache is enough to flip that). Reopening the app used to be the only way out. The BLE code itself had not changed since v0.5; the scan-only strategy was simply blind to those states.
