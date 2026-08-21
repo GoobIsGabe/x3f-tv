@@ -530,6 +530,9 @@ addEventListener('keydown',e=>{
 <script src="x3f-music.js"></script>
 <script>/* menus hum too - idles low, lifts when you press something */
 addEventListener("load",function(){try{X3FMusic.attach({mood:"menu",buttonHost:document.querySelector(".top")});}catch(e){}});</script>
+<script src="x3f-fx.js"></script>
+<script>/* one ambient loop per menu page - the games keep their own */
+addEventListener("load",function(){try{X3FFX.mount({image:"assets/ui/aurora.jpg"});}catch(e){}});</script>
 <script src="x3f-nav.js"></script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
 <script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>

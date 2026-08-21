@@ -15,7 +15,7 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden}
 body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none;-webkit-user-select:none}
-#bgcv{position:fixed;inset:0;width:100%;height:100%;z-index:0}
+
 .wrap{position:relative;z-index:1;height:100dvh;display:flex;flex-direction:column;padding:3.2vh 4vw}
 .top{display:flex;align-items:center;gap:16px}
 .logo{height:12vh;max-height:96px;width:auto;filter:drop-shadow(0 6px 24px rgba(143,125,255,.45))}
@@ -89,8 +89,8 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
 <script src="x3f-exercises.js"></script>
 <script src="x3f-progress.js"></script>
 <script src="x3f-music.js"></script>
+<script src="x3f-fx.js"></script>
 <script src="x3f-nav.js"></script>
-<canvas id="bgcv"></canvas>
 <div class="wrap">
   <div class="top">
     <img class="logo" src="logo.png" alt="X3 Force Bar Games" onerror="this.style.display='none'">
@@ -166,7 +166,11 @@ const grid=$('grid');
 GAMES.forEach((g,i)=>{const el=document.createElement('div');el.className='card nav'+(g.hero?' hero':'');el.style.setProperty('--c',g.c);el.dataset.f=g.f;
   el.setAttribute('data-nav','');el.setAttribute('tabindex','-1');if(i===0)el.setAttribute('data-nav-first','');
   el.innerHTML='<div class="glow" style="--c:'+g.c+'"></div><div class="ic">'+g.ic+'</div><div class="nm">'+g.nm+'</div><div class="tag">'+g.tag+'</div>';
-  el.onclick=()=>{try{xset('band',band);}catch(e){} location.href=g.f;};
+  el.onclick=()=>{
+    try{xset('band',band);}catch(e){}
+    try{ const r=el.getBoundingClientRect(); X3FFX.burst(r.left+r.width/2,r.top+r.height/2,g.c); X3FFX.pulse(.8); }catch(e){}
+    if(window.X3FFX&&X3FFX.leave)X3FFX.leave(g.f); else location.href=g.f;
+  };
   grid.appendChild(el);});
 
 // ---- today's programme ----
@@ -270,21 +274,10 @@ requestAnimationFrame(meter);
 // ---- soundtrack ----
 (function(){ try{ X3FMusic.attach({mood:'menu',buttonHost:document.querySelector('.updrow'),buttonClass:'upd nav'}); }catch(e){} })();
 
-// ---- bubbly background ----
-const cv=$('bgcv'),ctx=cv.getContext('2d');let W,H,bub=[];
-function rs(){W=cv.width=innerWidth;H=cv.height=innerHeight; bub=[]; const n=Math.round(W*H/48000);
-  for(let i=0;i<n;i++)bub.push({x:Math.random()*W,y:Math.random()*H,r:6+Math.random()*30,s:.2+Math.random()*.5,h:Math.random()});}
-addEventListener('resize',rs);rs();
-function bg(){ ctx.clearRect(0,0,W,H);
-  const g=ctx.createLinearGradient(0,0,W,H); g.addColorStop(0,'#0a0620');g.addColorStop(.5,'#0f0a26');g.addColorStop(1,'#08061a');
-  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-  const rg=ctx.createRadialGradient(W*.8,H*-.1,0,W*.8,H*-.1,Math.max(W,H)*.7); rg.addColorStop(0,'rgba(143,125,255,.16)');rg.addColorStop(1,'rgba(143,125,255,0)');
-  ctx.fillStyle=rg;ctx.fillRect(0,0,W,H);
-  for(const b of bub){ b.y-=b.s; if(b.y<-b.r){b.y=H+b.r;b.x=Math.random()*W;}
-    const col=b.h<.5?'55,230,255':'57,245,196';
-    ctx.fillStyle='rgba('+col+','+(.05+ .06*Math.sin(b.y*.02))+')'; ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.fill();
-    ctx.strokeStyle='rgba('+col+',.10)';ctx.lineWidth=1;ctx.stroke(); }
-  requestAnimationFrame(bg); }
-requestAnimationFrame(bg);
+// ---- ambient background ----
+// This used to be a second rAF loop drawing bubbles. X3FFX owns the ambience now
+// (aurora, motes, vignette, grain) in ONE loop that sheds work if the TV cannot
+// keep up, so this page went from two loops to one.
+(function(){ try{ X3FFX.mount({image:'assets/ui/aurora.jpg'}); }catch(e){} })();
 </script>
 </body></html>

@@ -50,13 +50,16 @@ MENUS = {
     "X3F_Progress.html": "progress.html",
 }
 SHARED = ["x3f-exercises.js", "x3f-form.js", "x3f-nav.js", "x3f-hype.js", "x3f-music.js",
-          "x3f-progress.js", "x3f-set.js", "x3f-cal.js"]
+          "x3f-progress.js", "x3f-set.js", "x3f-cal.js", "x3f-fx.js"]
 
 # Illustrated art, copied to the same relative paths the games request
 # (ASSET_BASE='assets/bloom/' etc). Without these the games silently fall back to
 # their procedural drawings, which is what shipped in v0.6 by mistake.
 # bloom/bg.png is deliberately absent: Bloom loads bg.jpg, and the png is 1.7MB.
 ART = {
+    # the ambient backdrop the menus and the launcher sit on
+    "assets/ui": ["aurora.jpg", "badge-0.jpg", "badge-1.jpg", "badge-2.jpg",
+                   "badge-3.jpg", "badge-4.jpg"],
     "assets/bloom": ["bg.jpg", "critter.png", "critter_strain.png", "critter_cheer.png",
                      "flower.png", "bud.png", "petal.png"],
     "assets/splash": ["dolphin.png", "star.png", "pearl.png", "bubble.png", "fish.png"],

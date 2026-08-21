@@ -65,14 +65,30 @@ h2:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--brd
 .advice p{font-family:var(--n);font-size:12.5px;color:var(--dim);line-height:1.5;margin-top:4px}
 .achhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .achhead .cnt{font-family:var(--n);font-weight:700;font-size:15px;color:var(--accent)}
-.achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:8px}
-.ach{background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:10px;opacity:.45;transition:opacity .2s,border-color .2s}
-.ach.got{opacity:1;border-color:rgba(47,240,176,.4)}
-.ach .an{font-weight:800;font-size:13px;line-height:1.2}
+.achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:10px}
+.ach{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));border:1px solid var(--brd);border-radius:16px;padding:14px 10px 12px;text-align:center;opacity:.5;overflow:hidden;transition:opacity .25s var(--e),border-color .25s,transform .18s var(--e),box-shadow .25s}
+.ach:hover{transform:translateY(-2px)}
+/* the medallion is a photograph on a black field; screen-blending drops the black
+   and leaves the metal glowing on whatever the card sits on */
+.medal{position:relative;width:72px;height:72px;margin:0 auto 9px}
+.medal i{position:absolute;inset:0;background-size:contain;background-repeat:no-repeat;background-position:center;
+ mix-blend-mode:screen;filter:grayscale(.85) brightness(.55);transition:filter .35s var(--e)}
+.medal span{position:absolute;inset:0;display:grid;place-items:center;font-size:26px;line-height:1;
+ filter:drop-shadow(0 2px 6px rgba(0,0,0,.8));opacity:.55;transition:opacity .35s}
+.ach.got .medal i{filter:none}
+.ach.got .medal span{opacity:1}
+.ach.got{opacity:1;border-color:rgba(47,240,176,.35)}
+/* an unlocked medallion catches the light once when it comes into view */
+.ach.got::after{content:'';position:absolute;inset:0;pointer-events:none;
+ background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.10) 50%,transparent 62%);
+ transform:translateX(-120%);animation:achSheen 3.4s ease-out .2s 1}
+@keyframes achSheen{to{transform:translateX(120%)}}
+@media (prefers-reduced-motion:reduce){.ach.got::after{display:none}}
+.ach .an{font-weight:800;font-size:13.5px;line-height:1.25}
 .ach .ad{font-family:var(--n);font-size:11px;color:var(--dim);line-height:1.4;margin-top:3px}
 .ach .at{display:inline-block;font-family:var(--n);font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;margin-top:6px;color:var(--dim)}
 .ach.got .at{color:var(--gold)}
-.ach.t4.got{border-color:rgba(255,211,92,.5)}
+.ach.t4.got{border-color:rgba(255,211,92,.55);box-shadow:0 0 30px -12px var(--gold)}
 .filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
 .chip{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);border:1px solid var(--brd2);color:var(--txt);border-radius:100px;padding:8px 12px;cursor:pointer}
 .chip.on{background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;border-color:transparent}
@@ -250,11 +266,21 @@ function renderPBs(){
         '<div class="v">'+r.reps+'<small>reps</small></div>'+
         '<div class="v">'+(r.part||'–')+'<small>partials</small></div>'+
         '<div class="v">'+(Math.round(r.peak)||'–')+'<small>peak</small></div>'+
-        '<div class="v">'+(r.ecc?r.ecc+'s':'–')+'<small>negative</small></div></div>').join('')
+        '<div class="v">'+(r.ecc?(+r.ecc).toFixed(1)+'s':'–')+'<small>negative</small></div></div>').join('')
     : '<div class="card"><div class="empty">No sets logged yet. Play any game from Routines or the Library and your bests appear here, per movement and per band.</div></div>';
 }
 
 let achFilter='all';
+/* One medallion per tier, one glyph per family. The id prefixes come straight from
+   the generator in x3f-progress.js. */
+function achGlyph(id){
+  const map=[['streak','🔥'],['week','📅'],['chal','🎯'],['sess','⚡'],['guided','📋'],
+             ['part','🔥'],['exburn','🔥'],['band','🎽'],['peak','💥'],['ecc','🐢'],
+             ['tut','⏱'],['days','📆'],['fullweek','✅'],['fullday','🗂'],['comeback','↩'],
+             ['breadth','🌐'],['set','💪'],['reps','💪'],['ex-','🏋']];
+  for(const [k,g] of map) if(id.indexOf(k)===0) return g;
+  return '🏅';
+}
 function renderRecent(){
   const rows=P.sets().slice(-12).reverse();
   $('recent').innerHTML=rows.length
@@ -265,7 +291,7 @@ function renderRecent(){
         if(r.part)bits.push(r.part+' partials');
         if(r.peak)bits.push(Math.round(r.peak)+' peak');
         if(r.tut)bits.push(Math.round(r.tut)+'s tension');
-        if(r.ecc)bits.push(r.ecc+'s negative');
+        if(r.ecc)bits.push((+r.ecc).toFixed(1)+'s negative');
         if(!bits.length&&r.score)bits.push(r.score+' score');
         return '<div class="pbrow"><div><div class="nm">'+(r.ex?nameOf(r.ex):(r.g||'set'))+
           (r.k==='roll'?' <small style="color:var(--dim)">· '+r.n+' sets rolled up</small>':'')+'</div>'+
@@ -290,7 +316,9 @@ function renderAch(){
   const shown=all.filter(a=>achFilter==='all'||(achFilter==='got'?a.got:!a.got));
   shown.sort((a,b)=>(b.got-a.got)||(b.tier-a.tier));
   $('achs').innerHTML=shown.map(a=>'<div class="ach t'+a.tier+(a.got?' got':'')+'">'+
-    '<div class="an">'+(a.got?'🏅 ':'🔒 ')+a.name+'</div><div class="ad">'+a.desc+'</div>'+
+    '<div class="medal"><i style="background-image:url(assets/ui/badge-'+a.tier+'.jpg)"></i>'+
+    '<span>'+(a.got?achGlyph(a.id):'🔒')+'</span></div>'+
+    '<div class="an">'+a.name+'</div><div class="ad">'+a.desc+'</div>'+
     '<span class="at">'+['Bronze','Silver','Gold','Platinum','Legend'][a.tier]+'</span></div>').join('');
 }
 
@@ -342,7 +370,10 @@ function refresh(){
   // Re-evaluate badges on every refresh, not just at boot: importing a history or
   // marking a challenge changes what has been earned, and a badge that only
   // appears after a reload looks broken.
-  try{ P.checkAchievements(); }catch(e){}
+  try{
+    const fresh=P.checkAchievements();
+    if(fresh.length){ try{ X3FFX.burst(null,null,'#ffd35c'); X3FFX.pulse(1); }catch(e){} }
+  }catch(e){}
   renderToday();renderChal();renderGrid();renderCharts();renderAdvice();renderPBs();renderRecent();renderAch();
   if(window.X3FNav)X3FNav.refresh();
 }
@@ -351,6 +382,9 @@ refresh();
 <script src="x3f-music.js"></script>
 <script>/* menus hum too - idles low, lifts when you press something */
 addEventListener("load",function(){try{X3FMusic.attach({mood:"menu",buttonHost:document.querySelector(".top")});}catch(e){}});</script>
+<script src="x3f-fx.js"></script>
+<script>/* one ambient loop per menu page - the games keep their own */
+addEventListener("load",function(){try{X3FFX.mount({image:"assets/ui/aurora.jpg"});}catch(e){}});</script>
 <script src="x3f-nav.js"></script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
 

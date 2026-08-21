@@ -100,6 +100,30 @@ navigation.
 
 ---
 
+## Shipped in v1.7 — the visual pass
+
+- **`x3f-fx.js`** — one ambient layer behind every menu: a generated aurora, drifting
+  motes, vignette and film grain, with bursts when something lands. It obeys the
+  two constraints this roadmap set: it does **not** run inside the games (they
+  already own a loop, and the form rig and music scheduler are two more), and on
+  the launcher it **replaced** the old bubble loop, so that page went from two
+  loops to one. It also watches its own frame cost and sheds work in order —
+  grain, then motes, then drift — degrading to a still backdrop rather than a
+  stutter, and honours `prefers-reduced-motion`.
+- **Generated art**, kept deliberately tiny: an aurora backdrop (26 KB) and five
+  tier medallions (52 KB). 78 KB total against a 3.9 MB bundle.
+- **The achievements wall** is now 117 medallions rather than 117 identical emoji:
+  a forged badge per tier, a glyph per family, locked ones desaturated, unlocked
+  ones catching a single sheen.
+- **Focus that reads across a room** — the cursor ring breathes and a sheen sweeps
+  whatever just took focus, and page changes fade instead of snapping.
+- **Panels got their own ground.** Translucent cards over a moving backdrop are
+  unreadable; every surface now sits on its own dark base with the ambience
+  around it rather than through it.
+- Fixed: eccentric seconds printed raw floats at the user (`2.6999999999999997s`).
+
+---
+
 ## Next
 
 ### Correctness
@@ -144,6 +168,15 @@ loop if the Hisense drops frames.
 **9. Music restarts on every navigation** because each page is a fresh document.
 Either hand playback to the native side or keep the menu mood identical everywhere
 so it reads as continuous.
+
+**10a. The ambient layer is verified by screenshot, not on the TV.** Frame cost on
+the Hisense is the open question — the auto-degrade should handle it, but nobody
+has watched it decide yet. `X3FFX.stats()` reports the quality tier and average
+frame time if it needs checking.
+
+**10b. Only the menus got the visual pass.** The games still have their own
+in-game look; the medallions, the ambient layer and the focus treatment stop at
+the menu boundary on purpose, but the seam is visible if you go looking.
 
 **10. The 10-foot pass is verified headlessly only.** Type scale is a judgement
 call that needs eyes on the actual couch; expect one round of adjustment.
