@@ -267,15 +267,27 @@
       'body.x3f-boot{opacity:0;transition:none}',
       'body{transition:opacity .34s cubic-bezier(.2,.9,.25,1)}',
       'body.x3f-out{opacity:0;transition:opacity ' + EXIT_MS + 'ms ease}',
-      /* A full-screen backdrop-filter over this layer is the single most
-         expensive line in the app: the compositor re-snapshots the backdrop and
-         re-runs a gaussian over the whole screen every frame the backdrop moves,
-         and it moves because of us. Chrome's own measurement of a naively
-         animated blur is ~90 ms/frame against a 16.6 ms budget
-         (tv-ux-research §8.3), and x3f-ui.css bans it outright. These four
-         legacy class names still declare one; neutralise it while we are
-         mounted. Delete this rule once the pages drop theirs - see the report. */
-      '.coach,.rest,.scrim,.status{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}',
+      /* THE PAGES HAVE DROPPED THEIRS, so the rule that used to sit here is gone,
+         exactly as its own comment instructed.
+
+         What it said, and it is worth keeping: a full-screen backdrop-filter over
+         this layer is the single most expensive line in the app - the compositor
+         re-snapshots the backdrop and re-runs a gaussian over the whole screen
+         every frame the backdrop moves, and it moves because of us. Chrome's
+         measurement of a naively animated blur is ~90 ms/frame against a 16.6 ms
+         budget (tv-ux-research §8.3); x3f-form.js measured the same shape at
+         ~90 ms on a TV SoC; x3f-ui.css bans the property outright.
+
+         It never covered the real damage anyway. It named four classes, and it is
+         injected by mount() - which only the four MENU pages call. The 26 live
+         declarations were on the eight GAME pages, on the HUD chips that sit over
+         an animating canvas during every single rep. Exactly the wrong place, and
+         the one place this rule could never reach.
+
+         Nothing neutralises it now because nothing declares it, and
+         tools/sync-from-web.py fails the build if anything ever does again - a
+         check beats a patch, because a patch has to be remembered and enumerated
+         and this one was both forgotten and incomplete. */
       /* I-15: reduced motion stops the ambient motion and the page fades. */
       '@media (prefers-reduced-motion:reduce){#x3ffx-au{animation:none!important}',
       'body,body.x3f-out,body.x3f-boot{transition:none!important}}'

@@ -903,4 +903,49 @@ group('12', 'every band shows a published weight on every movement', (t) => {
   t.eq('an unknown band prints nothing', EX.forceLabel('Chartreuse', 'deadlift'), '');
 });
 
+/* ----------------------------------------------------------------- 13. */
+/* AUTO-LEARN MUST NOT ERASE THE START-POSITION FLOOR.
+
+   The first set you ever log on an uncalibrated movement used to wipe its floor.
+   observe() wrote `lo: (e && e.lo) || 0`, and on the first call there is no
+   previous entry, so lo became 0 - and range() prefers a stored entry over an
+   estimate, so the floor was gone permanently.
+
+   That floor is not decoration. An overhead press starts at chin height with the
+   band already loaded; x3f-cal.js's own header exists to explain why treating 0
+   as "no effort" puts the bottom of the range near the top of the screen. It
+   measured 0% of screen height at the start position before, and 63% after one
+   logged set - and every movement was affected.
+
+   Group 8 already covers auto-learn's precedence rules and passed throughout,
+   because it asserts what observe() may OVERWRITE and never what it must
+   PRESERVE. This is that half. */
+group('13', 'auto-learn keeps the movement floor it was given', (t) => {
+  const env = load();
+  const C = env.cal;
+
+  const MOVES = ['overhead-press', 'chest-press', 'tricep-press', 'deadlift',
+                 'bent-row', 'front-squat', 'calf-raise'];
+
+  MOVES.forEach(m => {
+    const est = C.range(m, 'White');
+    /* The invariant, stated where it is felt: at the start position the display
+       reads zero. If the floor is lost, this is the number that moves. */
+    t.near('at rest ' + m + ' draws at the bottom before any set',
+           C.frac(m, 'White', est.lo), 0, 0.001);
+    C.observe(m, 'White', 80);
+    t.near('...and still does after one auto-learned set',
+           C.frac(m, 'White', C.range(m, 'White').lo), 0, 0.001);
+    t.ok('the floor itself is preserved, not zeroed',
+         C.range(m, 'White').lo > 0, 'lo=' + C.range(m, 'White').lo);
+  });
+
+  /* And the thing group 8 does assert must still hold: a real calibration is
+     never overwritten by an observation. */
+  const env2 = load({ storage: { x3f_exCal: { 'deadlift|White': { lo: 30, hi: 120, auto: false } } } });
+  env2.cal.observe('deadlift', 'White', 400);
+  t.eq('a real calibration still wins over auto-learn',
+       env2.cal.range('deadlift', 'White').hi, 120);
+});
+
 module.exports = { groups };

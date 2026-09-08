@@ -468,6 +468,38 @@ def main() -> int:
                      "bootstrap's fallback to find, so the chip never updates on "
                      "the TV." % rel)
 
+    # THE BANNED PROPERTIES STAY BANNED.
+    #
+    # x3f-ui.css bans backdrop-filter outright and says why: the compositor
+    # re-snapshots the backdrop and re-runs a gaussian over the whole screen every
+    # frame it moves. Chrome measures a naively animated blur at ~90 ms/frame
+    # against a 16.6 ms budget, and x3f-form.js measured the same shape on a real
+    # TV SoC. The ban was prose, so it was not a ban: 26 declarations across all
+    # eight game pages, on the HUD chips that sit over an animating canvas during
+    # every rep. x3f-fx.js carried a runtime rule to neutralise them, which named
+    # four classes none of the games use and is injected only by the four MENU
+    # pages - it could never have reached the damage.
+    #
+    # A property this expensive should fail a build, not rely on someone
+    # remembering a paragraph.
+    banned = {
+        "backdrop-filter": "the most expensive property in a WebView - "
+                           "~90 ms/frame over a moving backdrop; x3f-ui.css bans it",
+    }
+    for rel in sorted(produced):
+        if not (rel.endswith(".html") or rel.endswith(".css")):
+            continue
+        try:
+            txt = (ASSETS / rel).read_text(encoding="utf-8")
+        except Exception:
+            continue
+        # Declarations only. Every one of these files discusses the ban in prose,
+        # and a check that fires on the sentence explaining it is a check people
+        # switch off - the fourth time this file has had to learn that.
+        for prop, why in banned.items():
+            if re.search(re.escape(prop) + r"\s*:\s*(?!none)[A-Za-z0-9(]", txt):
+                fail("%s declares %s. %s." % (rel, prop, why))
+
     # EVERY ASSET PATH WRITTEN IN A PAGE MUST EXIST.
     #
     # Two different bugs, one shape. The guided coach asked for

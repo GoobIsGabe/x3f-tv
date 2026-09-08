@@ -169,13 +169,21 @@
 
   /* The estimate used until a real calibration exists. Both ends move per
      movement, which is the whole point. */
+  /* The movement's start-position load as a fraction of its top. Named because
+     TWO callers need it and they must never disagree: estimate() builds a range
+     from it, and observe() has to re-apply it when auto-learn establishes a new
+     top. When only estimate() knew it, the first auto-learned set flattened the
+     floor to zero. */
+  function floorFrac(sl) {
+    var e = ex(sl);
+    return (e && typeof e.floorFrac === 'number') ? e.floorFrac : 0;
+  }
+
   function estimate(sl, band) {
     var ceiling = bandCeiling(band);
     var hf = HI_FRAC[sl];
     var hi = (hf > 0) ? ceiling * hf : ceiling;
-    var e = ex(sl);
-    var ff = (e && typeof e.floorFrac === 'number') ? e.floorFrac : 0;
-    return { lo: Math.round(hi * ff), hi: Math.round(hi), auto: true, t: 0, est: true };
+    return { lo: Math.round(hi * floorFrac(sl)), hi: Math.round(hi), auto: true, t: 0, est: true };
   }
 
   /* Validated read. A stored entry is only used if it is actually usable; a
@@ -300,12 +308,41 @@
     if (!sl) return;
     band = band || bandFor(sl);
     peak = +peak || 0;
-    var floorPeak = Math.max(MIN_SPAN, estimate(sl, band).hi * 0.15);
+    var est = estimate(sl, band);
+    var floorPeak = Math.max(MIN_SPAN, est.hi * 0.15);
     if (peak <= floorPeak) return;
     var m = map(), k = id(sl, band), e = m[k];
     if (e && e.auto === false) return;
     if (e && e.hi >= peak) { e.n = (e.n || 1) + 1; flush(m); return; }
-    m[k] = { lo: (e && e.lo) || 0, hi: Math.round(peak), auto: true, n: ((e && e.n) || 0) + 1, t: Date.now() };
+    /* SEED THE FLOOR FROM THE ESTIMATE, NEVER FROM ZERO.
+
+       This wrote `lo: (e && e.lo) || 0`, and on the FIRST auto-learn there is no
+       previous entry - so lo became 0 and range() then preferred that stored
+       entry over estimate(), erasing the movement's start-position floor for
+       good. Which is the exact defect the header of this file exists to describe:
+       an overhead press begins at chin height with the band already loaded, and
+       treating 0 as "no effort" puts the bottom of the range near the top of the
+       screen. Measured: overhead press on White read 0% of screen height at the
+       start position, and 63% after one logged set. Every movement was affected -
+       deadlift 22%, bent row 21%, chest press 40%, tricep press 49%.
+
+       It also crossed x3f-set.js's TUT_FRAC of 0.15, so on nine of eleven
+       movements time-under-tension accrued while the user simply stood holding
+       the bar, and the rep-amplitude threshold grew with the widened span, making
+       the weak-range partials the program cares about harder to detect.
+
+       force-test group 8 covers auto-learn's precedence and asserted nothing
+       about lo, which is why it passed throughout.
+
+       SCALED TO THE OBSERVED TOP, not copied from the estimate. The floor is a
+       FRACTION of the top - estimate() is literally `hi * floorFrac` - so lifting
+       the estimate's absolute lo produces lo > hi whenever the observed peak
+       comes in under the estimated floor. range() then rejects the entry as
+       broken and falls back to the estimate, which is how the first version of
+       this fix put a calf raise back on 88 after learning 22. Same fraction,
+       applied to the number actually measured. */
+    var ff = floorFrac(sl);
+    m[k] = { lo: Math.round(Math.round(peak) * ff), hi: Math.round(peak), auto: true, n: ((e && e.n) || 0) + 1, t: Date.now() };
     flush(m);
   }
 
