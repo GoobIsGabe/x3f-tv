@@ -1349,8 +1349,18 @@ public class MainActivity extends Activity {
       were still phone-sized across a room - a 21px force number on a 55" screen
       three metres away. Only bumps type and padding, never layout, and only on a
       big viewport so a phone browser is untouched. */
+   /* NO MEDIA QUERY. This pass used to sit inside @media (min-width:1200px), with
+      the reasoning "only on a big viewport so a phone browser is untouched" - but a
+      phone browser never gets here at all. This whole string is BOOTSTRAP, injected
+      only by MainActivity into its own WebView; the web build in web/ never sees a
+      byte of it. So the query guarded against something that cannot happen, while
+      excluding something that constantly does: an Android TV WebView routinely
+      reports a CSS viewport NARROWER than 1200px - 960 is the common 1080p value,
+      and this file already reasons about "a TV reporting a 960-wide viewport"
+      elsewhere. On every one of those panels the gate failed silently and the games
+      stayed phone-sized across a room, which is the exact thing the pass exists to
+      prevent: a 21px force number on a 55-inch screen three metres away. */
    if(GAME) css=css
-     +'@media (min-width:1200px){'
      +'.chip .v{font-size:30px!important}.chip .k{font-size:13px!important;letter-spacing:2px!important}'
      +'.chip{padding:10px 16px!important;border-radius:18px!important}'
      +'.status{font-size:15px!important;padding:9px 16px!important}'
@@ -1361,8 +1371,7 @@ public class MainActivity extends Activity {
      +'.huge{font-size:clamp(3rem,11vw,7rem)!important}'
      +'.eyebrow{font-size:15px!important}'
      +'.card h1{font-size:38px!important}.card p{font-size:17px!important;line-height:1.6!important}'
-     +'.card .tag{font-size:14px!important}'
-     +'}';
+     +'.card .tag{font-size:14px!important}';
    st.textContent=css;
    (document.head||document.documentElement).appendChild(st); } }catch(e){}
  /* ONE CONDITIONING PATH, AND THIS IS IT.
@@ -1503,7 +1512,20 @@ public class MainActivity extends Activity {
        var r=el.getBoundingClientRect();
        var ov=horiz?(Math.min(cr.bottom,r.bottom)-Math.max(cr.top,r.top))
                    :(Math.min(cr.right,r.right)-Math.max(cr.left,r.left));
-       var d=along+perp*2.5+(ov>2?0:4000); if(d<bd){bd=d;best=el;} }
+       /* HORIZONTAL IS A GATE, VERTICAL IS A PENALTY, and the asymmetry is
+          deliberate - x3f-nav.js reasons it out at length and the games were not
+          following it. Both directions used the +4000 penalty, so a candidate
+          that shared no part of your row was still eligible if nothing better
+          existed: pressing Right on the last button of a game's bottom control
+          bar found nothing beside it and teleported the ring to the top of the
+          screen. Every one of the seven games behaved that way.
+          Horizontally, "nothing in this row that way" means the row ENDED, and
+          stopping is the right answer. Vertically it usually means the next band
+          is merely offset - a two-button bar in a corner - and refusing it would
+          strand controls the D-pad is required to reach. */
+       var d; if(horiz){ if(ov<=2)continue; d=along+perp*2.5; }
+              else { d=along+perp*2.5+(ov>2?0:4000); }
+       if(d<bd){bd=d;best=el;} }
      if(best)setFocus(best);
    }catch(e){} };
    setInterval(function(){ try{ var sc=scope();

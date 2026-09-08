@@ -149,13 +149,34 @@
   function controlsIn(root) {
     return [].slice.call((root || document).querySelectorAll(SEL)).filter(seenVisible);
   }
+  /* THIS LIST MUST TRACK x3f-nav.js's SCOPES, INCLUDING [data-nav-scope].
+
+     When it drifted, the audit was wrong in the most misleading direction. The
+     Progress page's destructive confirm was given data-nav-scope so it would trap
+     the cursor - which x3f-nav honoured and this function did not, so the audit
+     believed no overlay was open, expected every control on the page to be
+     reachable from inside a trap, and reported 13 UNREACHABLE. The page was
+     RIGHT and the audit was wrong, which is worse than the reverse: a false
+     alarm teaches people to stop reading the report.
+
+     The positioned requirement mirrors x3f-nav's boxed() and invariant I-11 for
+     the same reason it exists there - data-nav-scope is the attribute people
+     reach for when marking rails, and a static rail must never be mistaken for a
+     modal. */
   function openOverlay() {
-    var o = document.querySelectorAll('.coach.show,.rest.show,.scrim.show,.modal.show');
-    for (var i = o.length - 1; i >= 0; i--) {
-      var r = o[i].getBoundingClientRect(), cs = getComputedStyle(o[i]);
-      if (r.width > 4 && parseFloat(cs.opacity) >= 0.05) return o[i];
+    var o = document.querySelectorAll(
+      '.coach.show,.rest.show,.scrim.show,.modal.show,[data-nav-scope]');
+    var best = null;
+    for (var i = 0; i < o.length; i++) {
+      var el = o[i];
+      var r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+      if (r.width <= 4 || r.height <= 4) continue;
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      if (parseFloat(cs.opacity) < 0.05) continue;
+      if (el.hasAttribute('data-nav-scope') && cs.position === 'static') continue;
+      best = el;                       /* later in document order wins, as before */
     }
-    return null;
+    return best;
   }
   /* Two ways to explore, because the two navs give us different leverage.
 

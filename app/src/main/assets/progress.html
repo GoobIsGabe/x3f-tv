@@ -403,6 +403,14 @@ textarea{display:block;width:100%;min-height:11rem;font-family:var(--font-num);
 .msg{font-size:var(--t-min);color:var(--accent-2);line-height:1.45;
   margin-top:var(--s-3);max-width:60rem}
 .msg.warn{color:var(--gold)}
+/* x3f-nav only accepts a POSITIONED element as a trapping scope - invariant I-11,
+   enforced in boxed(): "an overlay is always positioned; a rail is static", which
+   is what stops a page marking its rails as scopes and swallowing every modal.
+   This confirm is inline markup, so it was static and its data-nav-scope was
+   silently ignored. relative + a z-index satisfies the invariant and changes
+   nothing about how it looks. Scoped to [data-nav-scope] so it only counts while
+   the question is actually on screen. */
+#wipeAsk[data-nav-scope]{position:relative;z-index:3}
 
 /* ── empty states ────────────────────────────────────────────────────── */
 .empty{font-size:var(--t-min);color:var(--txt-2);line-height:1.5;max-width:60rem}
@@ -1258,8 +1266,29 @@ $('impBtn').onclick = function () {
    "Reset achievements" wiped x3f_ach, x3f_chal and x3f_prog on one OK press with
    no warning of any kind. The confirmation is in the page now, and the cursor is
    seated on the harmless answer. */
+/* THE CONFIRM HAS TO TRAP, not merely start on the safe answer.
+
+   Seating the cursor on "Keep them" was necessary and not sufficient. This block
+   is inline markup rather than a modal, so x3f-nav never scoped to it, and the
+   cursor could wander straight out and back in. Measured on the shipped bundle
+   with a simulated D-pad, starting from "Keep them":
+
+       Left, Right  -> "Yes, reset badges"
+       Down, Up     -> "Yes, reset badges"
+       one Up       -> out of the confirm entirely, onto "Export my history"
+
+   So the reflexive did-I-mean-that wiggle of a thumb parks the ring on the
+   destructive answer, and one OK clears every badge and the whole challenge
+   history. That is the exact shape of the defect the in-page confirm was built to
+   prevent (D5: on the TV every native confirm() is auto-answered YES), reappearing
+   one level up.
+
+   data-nav-scope is x3f-nav's own trapping hook, alongside .scrim.show and
+   .modal.show. Set while the question is on screen and removed when it is
+   answered - a permanent attribute would scope the cursor into a hidden block. */
 $('wipeBtn').onclick = function () {
   $('wipeAsk').hidden = false;
+  $('wipeAsk').setAttribute('data-nav-scope', '');
   setMsg('');
   try {
     if (window.X3FNav) { X3FNav.refresh(); X3FNav.set($('wipeNo')); }
@@ -1267,14 +1296,29 @@ $('wipeBtn').onclick = function () {
 };
 $('wipeNo').onclick = function () {
   $('wipeAsk').hidden = true;
+  $('wipeAsk').removeAttribute('data-nav-scope');
   try { if (window.X3FNav) { X3FNav.refresh(); X3FNav.set($('wipeBtn')); } } catch (e) {}
 };
 $('wipeYes').onclick = function () {
   $('wipeAsk').hidden = true;
+  $('wipeAsk').removeAttribute('data-nav-scope');
   P.reset();
   setMsg('Badges and challenge history cleared. Your training log is untouched.');
   refresh();
   try { if (window.X3FNav) { X3FNav.refresh(); X3FNav.set($('wipeBtn')); } } catch (e) {}
+};
+
+/* BACK MUST CLOSE THE CONFIRM, and this page had no hook at all until it grew a
+   trapping overlay. MainActivity.handleBack() lowers its overlay flag and then
+   calls window.__x3fCloseOverlay; with nothing listening, the first Back would
+   have done nothing and the second would have navigated off the dashboard - the
+   identical failure that made Back useless on the home screen.
+
+   Back on this page means "never mind", so it takes the safe answer: the same
+   thing pressing "Keep them" does. */
+window.__x3fCloseOverlay = function () {
+  var ask = $('wipeAsk');
+  if (ask && !ask.hidden) { $('wipeNo').click(); return; }
 };
 
 $('chalDone').onclick = function () { P.markChallenge(); refresh(); };

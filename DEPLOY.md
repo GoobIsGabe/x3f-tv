@@ -97,8 +97,16 @@ firebase hosting:channel:deploy check --expires 1h
 
 ## What is NOT in this repo
 
-- `logo.png` — the 22 MB full-resolution master. The sizes the app actually uses are
-  committed (`app/src/main/res/drawable-nodpi/`, `app/src/main/assets/logo.png`).
+- `logo.png` — the 22 MB full-resolution master. The one size the app actually uses is
+  committed at `app/src/main/assets/logo.png`, 219x224, which is what the launcher draws
+  it at (`.logo{height:12vh;max-height:96px}`, doubled for a 2x panel).
+
+  It used to be committed at 700x716 and **twice**: a second copy sat in
+  `app/src/main/res/drawable-nodpi/` that nothing referenced — the manifest points at
+  `@drawable/icon` and `@drawable/banner`, which are separate files. Between them the two
+  copies were 1.6 MB of a 3.8 MB payload, **43% of everything the APK shipped**, for one
+  image on one screen. The dead copy is gone and the live one is sized to its job; git
+  holds the 700px version if it is ever wanted back.
 - `web/assets/bloom/bg.png` — 1.7 MB and unreferenced; Bloom loads `bg.jpg`.
 - `tv-poc/` — the superseded phone-as-relay proof of concept.
 

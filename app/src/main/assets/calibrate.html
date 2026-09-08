@@ -338,9 +338,24 @@ function liveForce(){
 
 let flow=null,lastResult=null;
 
+/* THE BUTTON MUST SAY WHAT OK WILL DO.
+
+   During GET SET the screen instructs "Press OK when you are ready", and on the
+   television OK does not reach this page's keydown listener at all: the shell
+   consumes DPAD_CENTER and routes it to window.__x3fNav('enter'), which calls
+   click() on whatever holds the cursor. That is this button - it is the one you
+   just pressed to start - and it was labelled "Cancel" and wired to cancel. So
+   following the instruction on screen threw away the calibration.
+
+   Now the label follows the phase: while the countdown is running the button IS
+   the "I'm ready" control the caption promises, and it only becomes Cancel once
+   the capture proper has begun and there is something to abandon. */
 function label(){
-  $('calBtn').textContent=(flow&&flow.phase()!=='idle'&&flow.phase()!=='done'&&flow.phase()!=='failed')
-    ? 'Cancel' : ('Calibrate '+exName());
+  var p = flow && flow.phase();
+  var running = p && p!=='idle' && p!=='done' && p!=='failed';
+  $('calBtn').textContent = p==='getset' ? "I'm ready"
+                          : running      ? 'Cancel'
+                          : ('Calibrate '+exName());
 }
 
 function ui(p,st){
@@ -351,10 +366,13 @@ function ui(p,st){
 
   if(p==='getset'){
     eye.textContent='Get set';
+    /* The label is phase-dependent now, and the phase changes underneath the
+       button while nobody is clicking it. */
+    try{ label(); }catch(e){}
     big.className='big gold';
     big.textContent=Math.max(0,Math.ceil(st.left/1000));
     sub.textContent='Put the remote down. Get into the start position for the '+exName()+
-      '. Press OK when you are ready.';
+      '. Press OK to start early.';
     figN=0;
   }else if(p==='hold'){
     eye.textContent='Hold the start';
@@ -443,6 +461,10 @@ $('calBtn').onclick=()=>{
   if(!flow)flow=makeFlow();
   if(!flow)return;
   const p=flow.phase();
+  /* GET SET is the one running phase where OK means "skip the rest of the
+     countdown", not "cancel" - see label() above. flow.press() is a no-op in
+     every other phase, so a stray press can still never ruin a capture. */
+  if(p==='getset'){flow.press();label();return}
   if(p!=='idle'&&p!=='done'&&p!=='failed'){flow.cancel();ui('idle',null);label();return}
   /* A failed max keeps the hold, so a slip does not cost the whole setup. */
   if(p==='failed'&&lastResult&&lastResult.error==='too-narrow'&&flow.retryMax()){label();return}
@@ -470,6 +492,11 @@ window.__x3fCal = {
   get band(){return band},
   get slug(){return slug},
   phase:function(){return flow?flow.phase():'idle'},
+  /* Cleanup for the suite. tools/func-test/cases-cal.js drives a real capture
+     through the BUTTON to prove that OK during GET SET starts rather than
+     cancels, and it has to be able to put the page back afterwards without
+     leaving a timer running into the next assertion. */
+  cancel:function(){ if(flow&&flow.phase()!=='idle'){flow.cancel();ui('idle',null);label();} },
   commit:function(lo,hi){
     if(!flow)flow=makeFlow();
     if(!flow)throw new Error('no flow');

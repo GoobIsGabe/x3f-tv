@@ -288,6 +288,41 @@
           });
           okf('nothing on this page loads from the internet (AD-5)', net.length === 0, net.join(' '));
 
+          /* ------------- OK during GET SET starts, it does not cancel ----
+             REPORTED SHAPE OF THE BUG: the caption during GET SET tells you to
+             press OK, and on the television OK never reaches this page's keydown
+             listener - the shell consumes DPAD_CENTER and routes it to
+             __x3fNav('enter'), which calls click() on the focused element. That
+             element is #calBtn, which was labelled "Cancel" and wired to cancel.
+             So obeying the instruction on screen threw the calibration away.
+
+             Asserted through the BUTTON, deliberately, not through flow.press():
+             the direct call always worked. What was broken is the only path a
+             person on a sofa can actually take. */
+          (function () {
+            var btn = document.getElementById('calBtn');
+            var cal = window.__x3fCal;
+            if (!btn || !cal || typeof cal.phase !== 'function') {
+              okf('OK during GET SET can be checked', false,
+                  'expose window.__x3fCal.phase() so the button path can be asserted');
+              return;
+            }
+            try { cal.cancel && cal.cancel(); } catch (e) {}
+            btn.click();                                    /* start a capture */
+            var started = cal.phase();
+            okf('pressing the button starts a capture in GET SET',
+                started === 'getset', 'phase=' + started);
+            okf('...and the button then offers to start, not to cancel',
+                /ready/i.test(btn.textContent), JSON.stringify(btn.textContent));
+            btn.click();                                    /* the OK the caption asks for */
+            var after = cal.phase();
+            okf('OK during GET SET does not cancel the capture',
+                after !== 'idle', 'phase after OK = ' + after);
+            okf('...it moves the capture on instead',
+                after === 'hold' || after === 'getset', 'phase after OK = ' + after);
+            try { cal.cancel && cal.cancel(); } catch (e) {}
+          })();
+
           /* --------------------- and it ran without throwing ------------ */
           okf('no uncaught error while the capture loop ran (D13)', errs.length === 0,
               errs.slice(0, 3).join(' | '));

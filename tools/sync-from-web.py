@@ -441,7 +441,15 @@ def main() -> int:
                 continue
             defines = set(re.findall(r"window\.(__x3f[A-Za-z]+)\s*=", txt))
             has_setstatus = re.search(r"function\s+setStatus\s*\(", txt) is not None
-            if "__x3fCloseOverlay" in called and ".scrim" in txt and                "__x3fCloseOverlay" not in defines:
+            # LOOK AT MARKUP, NOT AT PROSE. The first version tested for '.scrim'
+            # anywhere in the file, which a COMMENT explaining the scrim convention
+            # satisfies just as well as a real overlay does - it fired on a page
+            # whose only mention of the class was the sentence describing it. Test
+            # instead for a trapping construct actually being present: an element
+            # carrying the class, or x3f-nav's data-nav-scope hook being set.
+            scrim_re = re.compile('class=["\'][^"\']*\\bscrim\\b')
+            has_overlay = (scrim_re.search(txt) is not None) or ('data-nav-scope' in txt)
+            if '__x3fCloseOverlay' in called and has_overlay and '__x3fCloseOverlay' not in defines:
                 fail("%s has an overlay but never defines window.__x3fCloseOverlay, "
                      "which is the name MainActivity calls on BACK. The dialog will "
                      "not close and the next BACK leaves the page." % rel)
