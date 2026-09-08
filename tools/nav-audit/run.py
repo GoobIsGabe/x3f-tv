@@ -189,10 +189,20 @@ def main():
         body = (body.replace("&gt;", ">").replace("&lt;", "<")
                     .replace("&quot;", '"').replace("&amp;", "&"))
         bad = [l.strip() for l in body.split("\n")
-               if re.search(r"UNREACHABLE|FOCUSED INVISIBLE|ESCAPED|BOUNCES|NO FOCUS RING|dead ends", l)]
+               # "dead ends" is DIAGNOSTIC, not a failure, and audit.js has always
+               # treated it that way - its own headline count excludes it. Listing
+               # it here as a problem was a latent disagreement between the two
+               # halves of this tool that nothing had triggered, because no page
+               # had a legitimate dead end until the destructive confirm on
+               # Progress started trapping the cursor. Down from "Keep them" in a
+               # two-button dialog leads nowhere, and that is the correct
+               # behaviour of a trap, not a defect. Keep printing them - a dead end
+               # is often the first sign of a real hole - but do not fail on one.
+               if re.search(r"UNREACHABLE|FOCUSED INVISIBLE|ESCAPED|BOUNCES|NO FOCUS RING|RING OFF SCREEN", l)]
+        info = [l.strip() for l in body.split(chr(10)) if "dead ends" in l]
         states = body.count("--- ")
         if bad:
-            problems[name] = bad
+            problems[name] = bad + info
             print("%-11s FAIL  (%d states, %d problems)" % (name, states, len(bad)))
         else:
             print("%-11s ok    (%d states)" % (name, states))

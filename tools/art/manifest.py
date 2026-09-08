@@ -215,4 +215,10 @@ MARK = [
         "No text, no letters, no lettering of any kind, no logotype.")),
 ]
 
-ALL = MOVES + CARDS + UI + PHASE + MARK
+# PHASE is generated on request but is NOT in ALL. Its three images were built
+# for a phase header that was never implemented, and they spent two years being
+# bundled into the APK and precached by the service worker while no page rendered
+# them. The prompts stay because the idea is a good one and regenerating costs
+# $0.24; shipping pictures nothing displays does not.
+#   python tools/art/build.py --only phase     if the header is ever built
+ALL = MOVES + CARDS + UI + MARK

@@ -315,6 +315,40 @@
     return null;
   }
 
+  /* ── does the ring stay ON SCREEN while you hold a direction? ──────────
+
+     seenVisible() asks whether an element is displayed - offsetParent, computed
+     style, opacity. It never asks whether it is inside the VIEWPORT, and those
+     are different questions the moment a page scrolls. A control 600px above the
+     top of the screen is perfectly "visible" by every test this file had and
+     completely invisible to a person.
+
+     That gap hid a critical defect. x3f-nav's scrollPage() moves the page without
+     moving the cursor, so on the Progress dashboard - ~10,000px of achievement
+     wall below the last control - holding Down scrolled the ring to top=-614 and
+     left it there as the live target: OK re-filtered the badge wall with no ring
+     anywhere on screen, and the next Down jumped INTO the sticky header. The BFS
+     could never see it either, because it only issues presses that change the
+     cursor, and these presses only changed the scroll.
+
+     So: hold a direction like a person does, and after every single press assert
+     the ring is still somewhere a person could look at. */
+  function ringOnScreenWalk(dir, seatAt) {
+    try { if (window.__x3fSeat) window.__x3fSeat(seatAt); else if (window.X3FNav) X3FNav.set(seatAt); }
+    catch (e) { return null; }
+    for (var i = 0; i < 40; i++) {
+      try { window.__x3fNav(dir); } catch (e) { break; }
+      var el = focused();
+      if (!el) continue;
+      var r = el.getBoundingClientRect();
+      var h = window.innerHeight || 0;
+      if (r.bottom <= 1 || r.top >= h - 1) {
+        return { el: name(el), press: i + 1, top: Math.round(r.top) };
+      }
+    }
+    return null;
+  }
+
   function audit(label) {
     var ov = openOverlay();
     var root = ov || document;
@@ -361,12 +395,18 @@
         var b = (up && up.bounce) || (down && down.bounce);
         OUT.push('  ' + (b ? 'BOUNCES (' + ((up && up.bounce) ? 'up' : 'down') + '): ' + b.join(' -> ')
                            : 'ok - Up and Down walk without doubling back'));
+
+        var lost = ringOnScreenWalk('down', vis[0]) || ringOnScreenWalk('up', vis[vis.length - 1]);
+        OUT.push('  ' + (lost
+          ? 'RING OFF SCREEN: after ' + lost.press + ' presses the cursor is ' + lost.el
+            + ' at top=' + lost.top + ', outside the viewport, and OK would still press it'
+          : 'ok - the ring stays on screen while a direction is held'));
       }
     }
   }
 
   function report() {
-    var bad = OUT.filter(function (l) { return /UNREACHABLE|FOCUSED INVISIBLE|ESCAPED|BOUNCES|NO FOCUS RING/.test(l); }).length;
+    var bad = OUT.filter(function (l) { return /UNREACHABLE|FOCUSED INVISIBLE|ESCAPED|BOUNCES|NO FOCUS RING|RING OFF SCREEN/.test(l); }).length;
     var d = document.createElement('div');
     d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b0f18;color:#eaf0fa;font:13px/1.5 Consolas,monospace;padding:18px;white-space:pre-wrap;overflow:auto';
     d.textContent = 'AUDIT ' + (location.pathname.split('/').pop()) + '  ' +

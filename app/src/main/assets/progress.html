@@ -1469,7 +1469,7 @@ function syncOnOpen() {
 /* Ambience and music are the first things sacrificed if anything goes wrong with
    them; neither may ever be a reason the dashboard does not render. */
 addEventListener("load", function () {
-  try { X3FFX.mount({ image: "assets/ui/aurora.jpg" }); } catch (e) {}
+  try { X3FFX.mount({ image: "assets/ui/backdrop.webp" }); } catch (e) {}
   try {
     X3FMusic.attach({ mood: "menu", buttonClass: "topbtn",
                       buttonHost: document.querySelector(".top") });

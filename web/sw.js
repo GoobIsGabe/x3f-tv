@@ -109,7 +109,7 @@ const A = [
   /* Generated art. WEBP only - the .jpg twin of each of these also exists in
      web/ as a fallback, and precaching both would double the art for a format
      nothing asks for first. */
-  'assets/ui/aurora.jpg', 'assets/ui/backdrop.webp',
+  'assets/ui/backdrop.webp',
   'assets/ui/badge-0.webp', 'assets/ui/badge-1.webp', 'assets/ui/badge-2.webp',
   'assets/ui/badge-3.webp', 'assets/ui/badge-4.webp',
   'assets/cards/bloom.webp', 'assets/cards/boss.webp', 'assets/cards/duel.webp',
@@ -120,7 +120,12 @@ const A = [
   'assets/moves/deadlift.webp', 'assets/moves/drag-curl.webp', 'assets/moves/front-squat.webp',
   'assets/moves/overhead-press.webp', 'assets/moves/pec-crossover.webp', 'assets/moves/split-squat.webp',
   'assets/moves/tricep-press.webp', 'assets/moves/upright-row.webp',
-  'assets/phase/1.webp', 'assets/phase/2.webp', 'assets/phase/3.webp',
+  /* assets/phase/{1,2,3} and assets/ui/aurora.jpg were precached here and
+     rendered by nothing. phase/ was generated for a header that was never built;
+     aurora.jpg is pixel-for-pixel the same picture as backdrop.jpg, and the one
+     page that mounted it now mounts backdrop.webp, which is 23 KB against 60. A
+     precache entry is bandwidth spent before the user sees anything, so an entry
+     no page can ask for is the most expensive kind of dead weight there is. */
   'assets/bloom/bg.jpg', 'assets/bloom/critter.png', 'assets/bloom/critter_strain.png',
   'assets/bloom/critter_cheer.png', 'assets/bloom/flower.png', 'assets/bloom/bud.png',
   'assets/bloom/petal.png',

@@ -128,15 +128,21 @@ ART = {
     # Only the WEBP of each generated asset ships. The .jpg twin stays in web/
     # as a fallback for the browser build and is deliberately NOT bundled: it
     # would roughly double the art for a format the TV never asks for.
-    "assets/ui": ["aurora.jpg", "backdrop.webp",
+    # aurora.jpg is GONE, and was pixel-for-pixel the same picture as
+    # backdrop.jpg - identical sha1 over the raw RGB. Only the Library mounted it,
+    # and it now mounts backdrop.webp: 23 KB instead of 60, for the same image.
+    "assets/ui": ["backdrop.webp",
                   "badge-0.webp", "badge-1.webp", "badge-2.webp",
                   "badge-3.webp", "badge-4.webp"],
     # Card art for the leanback home, one per game.
     "assets/cards": ["bloom.webp", "boss.webp", "duel.webp", "flow.webp", "max.webp", "nova.webp", "rhythm.webp", "splash.webp", "workout.webp", "zone.webp"],
     # One diagram per movement, for the Library and the pre-set coaching card.
     "assets/moves": ["bent-row.webp", "calf-raise.webp", "chest-press.webp", "deadlift.webp", "drag-curl.webp", "front-squat.webp", "overhead-press.webp", "pec-crossover.webp", "split-squat.webp", "tricep-press.webp", "upright-row.webp"],
-    # The three phases of the 12-week program.
-    "assets/phase": ["1.webp", "2.webp", "3.webp"],
+    # assets/phase is GONE. Three images were generated for a phase header that
+    # was never built, then bundled AND precached - 75 KB of a 5 MB budget, and
+    # bandwidth spent on a first run before the user sees anything, for pictures
+    # no page can ask for. tools/art/manifest.py no longer generates them either,
+    # so a rebuild will not quietly bring them back.
     "assets/bloom": ["bg.jpg", "critter.png", "critter_strain.png", "critter_cheer.png",
                      "flower.png", "bud.png", "petal.png"],
     "assets/splash": ["dolphin.png", "star.png", "pearl.png", "bubble.png", "fish.png"],
@@ -461,6 +467,45 @@ def main() -> int:
                      "window.__x3fSetBar nor a global setStatus() for the "
                      "bootstrap's fallback to find, so the chip never updates on "
                      "the TV." % rel)
+
+    # EVERY ASSET PATH WRITTEN IN A PAGE MUST EXIST.
+    #
+    # Two different bugs, one shape. The guided coach asked for
+    # 'assets/form/' + slug + '.png' - a directory that has never existed in the
+    # history of this repo - so the illustrated plate it promises was silently at
+    # opacity 0 on every movement, on the one screen you look at mid-set, while
+    # eleven perfectly good plates sat unused in assets/moves/. And deleting
+    # aurora.jpg (a byte-identical duplicate of backdrop.jpg) very nearly shipped
+    # a broken backdrop on Progress and Routine, which were still naming it.
+    #
+    # Neither is visible in a browser with a warm cache, and neither throws: an
+    # <img> that 404s fires onerror and the page carries on looking almost right.
+    # So check the paths against the filesystem. A literal ending in "/" is a
+    # concatenation - 'assets/form/' + slug - and the DIRECTORY is what must exist.
+    # QUOTE-PREFIXED, so only real string literals count. A bare scan matches
+    # the sentence in routine.html explaining that assets/form/ never existed,
+    # and a check that fires on the comment documenting its own fix is a check
+    # people switch off. Third time this file has learned the same lesson:
+    # match the code, never the prose about it.
+    asset_re = re.compile(chr(91) + chr(34) + chr(39) + chr(96) + chr(93) +
+                          r"(assets/[A-Za-z0-9_./-]*)")
+    for rel in sorted(produced):
+        if not (rel.endswith(".html") or rel.endswith(".js")):
+            continue
+        try:
+            txt = (ASSETS / rel).read_text(encoding="utf-8")
+        except Exception:
+            continue
+        for ref in sorted(set(asset_re.findall(txt))):
+            ref = ref.rstrip(".,;:)")
+            target = ASSETS / ref
+            if ref.endswith("/"):
+                if not target.is_dir():
+                    fail("%s refers to %s, which is not a directory in the bundle - "
+                         "anything built on that prefix loads nothing" % (rel, ref))
+            elif "." in ref.rsplit("/", 1)[-1]:
+                if not target.exists():
+                    fail("%s refers to %s, which is not in the bundle" % (rel, ref))
 
     # EVERY KEY file() ASKS FOR MUST BE IN X3FFILES.
     #

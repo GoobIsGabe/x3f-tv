@@ -60,7 +60,7 @@
       left `body{opacity:0}` standing forever. Both are gone; see the two
       "THE PAGE COMES FIRST" notes below.
 
-     X3FFX.mount({ image:'assets/ui/aurora.jpg' });
+     X3FFX.mount({ image:'assets/ui/backdrop.webp' });
      X3FFX.burst(x, y, '#39f5c4');   // something good happened
      X3FFX.pulse(0.6);               // brief lift, e.g. on select
      X3FFX.leave('routine.html');    // fade out, then navigate

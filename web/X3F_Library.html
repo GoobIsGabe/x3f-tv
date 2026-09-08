@@ -874,7 +874,7 @@ function renderJump() {
   render();
 
   /* Ambience is the first thing sacrificed if anything goes wrong with it. */
-  try { if (window.X3FFX && X3FFX.mount) X3FFX.mount({ image: 'assets/ui/aurora.jpg' }); } catch (e) {}
+  try { if (window.X3FFX && X3FFX.mount) X3FFX.mount({ image: 'assets/ui/backdrop.webp' }); } catch (e) {}
   try {
     if (window.X3FMusic && X3FMusic.attach) {
       X3FMusic.attach({ mood: 'menu', buttonHost: $('topbar'), buttonClass: 'navbtn' });

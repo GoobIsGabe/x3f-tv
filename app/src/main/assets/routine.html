@@ -1120,7 +1120,14 @@ function demoFor(slug, tempo) {
   art.style.opacity = 0;
   art.onload = function () { art.style.opacity = .9; };
   art.onerror = function () { art.style.opacity = 0; };
-  art.src = 'assets/form/' + slug + '.png';
+  /* assets/form/ HAS NEVER EXISTED. This asked for a directory nothing has ever
+     produced, so onerror fired every time and the plate was permanently at
+     opacity 0 - the comment above promises "an illustrated plate if one has been
+     generated", and one has: tools/art/build.py writes eleven of them to
+     assets/moves/<slug>.webp, which the Library and the home have been showing
+     all along. The coach was the one screen that asked for the wrong path, on the
+     one screen you are actually looking at mid-set. */
+  art.src = 'assets/moves/' + slug + '.webp';
   $('demoTag').textContent = X3FForm.has(slug)
     ? ('Live form guide · ' + (+tempo / 1000) + 's tempo') : 'Form guide';
 }
@@ -1464,7 +1471,7 @@ $('restMore').onclick = function () {
   }
 
   /* Ambience is the first thing sacrificed if anything goes wrong with it. */
-  try { if (window.X3FFX && X3FFX.mount) X3FFX.mount({ image: 'assets/ui/aurora.jpg' }); } catch (e) {}
+  try { if (window.X3FFX && X3FFX.mount) X3FFX.mount({ image: 'assets/ui/backdrop.webp' }); } catch (e) {}
   try {
     if (window.X3FMusic && X3FMusic.attach) {
       X3FMusic.attach({ mood: 'menu', buttonHost: document.querySelector('.top'), buttonClass: 'topbtn' });

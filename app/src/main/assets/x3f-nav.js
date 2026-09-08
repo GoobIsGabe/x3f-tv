@@ -602,8 +602,17 @@
     }
 
     /* Nothing unpinned that way, so the header is no longer a magnet - it is
-       simply the only thing left, which is exactly when it should be chosen. */
-    if (!hard && !soft) {
+       simply the only thing left, which is exactly when it should be chosen.
+
+       UNLESS THE CURSOR IS OFF SCREEN. Once a scroll has stranded it, every
+       candidate on screen is "that way" from it - a cursor 600px above the
+       viewport has the whole page below it - so this fallback would hand a
+       DOWNWARD press the pinned header sitting at the top of the screen, and the
+       page would appear to jump upwards. Deep in a long non-focusable run the
+       header is genuinely the only focusable thing visible, so this is not rare;
+       it is exactly where holding Down puts you. Scrolling on is the honest
+       response, and moveV reaches scrollPage by leaving pick null. */
+    if (!hard && !soft && onScreen(cursor)) {
       hard = pinHard; hardScore = pinHardScore;
       soft = pinSoft; softScore = pinSoftScore;
     }
@@ -648,7 +657,18 @@
     refresh();
     if (!items.length) return;
     if (justScoped) return;                       /* the overlay landing WAS this keypress */
-    if (!cursor) { setCursor(first()); return; }
+    if (!cursor) {
+      /* Seat on something the user can actually see. Falling straight to first()
+         teleported to the top of the document whenever the ring had been put away
+         mid-scroll, undoing the scrolling they had just done. */
+      var back = nearestOnScreen(dir);
+      if (back) { setCursor(back, false); parked = null; return; }
+      if (scrollPage(dir, parked)) return;
+      setCursor(first());
+      return;
+    }
+    /* A previous press may have scrolled the page out from under the ring. */
+    if (rescueCursor(dir)) return;
     if (dir === 'left' || dir === 'right') moveH(dir); else moveV(dir);
   }
 
@@ -661,22 +681,165 @@
     var d = document.scrollingElement || document.documentElement;
     return (d.scrollHeight > d.clientHeight + 2) ? d : null;
   }
-  function scrollPage(dir) {
-    if (!cursor) return false;
-    var h = scrollHost(cursor); if (!h) return false;
+  function scrollPage(dir, from) {
+    var anchor = from || cursor || parked;
+    if (!anchor) return false;
+    var h = scrollHost(anchor); if (!h) return false;
     var view = (h === document.scrollingElement || h === document.documentElement) ? innerHeight : h.clientHeight;
     var max = h.scrollHeight - h.clientHeight;
     var at = h.scrollTop;
     if ((dir === 'down' && at >= max - 2) || (dir === 'up' && at <= 2)) return false;
     var to = Math.max(0, Math.min(max, at + (dir === 'down' ? 1 : -1) * view * 0.75));
+
+    /* PUT THE RING AWAY BEFORE THE SCROLL, NOT AFTER IT.
+
+       This scroll leaves the cursor exactly where it was, so a big one can carry
+       it clean off the screen - and it is the press that DOES the scrolling that
+       strands it, so checking afterwards is one press too late. Checking
+       afterwards does not work anyway: the scroll is smooth, so a rect read
+       immediately after scrollTo() is still the old one.
+
+       The delta is known here, though, and the arithmetic is exact: the cursor's
+       viewport position shifts by -delta. If that puts it outside the container,
+       stand the ring down now, in the same press, so it is never both invisible
+       and live. */
+    var delta = to - at;
+    if (cursor && delta) {
+      var cr = cursor.getBoundingClientRect();
+      var box = hostBox(h);
+      if (cr.bottom - delta <= box.top + 1 || cr.top - delta >= box.bottom - 1) {
+        parked = cursor;
+        cursor.classList.remove(CUR);
+        cursor = null;
+      }
+    }
+
     try { h.scrollTo({ top: to, behavior: (RM && RM.matches) ? 'auto' : 'smooth' }); }
     catch (e) { h.scrollTop = to; }
+    return true;
+  }
+
+  /* ── the cursor that scrolled off the screen ──────────────────────────
+
+     scrollPage() is the one path in this engine that changes what is on screen
+     WITHOUT touching the cursor, and nothing used to check that the ring was
+     still visible afterwards. On the Progress dashboard, which has roughly ten
+     thousand pixels of non-focusable achievement wall below its last control,
+     holding Down produced this - measured, press by press, against the real
+     bundle:
+
+         press 11   ring on the "Locked" filter chip, top=798, on screen
+         press 12   cursor does not move; the shell scrolls 706px; ring top=92
+         press 13   cursor does not move; scrolls again; RING AT top=-614,
+                    614px above the screen and invisible - and still the target,
+                    so OK silently re-filtered the badge wall
+         press 14   the ring JUMPS UP into the sticky header. The user pressed DOWN.
+         then OK    navigates to routine.html. The user was scrolling badges and
+                    the app left the page.
+
+     Two written invariants break at once: focus must be visible, and nothing may
+     be pressable while invisible. The sticky-header demotion cannot save it
+     either - once the cursor is stranded above the viewport every candidate on
+     screen is "below" it, so with nothing unpinned below, the reserve pile
+     promotes the pinned header and Down becomes Up.
+
+     WHY THE CHECK IS HERE AND NOT INSIDE scrollPage(). The scroll is smooth and
+     therefore asynchronous: rects measured immediately after scrollTo() are the
+     old ones. Asking at the START of the next press is both simpler and stricter
+     - by then the scroll has landed, whoever caused it - and it also covers a
+     cursor left off screen by anything else, a re-render or a page's own
+     scrollIntoView included.
+
+     The scroll itself is correct and stays. Abandoning the cursor is what was
+     wrong. */
+  function hostBox(h) {
+    if (!h || h === document || h === document.scrollingElement || h === document.documentElement) {
+      return { top: 0, bottom: window.innerHeight || 0 };
+    }
+    var r = h.getBoundingClientRect();
+    return { top: Math.max(0, r.top), bottom: Math.min(window.innerHeight || 0, r.bottom) };
+  }
+
+  function onScreen(el) {
+    if (!el) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width < 1 && r.height < 1) return false;
+    var b = hostBox(scrollHost(el));
+    /* Any real overlap counts. A control half off the bottom is reachable and
+       visible; one entirely past either edge is neither. */
+    return r.bottom > b.top + 1 && r.top < b.bottom - 1;
+  }
+
+  /* The item to land on after a scroll stranded the cursor: the one nearest the
+     edge the user was travelling toward, so the ring reappears where their eye
+     already is rather than at the far end of the screen. */
+  function nearestOnScreen(dir) {
+    var b = hostBox(scrollHost(cursor || document.body));
+    var best = null, bd = Infinity, pin = null, pd = Infinity;
+    for (var i = 0; i < items.length; i++) {
+      var el = items[i];
+      if (!visible(el) || !onScreen(el)) continue;
+      var r = el.getBoundingClientRect();
+      var d = (dir === 'up') ? Math.abs(b.bottom - r.bottom) : Math.abs(r.top - b.top);
+      /* A PINNED HEADER IS THE NEAREST THING TO THE TOP OF THE SCREEN BY
+         DEFINITION, so a naive "closest to the leading edge" hands it the cursor
+         every single time - and the first version of this function did exactly
+         that. The rescue then looked identical to the bug it was written to fix:
+         hold Down on the Progress wall, the ring strands off screen, and the next
+         press lands on "Workout" in the sticky bar. Same reserve-pile rule as
+         moveV: consider a pinned header only if there is genuinely nothing else
+         on screen. */
+      if (stuckHeader(el)) { if (d < pd) { pd = d; pin = el; } continue; }
+      if (d < bd) { bd = d; best = el; }
+    }
+    /* pin is measured but deliberately NOT returned. Deep in the achievement wall
+       the pinned header is the ONLY focusable thing on screen, so falling back to
+       it made the rescue land on "Workout" - indistinguishable from the bug. No
+       rescue is the better answer there: move() then falls through to moveV,
+       which scrolls, which is what holding Down through a wall of badges should
+       do. `pin` stays computed because a future caller may want to know one was
+       the only option, and because deleting it hides why this returns null. */
+    return best;
+  }
+
+  /* True if it had to rescue the cursor, in which case the caller must stop:
+     re-seating IS the response to that press, and moving on top of it would jump
+     twice for one button. */
+  /* Where the ring was when it had to be put away, so Up can bring it back and
+     so scrollPage still knows which container to scroll. */
+  var parked = null;
+
+  function rescueCursor(dir) {
+    if (!cursor || onScreen(cursor)) return false;
+    var seat = nearestOnScreen(dir);
+    if (seat) { setCursor(seat, false); parked = null; return true; }
+
+    /* NOTHING FOCUSABLE IS ON SCREEN AT ALL. That is not a broken state - it is
+       what the middle of a ten-thousand-pixel achievement wall looks like. The
+       wrong answers are both tempting: keep the ring where it is (invisible, and
+       still what OK would press) or seat it on the pinned header (the ring
+       appears to jump upwards while the user holds Down).
+
+       So put the ring away and carry on scrolling, which is what the press meant.
+       Nothing is focused, nothing claims to be, and the moment a control comes
+       back into view the next press seats on it. */
+    parked = cursor;
+    cursor.classList.remove(CUR);
+    cursor = null;
+    scrollPage(dir, parked);
     return true;
   }
 
   /* ---------- activation ---------- */
   function activate() {
     if (!cursor) { refresh(); setCursor(first()); return; }
+    /* NEVER PRESS SOMETHING NOBODY CAN SEE. A cursor scrolled off screen was
+       still the click target, so OK fired a control the user had no idea was
+       focused - on Progress that silently re-filtered the badge wall, and one
+       press later it navigated off the page entirely. Bring the ring back into
+       view instead and let them see what they are about to press. */
+    refresh();
+    if (!onScreen(cursor)) { rescueCursor('down'); return; }
     var el = cursor;
     /* Both Google TV and Fire TV require a momentary pressed state: the press is
        the only confirmation the user gets that the remote was heard at all. A
