@@ -140,7 +140,7 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - **Score the failure**: partials past full-range collapse get a meter, their own milestones and the headline slot in the set summary.
 - **Dashboard rewrite** (`X3F_Progress.html`): today, challenge, 84-day adherence grid, reps/week, peak-force/week, PB table, band coaching, achievements with filters, export/import.
 - **Music everywhere** — 10 moods across menus and all games; menus lift briefly on a keypress so the app feels awake.
-- **Free phone access**: `.github/workflows/pages.yml` publishes `web/` to `gh-pages`. Enable Settings -> Pages -> gh-pages / root once and https://goobisgabe.github.io/x3f-tv/ serves the games over https (which Web Bluetooth needs).
+- **Free phone access**: `.github/workflows/hosting.yml` publishes `web/` to Firebase Hosting at https://x3f-tv.web.app over https (which Web Bluetooth needs). Free on Spark; `firebase.json` holds the config, including the `no-store` header on `sw.js` that GitHub Pages could not express. Deploying by hand is `firebase deploy --only hosting`. This replaced a `gh-pages` workflow; that branch is now unused and can be deleted.
 - Test suites: `tools/func-test/run.py` (63 feature assertions over 5 screens) and `tools/func-test/engine.html` (40 engine tests) join the nav audit.
 - Fixed: Bloom wrote TWO history entries per set, inflating every total; the dashboard did not re-check achievements after an import; `program()` said Week 1 on an empty log.
 

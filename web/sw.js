@@ -1,7 +1,20 @@
 /* X3F service worker - the phone build's offline cache.
 
    This file is stripped out of the TV bundle entirely (tools/sync-from-web.py
-   deletes the registration line). It only ever runs on gh-pages.
+   deletes the registration line). It only ever runs on the phone build, served
+   from Firebase Hosting at https://x3f-tv.web.app .
+
+   firebase.json sends `Cache-Control: no-cache, no-store, must-revalidate` for
+   this file. Do not read more into that than it deserves: browsers ALREADY
+   bypass the HTTP cache for a worker's own script - updateViaCache defaults to
+   'imports', which exempts the top-level script - so that header is a second
+   lock, not the lock. The hole it actually closes is a new worker precaching
+   stale bytes into its fresh cache name during install, and rule 5 below
+   (`{cache: 'reload'}`) already closes that from in here.
+
+   What genuinely cannot be fixed from inside this file is defect 3: a re-fetched
+   sw.js with IDENTICAL bytes installs nothing. That needs the cache name to
+   change, which is the SHA stamped into C by .github/workflows/hosting.yml.
 
    ─────────────────────────────────────────────────────────────────────────
    WHAT WENT WRONG BEFORE, AND WHY EACH RULE BELOW EXISTS

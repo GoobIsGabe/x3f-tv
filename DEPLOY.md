@@ -78,10 +78,22 @@ cd web && python -m http.server 8000
 ```
 
 Then open `http://localhost:8000/` (or run `web/Start Games.bat`). Web Bluetooth needs
-a secure context, so `localhost` works and a plain LAN IP does not. For phone use over
-the network you need https — enabling **GitHub Pages** on this repo would do it, but
-Pages serves the repo root or `/docs`, not `web/`, so it needs a `gh-pages` branch or a
-`/docs` copy. Not set up today; the TV app is the primary target.
+a secure context, so `localhost` works and a plain LAN IP does not.
+
+For phone use over the network, that is what **Firebase Hosting** is for:
+<https://x3f-tv.web.app>, published by `.github/workflows/hosting.yml` on every push that
+touches `web/`. To publish by hand from here instead:
+
+```bash
+firebase deploy --only hosting
+```
+
+There is no build step, so the workflow and that command do exactly the same thing. To try
+a change without touching the live site, deploy a preview channel and curl it:
+
+```bash
+firebase hosting:channel:deploy check --expires 1h
+```
 
 ## What is NOT in this repo
 

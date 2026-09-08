@@ -1,0 +1,132 @@
+name: Publish web games
+
+# The phone version of X3F: web/ published verbatim to Firebase Hosting at
+# https://x3f-tv.web.app . That URL is read off a television across a room and typed
+# into a phone to pair the two, which is most of why it is worth having instead of
+# goobisgabe.github.io/x3f-tv/ .
+#
+# web/ stays the single source of truth. Nothing is copied, no branch is force-pushed,
+# and firebase.json decides what is served and with which headers.
+#
+# THIS REPLACED A gh-pages WORKFLOW. The honest reasons, in order of how much they
+# actually matter — and note that the header argument, which looks like the obvious one,
+# is the WEAKEST of them:
+#
+#   1. ORIGIN ISOLATION. goobisgabe.github.io is ONE origin shared by every GitHub Pages
+#      site on the account. Any other project published there could read this app's
+#      localStorage — which is where the entire training history, the calibrations and the
+#      sync refresh token live — and could register a root-scoped service worker that
+#      intercepts this app's requests. x3f-tv.web.app is an origin of its own that nothing
+#      else can ever be published to. That is a real boundary, not a preference.
+#   2. THE URL. The television PRINTS it and a human retypes it on a phone. 'x3f-tv.web.app'
+#      is at the root, is shorter, and has no case-sensitive path segment to get wrong
+#      (goobisgabe.github.io/X3F-TV/ is a 404, and a TV screen is exactly where someone
+#      mis-reads case).
+#   3. HSTS. The whole .app gTLD is in the HSTS preload list, so the first request is
+#      https before it leaves the browser. github.io is not preloaded and sends no
+#      Strict-Transport-Security header.
+#   4. Configurable Cache-Control. Worth having, and firebase.json uses it — but be honest
+#      about the size of it: browsers already bypass the HTTP cache for a service worker's
+#      own script (updateViaCache defaults to 'imports'), and web/sw.js already precaches
+#      with {cache:'reload'}, so Pages' flat max-age=600 was survivable. Firebase's
+#      UNCONFIGURED default for HTML is max-age=3600 — six times worse than Pages. This is
+#      only an advantage because firebase.json spends effort on it.
+#
+# What GitHub Pages did better, for the record: no credential to expire, and a soft
+# 100 GB/month limit enforced by an email rather than Firebase Spark's hard cutoff.
+#
+# If this workflow ever cannot run — an expired key, a GitHub outage, a change of mind —
+# the deploy is one command from any machine with the Firebase CLI logged in:
+#
+#     firebase deploy --only hosting
+#
+# There is no build step and no bundler, so that command and this workflow do exactly the
+# same thing. This file is a convenience, not a dependency.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'web/**'
+      - 'firebase.json'
+      - '.github/workflows/hosting.yml'
+  workflow_dispatch:
+
+# Two pushes in quick succession could otherwise land out of order and leave the older
+# tree live.
+concurrency:
+  group: publish-hosting
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The service-account secret can only be minted by a human with console access
+      # (docs/FIREBASE-SETUP.md, "From CI"). Until it exists this job would fail on every
+      # single push with an authentication error, which trains people to ignore a red X.
+      #
+      # So say plainly what is missing and stop. The site is NOT stuck in the meantime:
+      # `firebase deploy --only hosting` from any logged-in machine does the same thing,
+      # which is why this can be a skip rather than a failure.
+      - name: Is the deploy credential present?
+        id: cred
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_X3F_TV }}" ]; then
+            echo "have=no" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Hosting not deployed::Secret FIREBASE_SERVICE_ACCOUNT_X3F_TV is not set, so web/ was built but not published. Create it with 'firebase init hosting:github' (see docs/FIREBASE-SETUP.md), or deploy by hand with 'firebase deploy --only hosting'."
+          else
+            echo "have=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A service worker is only replaced when sw.js's OWN BYTES change, and its activate
+      # handler only drops caches whose name differs from the current one. Publishing a
+      # fixed page while the cache name stayed 'x3f-dev' meant every returning visitor kept
+      # the old worker and was served the old page out of the old cache. "The fix didn't
+      # ship."
+      #
+      # firebase.json's no-store header on sw.js fixes the OTHER half of that — it makes
+      # the browser actually fetch sw.js rather than reuse it — but a freshly fetched file
+      # with identical bytes still installs nothing. Both are required. Neither is
+      # sufficient. Do not delete this step because the header exists now.
+      #
+      # grep first: a silent no-op here would reinstate exactly the bug it removes, and it
+      # would look like a green deploy.
+      - name: Stamp the service-worker cache with this commit
+        run: |
+          grep -q "^const C = 'x3f-dev';" web/sw.js || {
+            echo "web/sw.js no longer has the line this step rewrites."
+            echo "Restore \"const C = 'x3f-dev';\" or update this step - without it"
+            echo "returning visitors keep serving the previous build from cache."
+            exit 1
+          }
+          sed -i "s/^const C = 'x3f-dev';/const C = 'x3f-${GITHUB_SHA}';/" web/sw.js
+          grep -m1 "^const C" web/sw.js
+
+      # The stamp above edits the working copy only. Nothing is committed anywhere: the
+      # deploy uploads what is on disk, so the published sw.js carries the SHA while the
+      # file in git keeps its local-dev value. That is the whole reason the literal in
+      # sw.js is 'x3f-dev' and not a version number somebody has to remember to bump.
+      # BOTH VERSIONS ARE PINNED ON PURPOSE, and they are the two things most likely to
+      # break this deploy months from now with no change on this side:
+      #   - '@v0' is a FLOATING major tag that moves under you (the v0.11.0 Node 24 runtime
+      #     bump landed that way).
+      #   - firebaseToolsVersion defaults to 'latest', so an unpinned firebase-tools picks
+      #     up a new major on some random Tuesday.
+      # Bumping either is a deliberate act with a test deploy behind it, not a surprise.
+      #
+      # 'target' is deliberately absent. It would make the action run
+      # `deploy --only hosting:TARGET`, which needs a `targets` map in .firebaserc that this
+      # project does not have. The site is named in firebase.json instead.
+      - name: Deploy web/ to Firebase Hosting
+        if: steps.cred.outputs.have == 'yes'
+        uses: FirebaseExtended/action-hosting-deploy@v0.11.0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_X3F_TV }}
+          firebaseToolsVersion: '15.15.0'
+          projectId: x3f-tv
+          channelId: live

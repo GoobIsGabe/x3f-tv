@@ -110,6 +110,27 @@ up:
 10. **Raising Spark's structural ceilings** — e.g. RTDB simultaneous connections
     (100 → 200,000), or the Auth email quotas.
 11. **Firebase Test Lab** beyond 10 virtual / 5 physical tests per day.
+12. **`firebase init hosting` accepting the web-frameworks prompt.** This is the realistic
+    accidental path, and it is worth calling out separately because the command sounds
+    harmless. Framework detection routes the deploy through Cloud Build and Cloud Run, and
+    the frameworks docs list billing as required for SSR. **Never run `firebase init
+    hosting` in this repo** — `firebase.json` is already written and heavily annotated, and
+    re-running init would offer to overwrite it. The only init this project ever needs is
+    `firebase init hosting:github`, which touches CI credentials and nothing else.
+13. **Linking a Cloud Billing account from the Google Cloud console.** Blaze upgrades can
+    originate on the GCP side, not just the Firebase side, and using any GCP service in the
+    `x3f-tv` project will prompt for one. If you never want Blaze, never link billing there.
+
+**Firebase Hosting itself is free on Spark and drags nothing in** — including custom
+domains and their SSL certificates. Do not confuse it with **Firebase App Hosting**, a
+different, newer, container-based product (Cloud Build → Cloud Run → Cloud CDN) that does
+require Blaze. Classic Hosting is `firebase deploy --only hosting`, the `"hosting"` key in
+firebase.json, and a `*.web.app` URL. That is what this project uses.
+
+One Spark restriction worth knowing: **Hosting refuses to serve `.apk`, `.exe`, `.dll`,
+`.bat` and `.ipa`** on the free plan. So the TV sideload APK stays on GitHub Releases —
+which is where `MainActivity.APK_URL` already points — and `firebase.json` ignores
+`**/*.bat` so `web/Start Games.bat` is never uploaded.
 
 Two things people wrongly believe force Blaze, but don't: **minting custom tokens** and
 **setting custom claims** need a *service account key*, not a paid plan. There is simply no
@@ -137,10 +158,39 @@ Firestore, RTDB, Auth or Hosting. They tell you, they don't stop you.
 | RTDB simultaneous connections | 100 | 2–4 |
 | Anonymous sign-ups | 100/hour **per IP** | 1, ever, per device |
 | Auth users | unlimited on Spark | 2–5 |
+| Hosting stored | 10 GB | 2.9 MB |
+| Hosting transferred | 10 GB/month | see below |
 
 The only one you can realistically hit is **100 anonymous sign-ups per hour per IP** — and
 only by repeatedly reinstalling during testing. The refresh token is cached in app-private
 storage precisely so a normal install signs up exactly once.
+
+### Hosting transfer, and the one way it can bite
+
+Firebase states this allowance in two different units on two different official pages: the
+pricing page says **360 MB/day**, the Hosting docs say **10 GB/month**. Enforcement is the
+monthly one — the docs justify the cutoff with "because data transfer billing is based on
+monthly usage levels".
+
+The arithmetic, against real file sizes: a complete first install of the phone app — every
+file the service worker precaches — is **1.9 MB**. After that the app serves from its own
+cache and a return visit is a handful of 304s. So 10 GB/month is about **5,400 complete
+first installs a month**, against a household that will do perhaps five, ever.
+
+But know the failure mode, because the two Hosting quotas fail in completely different ways
+and only one of them is gentle:
+
+- **Storage over 10 GB** → you can't deploy. The site keeps serving.
+- **Transfer over 10 GB/month** → **your sites are DISABLED** after "a short grace period"
+  and stay down **until the start of the next calendar month**, unless you upgrade to
+  Blaze. Not throttled. Off.
+
+The grace period is never quantified anywhere in Firebase's documentation, and no primary
+source says Spark users are emailed first, so treat the outage itself as the first symptom.
+This is a real difference from GitHub Pages, whose 100 GB/month is soft and enforced by a
+polite email. It is also, arguably, the right trade for a personal app: the worst case here
+is a broken app for a few days, never a surprise bill — and Blaze has **no spend cap** for
+Hosting or RTDB, only alerts.
 
 ---
 
@@ -192,22 +242,93 @@ restarting with every document.
 
 ---
 
+## Publishing the phone app (Firebase Hosting)
+
+The site is **<https://x3f-tv.web.app>**. It was already provisioned when the project was
+created — `firebase hosting:sites:list` showed it — so there was never a console switch to
+find; there was just nothing deployed to it.
+
+`firebase.json` at the repo root holds the whole configuration and is commented at length,
+including two behaviours that were established by experiment against a preview channel
+rather than by reading docs: header globs match the **request path** (so `/` needs its own
+rule and does not inherit `/index.html`'s), and for a given header key the **last** matching
+rule wins (so `/sw.js` sits at the bottom of the list on purpose).
+
+### By hand, today, with no CI at all
+
+```bash
+firebase deploy --only hosting
+```
+
+That is the whole thing. There is no build step, so it does exactly what the workflow does.
+To try something without touching the live site — a preview channel gets its own
+unguessable URL and expires on its own:
+
+```bash
+firebase hosting:channel:deploy check --expires 1h
+curl -sI <the-url-it-prints>/ | grep -i cache-control
+```
+
+`firebase deploy --only database` publishes `firebase/database.rules.json` the same way,
+which is new: the rules used to be pasted into the console, so the repo and the live rules
+could drift with nothing to catch it.
+
+### From CI — one secret you have to create
+
+`.github/workflows/hosting.yml` deploys on every push that touches `web/`, but it needs a
+service-account key that only you can mint. One command does the entire thing — it creates
+the service account, grants it the roles, makes the key, and uploads it to GitHub as an
+encrypted secret:
+
+```bash
+firebase init hosting:github
+```
+
+Answer its questions like this:
+
+- **Repository**: `GoobIsGabe/x3f-tv`
+- **Set up a workflow to deploy on merge / on PR?** — **No** to both. The workflow already
+  exists and is annotated; letting init write its own would overwrite it and drop the
+  service-worker cache stamp.
+- It will ask you to authorise the Firebase CLI's GitHub OAuth app. That grant is needed
+  only during this command, and it prints a URL to revoke it afterwards.
+
+It names the secret after the project. **The workflow expects
+`FIREBASE_SERVICE_ACCOUNT_X3F_TV`** — if init creates a differently-named one, either
+rename it under Settings → Secrets and variables → Actions, or change the name in
+`hosting.yml`. They only have to agree.
+
+Until that secret exists the workflow will fail on every push, which is loud and harmless:
+`firebase deploy --only hosting` from your machine still publishes.
+
+### One thing never to do to the API key
+
+Do **not** add an HTTP-referrer restriction to the browser API key. It looks like
+hardening; here it is a footgun. The television loads its pages from
+`file:///android_asset/`, which sends no `Referer` and `Origin: null`, so a referrer
+allowlist would lock the TV out of anonymous sign-in and take sync down on the one device
+that cannot be debugged easily. Restricting the key by **API** (Identity Toolkit + Token
+Service) is origin-independent and is fine — but note it cannot protect the database
+either way, because the RTDB REST calls carry no API key at all. The security rules are the
+only thing between the open internet and your data, which is what `firebase/verify.sh`
+exists to keep true.
+
+---
+
 ## Seeing your progress on your phone
 
 There are two ways, and they are both real. Pick by whether you want a network involved.
 
 ### Paired (automatic, both directions)
 
-1. **Turn GitHub Pages on, once.** Repo → Settings → Pages → *Deploy from a branch* →
-   `gh-pages` / `(root)`. The `Publish web games` workflow already pushes `web/` to that
-   branch on every commit that touches it; Pages just has to be told to serve it. After
-   that, <https://goobisgabe.github.io/x3f-tv/> is the phone app. HTTPS matters here for a
-   second reason too: Web Bluetooth will not run on a phone over plain HTTP, so this is
-   also what makes the games work with the bar.
-2. **On the TV:** Settings → **Pair a phone**. It shows six characters and starts waiting.
-3. **On the phone:** open the site → **Sync with TV** → type the code. (If you follow the
+The phone app is **<https://x3f-tv.web.app>** — Firebase Hosting, same project, free on
+Spark. HTTPS matters for a second reason as well: Web Bluetooth will not run on a phone
+over plain HTTP, so this is also what lets the games talk to the bar.
+
+1. **On the TV:** Settings → **Pair a phone**. It shows six characters and starts waiting.
+2. **On the phone:** open the site → **Sync with TV** → type the code. (If you follow the
    link the TV prints, the code is already in it and the phone skips straight to claiming.)
-4. **Back on the TV:** it asks *A phone is asking to join*. Press **Allow**.
+3. **Back on the TV:** it asks *A phone is asking to join*. Press **Allow**.
 
 From then on **Progress** on the phone pulls the moment you open it, and anything you log
 on the phone goes back to the television. Sets you logged on either device *before* pairing

@@ -344,7 +344,7 @@
       return call('PUT', '/invites/' + code, {
         householdId: hid, invitedBy: st.uid, createdAt: { '.sv': 'timestamp' }
       }).then(function () {
-        var base = (CFG && CFG.phoneUrl) || 'https://goobisgabe.github.io/x3f-tv/';
+        var base = (CFG && CFG.phoneUrl) || 'https://x3f-tv.web.app/';
         return { code: code, url: base + '#invite=' + code, expiresInMs: 300000 };
       });
     });

@@ -316,7 +316,7 @@ weeks ago" (roadmap item 1).
 | 3.2 | Java REST client — anonymous auth, SSE listen, no SDK |
 | 3.3 | Pairing: QR + 6-char fallback, claim/confirm |
 | 3.4 | Security rules |
-| 3.5 | The phone dashboard on `gh-pages` |
+| 3.5 | The phone dashboard, on Firebase Hosting (`x3f-tv.web.app`) |
 | 3.6 | The console checklist for you, plus the exact Blaze triggers |
 
 ### Phase 4 — Polish, Expand & Delight

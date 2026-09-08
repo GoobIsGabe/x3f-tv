@@ -50,9 +50,9 @@ per lift.
   coaching, achievements with filters, and export/import.
 - **Music everywhere** — 10 moods across menus and every game, reacting to effort
   (or to your keypresses on a menu, so the app feels awake).
-- **Phone access, free** — CI publishes `web/` to `gh-pages`. No Firebase, no
-  account, no server, nothing that can collide with another project. History moves
-  between devices as an exported file.
+- **Phone access, free** — CI publishes `web/` to Firebase Hosting at
+  <https://x3f-tv.web.app>, free on Spark. History moves between devices either by
+  pairing the phone to the TV, or as an exported file with no account at all.
 - Fixed: Bloom wrote **two** history entries per set (legacy + engine), inflating
   every total; the dashboard did not re-evaluate achievements after an import;
   `program()` reported Week 1 on an empty log and handed out a badge for it.
@@ -182,7 +182,8 @@ the menu boundary on purpose, but the seam is visible if you go looking.
 call that needs eyes on the actual couch; expect one round of adjustment.
 
 **11. Import on the TV is impractical** — no keyboard. The phone build
-(`gh-pages`) is the realistic device for that.
+(<https://x3f-tv.web.app>) is the realistic device for that, and pairing removed
+most of the need for it.
 
 ---
 

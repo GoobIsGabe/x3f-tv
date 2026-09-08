@@ -30,6 +30,10 @@ window.X3F_FIREBASE = {
   apiKey: 'AIzaSyC76ViNxjz6Yb_n7My4a9BBCY_czR_5GO4',
   projectId: 'x3f-tv',
   databaseURL: 'https://x3f-tv-default-rtdb.firebaseio.com',
-  /* Where the phone build lives, used to build the pairing QR code. */
-  phoneUrl: 'https://goobisgabe.github.io/x3f-tv/'
+  /* Where the phone build lives. The television PRINTS this on screen and a human
+     retypes it on a phone, which is the entire reason it is a Firebase Hosting
+     root and not a github.io project path: 'x3f-tv.web.app' can be read across a
+     room and typed once. Serving is .github/workflows/hosting.yml; what gets
+     served and with which headers is firebase.json. */
+  phoneUrl: 'https://x3f-tv.web.app/'
 };

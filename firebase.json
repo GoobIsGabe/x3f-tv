@@ -1,0 +1,162 @@
+{
+  "//": [
+    "X3F — Firebase project configuration.",
+    "",
+    "WHY THIS FILE EXISTS AT ALL. The database rules were published by hand through the",
+    "console, which means firebase/database.rules.json and the rules actually being",
+    "enforced could drift apart with nothing anywhere to notice. Declaring them here makes",
+    "the repo the source and `firebase deploy --only database` the way they ship.",
+    "",
+    "WHAT IS DELIBERATELY ABSENT: any `rewrites` block. This is a MULTI-PAGE site, not a",
+    "single-page app. The reflex `{ source: '**', destination: '/index.html' }` would serve",
+    "the launcher for every unknown path, so a typo would look like a working page and",
+    "X3F_Pair.html would still resolve after being deleted. Let 404s be 404s.",
+    "",
+    "`cleanUrls` is off for a harder reason than taste: it 301s /X3F_Pair.html to",
+    "/X3F_Pair, and every link in this app — plus the copy baked into the TV bundle by",
+    "tools/sync-from-web.py — is written with the extension. Turning it on would put a",
+    "redirect in front of every navigation in the app, the pairing deep link included."
+  ],
+
+  "database": {
+    "rules": "firebase/database.rules.json"
+  },
+
+  "hosting": {
+    "site": "x3f-tv",
+    "public": "web",
+    "//ignore": [
+      "web/ is published verbatim, so anything sitting in it is a public URL. Two files in",
+      "there are developer conveniences that were never meant to be: 'Start Games.bat' (a",
+      "local launcher) and the BLE capture guide (working notes).",
+      "",
+      "The .bat exclusion is not merely tidiness. Spark-plan Hosting REFUSES to serve",
+      ".exe/.dll/.bat/.apk/.ipa outright, so leaving it in would either fail the deploy or",
+      "publish nothing useful. That restriction is also why the TV APK will never be served",
+      "from here — GitHub Releases keeps that job, which is what the in-app updater already",
+      "reads (MainActivity.APK_URL)."
+    ],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "**/*.bat",
+      "**/*.md"
+    ],
+    "cleanUrls": false,
+
+    "//headers": [
+      "TWO RULES OF THIS BLOCK, BOTH ESTABLISHED BY EXPERIMENT AGAINST A PREVIEW CHANNEL",
+      "RATHER THAN BY READING, because both were wrong on the first attempt:",
+      "",
+      "1. MATCHING IS AGAINST THE REQUEST PATH, NOT THE FILE SERVED. '/index.html' and '/'",
+      "   are different paths even though they return the same bytes, so a glob written for",
+      "   the file misses the URL a person actually types. The bare root needs its own rule,",
+      "   and the literal source that matches it is exactly \"/\" — \"@(/)\" matches nothing at",
+      "   all, and \"/*\" would also sweep in every top-level file.",
+      "",
+      "2. FOR A GIVEN HEADER KEY, THE LAST MATCHING RULE WINS. So these run general to",
+      "   specific and the order is load-bearing: sw.js sits at the bottom because the",
+      "   generic *.js rule above it would otherwise overwrite its Cache-Control. Moving a",
+      "   rule up this list is a silent behaviour change.",
+      "",
+      "Verify after any edit — one command, no browser:",
+      "  firebase hosting:channel:deploy check --expires 1h",
+      "  curl -sI <channel-url>/ | grep -i cache-control"
+    ],
+
+    "headers": [
+      {
+        "//": [
+          "Defence in depth for a page that holds a live pairing code in its fragment. The",
+          "fragment never reaches a server, but a referrer can still leak the page it came",
+          "from, and nothing here has any reason to be framed."
+        ],
+        "source": "**",
+        "headers": [
+          { "key": "X-Content-Type-Options", "value": "nosniff" },
+          { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+          { "key": "X-Frame-Options", "value": "SAMEORIGIN" }
+        ]
+      },
+      {
+        "//": [
+          "Art is not immutable — tools/art/build.py can regenerate a plate under the same",
+          "name — but it changes rarely and is the heaviest thing on the site. A week is",
+          "long enough to be worth having and short enough that a regenerated movement plate",
+          "reaches a phone without anyone clearing anything."
+        ],
+        "source": "**/*.@(webp|jpg|jpeg|png|svg|ico)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=604800" }
+        ]
+      },
+      {
+        "//": [
+          "Fonts are the one genuinely immutable thing here: the filenames come out of the",
+          "subsetting step and carry their own identity (sora-var-latin.woff2), so a change",
+          "to the type is a change to the filename. A year, and no revalidation at all."
+        ],
+        "source": "**/*.@(woff2|woff|ttf)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        ]
+      },
+      {
+        "//": [
+          "Everything hashless and small revalidates instead. `no-cache` does not mean 'do",
+          "not cache' — it means 'ask before reusing', so the ordinary answer is a 304 with",
+          "no body. The whole site is 2.6 MB and the service worker means most of these are",
+          "never requested twice anyway, so asking costs close to nothing, and what it buys",
+          "is that a deploy is visible on the next reload rather than whenever some cache",
+          "happens to expire."
+        ],
+        "source": "**/*.@(html|js|css|json|webmanifest)",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" }
+        ]
+      },
+      {
+        "//": [
+          "THE BARE ROOT, which the rule above does not match and which is the one URL that",
+          "gets read off a television and typed into a phone. Without this it inherited",
+          "Firebase's default of max-age=3600: a full hour of stale launcher at the app's",
+          "front door."
+        ],
+        "source": "/",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" }
+        ]
+      },
+      {
+        "//": [
+          "THE SERVICE WORKER, LAST SO IT WINS.",
+          "",
+          "A HONEST NOTE, because the first version of this comment overclaimed and someone",
+          "will otherwise repeat the overclaim. This header is NOT what makes service-worker",
+          "updates work, and GitHub Pages' inability to set it was NOT the reason hosting",
+          "moved. Browsers already bypass the HTTP cache for a worker's own script:",
+          "ServiceWorkerRegistration defaults updateViaCache to 'imports', which exempts the",
+          "top-level script. Pages' flat max-age=600 would not have delayed an update.",
+          "",
+          "What this header actually buys is the ONE hole that default really leaves: a new",
+          "worker installing within the cache window can precache stale bytes into its fresh",
+          "cache name, at which point activate() deletes the good cache and the stale copy",
+          "is what survives. web/sw.js already closes that itself with",
+          "`new Request(u, {cache: 'reload'})` in its install handler. So this is a second",
+          "lock on a door that has one — cheap, and worth having on the file whose whole job",
+          "is deciding what everyone else sees.",
+          "",
+          "It does NOT replace the cache-name stamp in the deploy workflow. Those fix",
+          "genuinely different halves: a stamp makes a re-fetched sw.js DIFFER in bytes, so",
+          "the browser installs it and its activate() drops the previous cache. A header",
+          "cannot do that, and no header on any host ever could."
+        ],
+        "source": "/sw.js",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        ]
+      }
+    ]
+  }
+}
