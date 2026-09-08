@@ -11,6 +11,27 @@
    key. There is none in this project, because the design never needs to mint a
    custom token (see docs/FIREBASE-SETUP.md).
 
+   EXPECT GITHUB TO FLAG THIS LINE. Its secret scanner matches any AIza... string
+   as a "Google API Key", because some Google keys genuinely are credentials -
+   a Maps key with billing attached, or a server key. A Firebase WEB key is not
+   one of those, and there is no way to tell them apart from the shape alone, so
+   the alert is the scanner doing its job on incomplete information rather than a
+   finding. Close it as "used in tests / won't fix"; do not rotate it, because a
+   new key would be just as public and every installed TV would need the update
+   to keep syncing.
+
+   The alert is still worth one action, though, and it is not rotation: the key
+   should be restricted by API. An unrestricted browser key can be pointed at any
+   Google API the project has enabled, and the abuse that matters here is
+   quota - a stranger minting anonymous accounts against Identity Toolkit until
+   Spark's ceiling is hit and your own TV cannot sign in. Restricting it to
+   Identity Toolkit + Token Service costs nothing and closes that.
+
+   DO NOT ADD AN HTTP-REFERRER RESTRICTION. It looks like the stronger control and
+   it would break the television: the TV loads its pages from
+   file:///android_asset/, which sends no Referer and Origin: null, so a referrer
+   allowlist locks out the one client that cannot be debugged from a browser.
+
    Project:   x3f-tv          (Spark plan, no billing account linked)
    Database:  us-central1     PERMANENT. Realtime Database offers exactly three
                               locations — us-central1, europe-west1,
