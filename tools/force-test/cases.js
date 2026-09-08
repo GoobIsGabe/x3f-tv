@@ -849,4 +849,58 @@ group('11', 'a set that arrived from the server is not queued to go back', (t) =
        S.setId(roundTripped), id);
 });
 
+/* ----------------------------------------------------------------- 12. */
+/* EVERY BAND PRINTS A WEIGHT, ON EVERY MOVEMENT.
+
+   Reported from real use: "the elite black didn't show any weight ranges."
+
+   It did not, on five of eleven movements. BAND_FORCE stores a singled and a
+   doubled figure per band, X3 publishes both for the four lighter bands and only
+   one for the Elite, so its doubled entry is [null, null] - and forceLabel()
+   returned '' the moment the movement's configuration had no published pair.
+   Chest press, tricep press, deadlift, bent row and calf raise are all doubled,
+   so the heaviest band in the system printed a blank where every lighter band
+   printed a number, in all eight places that call forceLabel: the Library card,
+   the Calibrate picker, the Routine coach, two Progress tables, the home's
+   movement cards and onboarding.
+
+   Nothing about the DATA was wrong, which is why reading the table would not have
+   found it - the bug only exists at the crossing of a band with a movement, and
+   that crossing is what this group walks. Exhaustively: every band against every
+   movement, because "the heaviest band on half the movements" is exactly the kind
+   of gap a spot check misses. */
+group('12', 'every band shows a published weight on every movement', (t) => {
+  const env = load();
+  const EX = env.win.X3FEX;
+  t.ok('the exercise module loaded', !!EX);
+  if (!EX) return;
+
+  const moves = EX.list.map(e => e.slug);   /* EX.list is an ARRAY, not a getter */
+  t.ok('there are eleven movements', moves.length === 11, String(moves.length));
+
+  let blanks = [];
+  EX.bands.forEach(b => moves.forEach(m => {
+    if (!EX.forceLabel(b, m)) blanks.push(b + '/' + m);
+  }));
+  t.ok('no band+movement pair prints a blank weight', blanks.length === 0, blanks.join(', '));
+
+  /* The specific regression, named, so a future reader sees the bug and not just
+     the invariant. */
+  ['chest-press', 'tricep-press', 'deadlift', 'bent-row', 'calf-raise'].forEach(m => {
+    t.eq('Elite Black shows its published range on ' + m,
+         EX.forceLabel('Elite Black', m), '110–600 lb');
+  });
+
+  /* And the fallback must not leak into bands that DO publish both figures - a
+     doubled movement on Dark Gray must still say 240+, not 50-120. */
+  t.eq('a doubled movement still uses the doubled figure',
+       EX.forceLabel('Dark Gray', 'deadlift'), '240+ lb');
+  t.eq('a singled movement still uses the singled figure',
+       EX.forceLabel('Dark Gray', 'overhead-press'), '50–120 lb');
+  t.eq('...and the two genuinely differ', EX.forceLabel('Dark Gray', 'deadlift') !== EX.forceLabel('Dark Gray', 'overhead-press'), true);
+
+  /* An unknown band still declines to invent anything. */
+  t.eq('an unknown band prints nothing', EX.forceLabel('Chartreuse', 'deadlift'), '');
+});
+
 module.exports = { groups };

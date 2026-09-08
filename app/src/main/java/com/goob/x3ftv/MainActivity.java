@@ -1221,7 +1221,31 @@ public class MainActivity extends Activity {
             return true;
         }
 
-        if (!webReady) return super.dispatchKeyEvent(e);
+        /* A PAGE THAT IS NOT READY MUST SWALLOW THE D-PAD, NOT FORWARD IT.
+           This used to fall straight through to the WebView for every key, and the
+           window is real: a menu page is well over a thousand lines plus six shared
+           scripts, so on a cheap TV stick there is a visible gap between
+           onPageStarted (webReady=false) and onPageFinished. Any press inside it
+           reached CHROMIUM'S OWN focus engine instead of ours - which seats focus
+           wherever it likes, and on a <select> treats Left/Right as "change the
+           value". That is how a stray press during a load could silently move the
+           user's training band, the exact invariant this app is built around
+           (arrows move the cursor, OK activates, nothing else ever changes a band).
+           Nothing is lost by dropping these: there is no cursor to move yet. Back is
+           handled above this line precisely so it keeps working during a load. */
+        if (!webReady) {
+            switch (code) {
+                case KeyEvent.KEYCODE_DPAD_LEFT:  case KeyEvent.KEYCODE_DPAD_RIGHT:
+                case KeyEvent.KEYCODE_DPAD_UP:    case KeyEvent.KEYCODE_DPAD_DOWN:
+                case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_BUTTON_A:
+                    return true;
+                case KeyEvent.KEYCODE_ENTER: case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                    if (!textInput) return true;
+                    break;
+                default: break;
+            }
+            return super.dispatchKeyEvent(e);
+        }
 
         if (down) {
             switch (code) {

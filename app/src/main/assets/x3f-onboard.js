@@ -258,8 +258,37 @@
       return 'first movement';
     }
 
+    /* BACK HAS TO MEAN SOMETHING HERE.
+
+       On the television Back is a hardware key that is always available, and
+       nothing was listening for it: MainActivity.handleBack() lowered its
+       overlay flag, called the page's close hook, and the onboarding card - which
+       lives on a DIFFERENT scrim from the page's modals - stayed exactly where it
+       was. The user's second Back then found no overlay open and navigated away
+       from the home screen entirely, mid-setup, with the flow's answers lost.
+
+       So: Back steps back through the flow, and on the first step there is
+       nowhere to go, so it does nothing at all. Doing nothing is the correct
+       answer there rather than exiting - this is a four-step first run with a
+       Skip on screen, and dumping someone out of it by a keypress they meant as
+       "undo" is how you lose the one calibration the app asks for.
+
+       Returns true if it handled the press, so the caller knows whether to fall
+       through to its own close. */
+    var steps = [stepIntro, stepHeight, stepBands, stepCal];
+    function back() {
+      if (step <= 0) {
+        /* Re-assert the flag the shell just lowered on its way in, or the NEXT
+           Back walks off the home screen. */
+        try { if (window.X3F && window.X3F.setOverlay) window.X3F.setOverlay(true); } catch (e) {}
+        return true;
+      }
+      steps[step - 1]();
+      return true;
+    }
+
     stepIntro();
-    return { close: cleanup };
+    return { close: cleanup, back: back, showing: function () { return host.classList.contains('show'); } };
   }
 
   window.X3FOnboard = {

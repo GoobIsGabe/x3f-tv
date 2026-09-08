@@ -40,8 +40,20 @@ REPO = Path(__file__).resolve().parents[2]
 ASSETS = REPO / "app" / "src" / "main" / "assets"
 HERE = Path(__file__).resolve().parent
 
-SCREENS = ["launcher", "app", "routine", "library", "progress", "nova", "bloom",
-           "splash", "arena", "duel", "flow", "rhythm", "calibrate"]
+SCREENS = ["launcher", "app", "onboard", "routine", "library", "progress", "nova",
+           "bloom", "splash", "arena", "duel", "flow", "rhythm", "calibrate"]
+
+# Screens that are a UI STATE of another page rather than a page of their own.
+# "onboard" is app.html with the four-step first run mounted over it. It gets its
+# own entry because it is a completely separate navigation graph - a modal scrim
+# with its own controls, shown to somebody who has never used the app - and
+# because it is unreachable from a normal run: X3FOnboard.needed() is false on any
+# machine that has opened the app once, which is why it went unaudited for so long
+# despite being the FIRST thing a new install shows on the television.
+#
+# The staged file is named audit_onboard.html, and cases.js dispatches on that
+# name, so the alias is all that is needed to give a state its own walk.
+ALIASES = {"onboard": "app"}
 
 # Bundled pages that are deliberately not audited under their own name.
 # index.html is a byte-identical twin of launcher.html (the shell treats both as
@@ -122,7 +134,7 @@ def main():
 
     problems, missing = {}, []
     for name in want:
-        src = stage / (name + ".html")
+        src = stage / (ALIASES.get(name, name) + ".html")
         if not src.exists():
             missing.append(name)
             continue
@@ -177,7 +189,7 @@ def main():
         body = (body.replace("&gt;", ">").replace("&lt;", "<")
                     .replace("&quot;", '"').replace("&amp;", "&"))
         bad = [l.strip() for l in body.split("\n")
-               if re.search(r"UNREACHABLE|FOCUSED INVISIBLE|ESCAPED|dead ends", l)]
+               if re.search(r"UNREACHABLE|FOCUSED INVISIBLE|ESCAPED|BOUNCES|NO FOCUS RING|dead ends", l)]
         states = body.count("--- ")
         if bad:
             problems[name] = bad
@@ -196,7 +208,7 @@ def main():
     # normal thing to do and should not go red for it.
     if not [a for a in sys.argv[1:] if not a.startswith("-")]:
         bundled = {p.stem for p in ASSETS.glob("*.html")}
-        uncovered = sorted(bundled - set(SCREENS) - NOT_AUDITED)
+        uncovered = sorted(bundled - set(SCREENS) - set(ALIASES) - NOT_AUDITED)
         if uncovered:
             print("\nNOT AUDITED BY ANY SCREEN: " + ", ".join(uncovered))
             print("Add them to SCREENS (and a branch in cases.js) or say why in "

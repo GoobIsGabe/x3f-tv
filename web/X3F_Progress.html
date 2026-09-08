@@ -1310,8 +1310,14 @@ function syncLine() {
       ? Math.max(1, Math.round((Date.now() - st.lastSync) / 60000)) + ' min ago'
       : 'not yet';
     if (lede) {
-      lede.textContent = 'Paired with your household - sets logged on any paired device appear ' +
-        'on all of them. Export and import still work, and still need no network.';
+      /* "Paired" is what x3f-sync.js calls belonging to a household, and a device
+         belongs to one the moment it CREATES one - before anything else has
+         joined. Saying "paired with your household" there told a television that
+         had never met a phone that it had. Describe what is actually true: sync
+         is on, and whatever is paired shares this log. */
+      lede.textContent = 'Sync is on for this device - anything logged here goes to your ' +
+        'household, and sets from any other device you have paired appear here. Export and ' +
+        'import still work, and still need no network.';
     }
     box.innerHTML = '<div class="msg">Synced: <b>' + esc(ago) + '</b>' +
       (st.pending ? ' · <b>' + st.pending + '</b> waiting to upload' : '') +

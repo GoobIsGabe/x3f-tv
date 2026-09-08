@@ -64,6 +64,7 @@
      X3FSync.pull()           fetch remote sets and merge into local history
      X3FSync.auto(on)         push on log, pull on focus, throttled
      X3FSync.onChange(fn)
+     X3FSync.tombstone(e)     remember that a set was deleted, so pull() leaves it out
      X3FSync.forget()         leave the household on this device
 */
 (function () {
@@ -396,11 +397,16 @@
      bytes. 100 polls covers the full life of the code and then stops on its own,
      so a pairing dialog left open on a television does not poll until the set is
      unplugged. */
-  function watchInvite(code, onClaim) {
+  function watchInvite(code, onClaim, onExpire) {
     var stopped = false, tries = 0;
     function tick() {
       if (stopped) return;
-      if (++tries > 100) return;
+      /* A code lives five minutes. Running out of tries used to be a bare
+         return, so the television went on saying "Waiting for the phone..." and
+         showing a six-character code that the database had already stopped
+         accepting - the one state where the user needs to be told to ask for a
+         new one. */
+      if (++tries > 100) { if (onExpire) { try { onExpire(); } catch (e) {} } return; }
       call('GET', '/invites/' + code).then(function (inv) {
         if (stopped) return;
         if (inv && inv.claimedBy) { try { onClaim(inv.claimedBy); } catch (e) {} return; }
@@ -427,7 +433,17 @@
     var stopped = false, tries = 0;
     function tick() {
       if (stopped) return;
-      if (++tries > 145) { if (onGiveUp) onGiveUp(new Error('The TV never confirmed.')); return; }
+      if (++tries > 145) {
+        /* Clear pendingHid, or status() keeps reporting 'waiting' about a code
+           that expired minutes ago and every screen offers Cancel as the only
+           way back to a pairing form the user can actually use. */
+        var s2 = read(K_STATE, {});
+        delete s2.pendingHid;
+        write(K_STATE, s2);
+        fire();
+        if (onGiveUp) onGiveUp(new Error('The TV never confirmed.'));
+        return;
+      }
       var uid = read(K_STATE, {}).uid;
       call('GET', '/households/' + hid + '/members/' + uid + '/role').then(function (role) {
         if (stopped) return;
@@ -573,6 +589,45 @@
     sync();
   }
 
+  /* THE TOMBSTONE LIST HAD A READER AND NO WRITER.
+
+     pull() has always skipped ids in st.tombstones, and nothing in the entire
+     repo ever put one there - a grep for "tombstone" found the contract comment,
+     the shape comment, and the read. So deleting a set on the Progress page
+     removed it locally and the very next pull brought it straight back, on every
+     paired device, for ever. The delete looked like it worked until you opened
+     the page again.
+
+     Recorded here rather than in x3f-progress.js because the id is
+     content-addressed by setId(), which is this module's business and which the
+     progress engine has no reason to know about.
+
+     Capped, because this list is the one thing in the sync state that grows
+     without a bound and it lives in localStorage alongside the history itself.
+     Two hundred deletions is far more than a household will ever do, and losing
+     the oldest tombstone only means a very old deleted set could return - which
+     is strictly better than the write failing and every delete being undone. */
+  var TOMB_MAX = 200;
+  function tombstone(entry) {
+    if (!entry || !entry.ex) return null;
+    var id = setId(entry);
+    var st = read(K_STATE, {});
+    var list = st.tombstones || [];
+    if (list.indexOf(id) < 0) {
+      list.push(id);
+      if (list.length > TOMB_MAX) list = list.slice(list.length - TOMB_MAX);
+      st.tombstones = list;
+      write(K_STATE, st);
+    }
+    /* Also drop it from the sent list. If it is ever logged again - the same
+       movement, the same second - it should upload rather than be assumed
+       present. */
+    var sent = read(K_SENT, []);
+    var at = sent.indexOf(id);
+    if (at >= 0) { sent.splice(at, 1); write(K_SENT, sent); }
+    return id;
+  }
+
   function forget() {
     write(K_STATE, {});
     write(K_SENT, []);
@@ -583,7 +638,7 @@
   window.X3FSync = {
     available: available, configured: configured, status: status,
     startPairing: startPairing, claim: claim, confirm: confirm,
-    watchInvite: watchInvite, awaitJoin: awaitJoin,
+    watchInvite: watchInvite, awaitJoin: awaitJoin, tombstone: tombstone,
     push: push, pull: pull, sync: sync, auto: auto, forget: forget,
     openNetwork: openNetwork,
     setId: setId,

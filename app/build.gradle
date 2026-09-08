@@ -28,8 +28,8 @@ android {
            changes only the web bundle and leaves this alone ships a genuinely
            different APK that every TV in the field reports as "You're on the latest",
            forever. */
-        versionCode 20
-        versionName '1.9.1'
+        versionCode 21
+        versionName '1.9.2'
     }
 
     buildFeatures {

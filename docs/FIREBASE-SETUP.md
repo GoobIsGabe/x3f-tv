@@ -167,10 +167,18 @@ storage precisely so a normal install signs up exactly once.
 
 ### Hosting transfer, and the one way it can bite
 
-Firebase states this allowance in two different units on two different official pages: the
-pricing page says **360 MB/day**, the Hosting docs say **10 GB/month**. Enforcement is the
-monthly one — the docs justify the cutoff with "because data transfer billing is based on
-monthly usage levels".
+Firebase states this allowance in two different units on two different official pages, and
+**both are live today**: the pricing page's Hosting row says **360 MB/day**, the Hosting
+docs say **10 GB/month**. Which one is actually enforced is genuinely unclear from
+Google's own documentation — the docs justify the cutoff with "because data transfer
+billing is based on monthly usage levels", which reads as monthly, while the pricing page
+states a daily rate with no such gloss. Two independent passes over the primary sources
+reached opposite conclusions, so this is written down as unresolved rather than guessed.
+
+It does not change the answer here, because this app is three orders of magnitude under
+either reading. It would matter if usage ever grew: a daily cap means a bad day costs a
+day, a monthly cap means a bad day can cost the rest of the month. Do not quote either
+figure to anyone as a hard threshold.
 
 The arithmetic, against real file sizes: a complete first install of the phone app — every
 file the service worker precaches — is **1.9 MB**. After that the app serves from its own
@@ -180,7 +188,10 @@ first installs a month**, against a household that will do perhaps five, ever.
 But know the failure mode, because the two Hosting quotas fail in completely different ways
 and only one of them is gentle:
 
-- **Storage over 10 GB** → you can't deploy. The site keeps serving.
+- **Storage over 10 GB** → you can't deploy. The site keeps serving. Note that every
+  RETAINED PREVIOUS RELEASE counts toward this, not just the current one — at 2.8 MB a
+  release that is roughly 3,600 deploys' worth, and release retention is configurable per
+  channel if it ever mattered.
 - **Transfer over 10 GB/month** → **your sites are DISABLED** after "a short grace period"
   and stay down **until the start of the next calendar month**, unless you upgrade to
   Blaze. Not throttled. Off.

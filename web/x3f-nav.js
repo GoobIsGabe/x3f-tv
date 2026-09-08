@@ -105,6 +105,7 @@
   var MIN_ADVANCE = 4;     /* px a candidate's centre must lead by to count as "that way" */
   var MIN_OVERLAP = 2;     /* px of shared perpendicular extent that counts as the same row/column */
   var CROSS_W     = 2.2;   /* what perpendicular offset costs relative to distance travelled */
+  var STICKY_SLACK = 8;    /* px of scroll before a sticky header counts as "pinned" */
   /* How much further an ALIGNED band may be and still beat an offset one on
      Up/Down. Unbounded priority sounds right and is not: on the Library every
      band picker is a narrow control in the same right-hand column, so the
@@ -141,7 +142,20 @@
        is identical at 960, 1280 or 1920 CSS px; a raw px here would be half the
        intended gap on a TV reporting a 960-wide viewport. */
     '[data-nav]{scroll-margin:var(--x3f-navmargin,1.5rem)}' +
-    '[data-nav]:focus{outline:none}' +
+    /* SUPPRESS THE BROWSER'S RING, NOT OURS.
+       This was '[data-nav]:focus{outline:none}', and setCursor() both adds the
+       cursor class AND calls el.focus() - so the element carrying the ring also
+       matched this rule. At (0,2,0) it outranks x3f-ui.css's '.foc' at (0,1,0),
+       which meant the design system's 10px focus outline computed to `none` on
+       precisely the element it existed to mark. What survived was the scale, the
+       background tint and the ::after glow - enough that the cursor was still
+       findable up close, and not the ring that is supposed to be readable from a
+       sofa. The 10-foot guidance in x3f-ui.css asks for 6px minimum, 8-12
+       preferred; it was shipping 0.
+       :not() keeps the original intent intact - a [data-nav] element that has
+       focus WITHOUT being the cursor (a click, a stray programmatic focus) still
+       loses the UA ring, so the two never double up. */
+    '[data-nav]:focus:not(.' + CUR + '){outline:none}' +
     /* A rail scrolls the focused card to a lead margin rather than flush to the
        edge, so the next card peeks out and the row reads as "there is more".
        Set on the row because that is the scroll container. */
@@ -501,6 +515,60 @@
     edge(dir);
   }
 
+  /* ── the sticky-header magnet ──────────────────────────────────────────
+
+     THE BUG THIS EXISTS TO KILL. Progress, Routine and the home all carry a
+     `position:sticky; top:0` bar. Once the content underneath has scrolled at
+     all, that bar sits at viewport y=0 while the content it belongs above is
+     hundreds of pixels off the top of the screen. moveV compares
+     getBoundingClientRect()s, which are viewport coordinates, so from anywhere
+     on a scrolled page the pinned bar is BY FAR the nearest thing "above" the
+     cursor - nearer than the panel immediately above it, which has scrolled to a
+     negative y.
+
+     On a television that reads as: press Up, walk one panel up, jump to the top
+     bar, come back down to whatever happened to be just off the top of the
+     screen, jump to the bar again. Measured on the Progress dashboard it bounced
+     to the bar on six of twelve presses, and with the reset-achievements prompt
+     open it left "Start today's workout" and "Mark done" reachable by no
+     sequence of presses at all. The nav audit reports those two as UNREACHABLE,
+     which is how this was found.
+
+     THE RULE IS DEMOTION, NOT EXCLUSION, and the difference matters. The first
+     attempt simply skipped pinned rows as candidates, which fixed the bounce and
+     immediately made the top bar unreachable on two pages and broke every
+     `position:fixed` overlay in the app - the audit went from clean to fourteen
+     UNREACHABLE controls across five screens. A control the remote cannot reach
+     is the very thing this module exists to prevent, so trading one for the
+     other is not a fix.
+
+     So: a pinned sticky row is considered only when nothing UNPINNED lies that
+     way. Press Up through the content, the content runs out, the bar is then the
+     only thing above you, and you land on it - which is both what every other
+     leanback interface does and what the audit calls reachable.
+
+     `fixed` is deliberately NOT included. Overlays position themselves that way
+     on purpose, and the overlay scope already confines the cursor inside them;
+     treating a dialog as a pinned header is what broke the launcher's bar picker
+     and onboarding's band step. Only `sticky` magnetises, because only `sticky`
+     claims a place in the content flow and then leaves it. */
+  function stuckHeader(el) {
+    for (var n = el; n && n !== document.body && n.nodeType === 1; n = n.parentElement) {
+      var cs;
+      try { cs = getComputedStyle(n); } catch (e) { return false; }
+      if (!cs) return false;
+      if (cs.position === 'fixed') return false;          /* an overlay, not a header */
+      if (cs.position === 'sticky') {
+        var host = scrollHost(n);
+        var top = (host === document || host === document.documentElement)
+          ? (window.pageYOffset || document.documentElement.scrollTop || 0)
+          : host.scrollTop;
+        return top > STICKY_SLACK;
+      }
+    }
+    return false;
+  }
+
   function moveV(dir) {
     var cr = cursor.getBoundingClientRect(), c = mid(cr);
     var curRow = rowOf(cursor), k;
@@ -513,14 +581,31 @@
     for (k = 0; k < items.length; k++) if (!itemRow[k] && items[k] !== cursor) bands.push({ row: null, el: items[k] });
 
     var hard = null, hardScore = Infinity, soft = null, softScore = Infinity;
+    var pinHard = null, pinHardScore = Infinity, pinSoft = null, pinSoftScore = Infinity;
     for (k = 0; k < bands.length; k++) {
       var r = bands[k].el.getBoundingClientRect(), m = mid(r);
       var fwd = (dir === 'up') ? c.y - m.y : m.y - c.y;
       if (fwd < MIN_ADVANCE) continue;
       var score = fwd + gapTo(c.x, r.left, r.right) * CROSS_W;
-      if (Math.min(cr.right, r.right) - Math.max(cr.left, r.left) > MIN_OVERLAP) {
+      var aligned = Math.min(cr.right, r.right) - Math.max(cr.left, r.left) > MIN_OVERLAP;
+      /* A pinned header goes in the reserve pile, not the main one. See
+         stuckHeader() above: it is where you ARRIVE at the top, never something
+         to be pulled into from mid-page. */
+      if (stuckHeader(bands[k].el)) {
+        if (aligned) { if (score < pinHardScore) { pinHardScore = score; pinHard = bands[k]; } }
+        else if (score < pinSoftScore) { pinSoftScore = score; pinSoft = bands[k]; }
+        continue;
+      }
+      if (aligned) {
         if (score < hardScore) { hardScore = score; hard = bands[k]; }
       } else if (score < softScore) { softScore = score; soft = bands[k]; }
+    }
+
+    /* Nothing unpinned that way, so the header is no longer a magnet - it is
+       simply the only thing left, which is exactly when it should be chosen. */
+    if (!hard && !soft) {
+      hard = pinHard; hardScore = pinHardScore;
+      soft = pinSoft; softScore = pinSoftScore;
     }
 
     /* Overlap DOMINATES: an overlapping band beats a non-overlapping one at any

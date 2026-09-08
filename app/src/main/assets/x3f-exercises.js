@@ -431,6 +431,26 @@
     var e = BY[slug];
     var doubled = e && e.bandConfig === 'doubled';
     var r = doubled ? f.doubled : f.singled;
+
+    /* FALL BACK TO THE SINGLED FIGURE RATHER THAN SAYING NOTHING.
+
+       Reported from real use: the Elite Black band showed no weight range at all.
+       Cause: its entry is { singled: [110, 600], doubled: [null, null] }, and
+       this function used to return '' the moment the requested configuration had
+       no published pair - so on the five DOUBLED movements (chest press, tricep
+       press, deadlift, bent row, calf raise) Elite Black printed a blank in all
+       eight places that call this: the Library card, the Calibrate picker, the
+       Routine coach, two Progress tables, the home's movement cards and
+       onboarding. Every other band showed a number; the heaviest one showed
+       nothing.
+
+       The null is honest - X3 publishes a separate doubled figure for the four
+       lighter bands and does not for the Elite. But blank is the wrong way to
+       say so. X3 publishes ONE range for that band, 110-600 lb, and that is a
+       real manufacturer number rather than something derived here, so it is what
+       gets shown. No figure is invented: if a band had no published range at all
+       it would still return '' and the callers still handle that. */
+    if (!r || r[0] === null) r = f.singled;
     if (!r || r[0] === null) return '';
     if (r[1] === null) return r[0] + '+ lb';
     return r[0] + '–' + r[1] + ' lb';

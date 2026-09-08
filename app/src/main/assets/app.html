@@ -214,10 +214,25 @@
 .pad{height:6rem}
 </style>
 <script>
-/* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames */
+/* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames.
+   THE MENU KEYS ARE NOT OPTIONAL. app.html builds its links in JavaScript, via
+   file(key, webName), which returns X3FFILES[key] or falls back to the WEB
+   filename. The web filename does not exist in the APK - the bundle calls it
+   routine.html, not X3F_Routine.html - so a key missing from this map is a link
+   that navigates to nothing on the television, and MainActivity bounces a failed
+   navigation back to the launcher.
+
+   That is exactly what happened: with only the game keys here, the home screen's
+   Start button and its entire Train rail (Workout, Library, Calibrate, Progress)
+   plus every movement card were dead on the TV, while working perfectly in a
+   browser. LINKS below could not save them, because it rewrites literal
+   href="..." TEXT and a link assembled at runtime has none. Anything added to
+   file() needs a key here. */
 window.X3FFILES={bloom:'bloom.html',splash:'splash.html',nova:'nova.html',flow:'flow.html',
  zone:'arena.html',max:'arena.html',boss:'arena.html',duel:'duel.html',rhythm:'rhythm.html',
- ascent:'ascent.html'};
+ ascent:'ascent.html',
+ routine:'routine.html',library:'library.html',progress:'progress.html',
+ calibrate:'calibrate.html',launcher:'launcher.html'};
 </script>
 <script>
 /* the remote has nothing focused until the first D-pad press - fix that */
@@ -425,7 +440,7 @@ function card(opts) {
   return a;
 }
 
-function rail(title, cards) {
+function rail(title, cards, key) {
   if (!cards.length) return null;
   const w = document.createElement('div');
   w.className = 'railwrap';
@@ -434,6 +449,17 @@ function rail(title, cards) {
   h.textContent = title;
   const r = document.createElement('div');
   r.className = 'rail';
+  /* data-nav-row IS THE CONTRACT, and this page was not honouring it. x3f-nav.js
+     says it in its own header: "Mark each horizontal rail with data-nav-row (put
+     it on the scrolling element)... data-nav-row means ONE HORIZONTAL LINE."
+     Without it every card is its own free-floating band, so Left/Right is free to
+     wander out of the rail into whatever happens to be geometrically near, and
+     Up/Down steps card-to-card instead of rail-to-rail.
+
+     The VALUE matters as much as the attribute. A named row is one x3f-nav
+     remembers the position inside, which is what makes coming back from a game
+     land you on the card you launched rather than at the start of the row. */
+  r.setAttribute('data-nav-row', key || 'rail');
   cards.forEach(c => r.appendChild(c));
   w.appendChild(h); w.appendChild(r);
   return w;
@@ -478,7 +504,7 @@ function renderRails(ctx) {
       href: file('library', 'X3F_Library.html') + '#' + ex.slug
     });
   });
-  const r1 = rail(`Today — ${ctx.t.day === 'push' ? 'Push' : 'Pull'}`, moveCards);
+  const r1 = rail(`Today — ${ctx.t.day === 'push' ? 'Push' : 'Pull'}`, moveCards, 'today');
   if (r1) rails.appendChild(r1);
 
   /* ── train ── */
@@ -488,7 +514,7 @@ function renderRails(ctx) {
     card({ title:'Calibrate', sub:'set your range', gen:'max', href:file('calibrate','X3F_Calibrate.html') }),
     card({ title:'Progress', sub:'your training', gen:'rhythm', href:file('progress','X3F_Progress.html') })
   ];
-  rails.appendChild(rail('Train', trainCards));
+  rails.appendChild(rail('Train', trainCards, 'train'));
 
   /* ── play ── */
   const games = EX && EX.games ? EX.games : {};
@@ -505,7 +531,7 @@ function renderRails(ctx) {
       href: EX.gameUrl ? EX.gameUrl(k, { from:'home' }) : (g.file || '#')
     });
   });
-  rails.appendChild(rail('Play', gameCards));
+  rails.appendChild(rail('Play', gameCards, 'play'));
 
   const cap = document.createElement('div'); cap.className = 'endcap'; rails.appendChild(cap);
   const pad = document.createElement('div'); pad.className = 'pad'; rails.appendChild(pad);
@@ -704,7 +730,29 @@ function setBar(txt, cls) {
   $('barTxt').textContent = txt;
   $('barChip').className = 'chip' + (cls ? ' ' + cls : '');
 }
-window.X3FBarStatus = setBar;   /* native calls this */
+window.X3FBarStatus = setBar;
+
+/* THE NAME AND THE ARGUMENT ORDER THE SHELL ACTUALLY USES.
+
+   The comment here used to say "native calls this" and native did not. The shell
+   evaluates `window.__x3fSetBar(state, text)` — a different name, and the
+   arguments the other way round from setBar(txt, cls). So this chip never
+   changed on the television: not while scanning, not on connect, not when the
+   bar dropped out mid-set. It sat on whatever the page rendered at load.
+
+   The bootstrap does install a fallback, but only `if (!window.__x3fSetBar &&
+   typeof setStatus === 'function')` — setStatus is the GAMES' signature, and this
+   page has no such global, so nothing was installed and nothing was called. Two
+   independent misses lining up is why it went unnoticed: neither half is wrong on
+   its own.
+
+   Mapping the state, rather than passing it through: the shell speaks "", "wait"
+   and "on"; the chip speaks live / warn / low. Aliasing setBar directly would put
+   the state string into the label and the label into the className. */
+var BAR_CLASS = { on: 'live', wait: 'warn', '': 'low' };
+window.__x3fSetBar = function (state, text) {
+  try { setBar(text || 'Bar', BAR_CLASS[state || ''] || 'low'); } catch (e) {}
+};
 
 (function watchBar() {
   /* The shell injects force as window.__x3fForce. If it is moving, we are live —
@@ -715,7 +763,12 @@ window.X3FBarStatus = setBar;   /* native calls this */
     const f = window.__x3fForce;
     if (typeof f !== 'number') return;
     if (last === null) { last = f; return; }
-    if (Math.abs(f - last) > 0.01) { still = 0; setBar('Bar connected', 'live'); }
+    /* Now that __x3fSetBar is wired, the shell is the authority on connection
+       state and this heuristic is only the fallback it always should have been.
+       It still earns its place: it is what the browser build has, and it catches
+       a bar that is streaming while the shell's own status is stale. But it must
+       not shout "Bar connected" over a native "Reconnecting…". */
+    if (Math.abs(f - last) > 0.01 && !window.__x3fNative) { still = 0; setBar('Bar connected', 'live'); }
     else if (++still > 20 && $('barTxt').textContent === 'Connecting…') { /* leave it */ }
     last = f;
   }, 500);
@@ -724,6 +777,10 @@ window.X3FBarStatus = setBar;   /* native calls this */
 /* ── overlays ─────────────────────────────────────────────────────────── */
 
 let overlayOpen = false;
+/* The live onboarding flow, or null. Declared up here rather than inside boot()
+   because closeTopOverlay() below is installed as the shell's Back hook and has
+   to be able to ask whether first-run is on screen. */
+let obHandle = null;
 function openModal(html, onOpen) {
   $('modal').innerHTML = html;
   $('scrim').classList.add('show');
@@ -742,7 +799,39 @@ function closeModal() {
   try { if (window.X3F && window.X3F.setOverlay) window.X3F.setOverlay(false); } catch (e) {}
   try { if (window.X3FNav) window.X3FNav.refresh(); } catch (e) {}
 }
-window.X3FCloseOverlay = closeModal;
+/* THE NAME THE SHELL ACTUALLY CALLS.
+
+   MainActivity.handleBack() evaluates `window.__x3fCloseOverlay && ...` — with the
+   double-underscore prefix, which is what X3F_Routine.html publishes and what every
+   game publishes. This page published `X3FCloseOverlay` instead, so on the
+   television Back inside Settings or any pairing dialog hit a function that did not
+   exist.
+
+   And it failed WORSE than doing nothing, because handleBack clears overlayOpen
+   before it calls out: press 1 silently dropped the flag and left the dialog on
+   screen, and press 2 — now believing no overlay was open, and isLauncher() not
+   recognising app.html — navigated away to launcher.html. So Back on the home
+   screen appeared dead once and then threw you off the screen entirely.
+
+   Both names are published. The prefixed one is the shell's contract; the other is
+   kept because it is the name this page's own code has always used. */
+/* THIS PAGE HAS TWO OVERLAY HOSTS AND THE SHELL KNOWS ABOUT NEITHER.
+
+   #scrim carries the modals; #obScrim carries first-run onboarding. Both raise
+   the shell's overlay flag, and MainActivity.handleBack() lowers that flag and
+   then calls exactly one hook. Pointing that hook straight at closeModal meant
+   Back during onboarding hid a scrim that was not showing, left the onboarding
+   card up, and — with the flag now down — turned the NEXT Back into a navigation
+   off the home screen, halfway through the only calibration the app asks for.
+
+   So route it: onboarding gets first refusal and steps backwards through its own
+   flow, and only if it is not up does Back close a modal. */
+function closeTopOverlay() {
+  if (obHandle && obHandle.showing && obHandle.showing()) { obHandle.back(); return; }
+  closeModal();
+}
+window.X3FCloseOverlay = closeTopOverlay;
+window.__x3fCloseOverlay = closeTopOverlay;
 
 /* "paired" is what x3f-sync.js calls "this device belongs to a household", and
    on the TELEVISION that is true the moment it makes its own household - before
@@ -760,17 +849,28 @@ function syncWord(s) {
   return s.lastSync ? 'on' : 'on, not synced yet';
 }
 
-function settings() {
+/* `keep` is the id of the control the cursor should come back to.
+
+   Adjusting the get-set delay re-renders this whole dialog, and openModal()
+   finishes by calling X3FNav.focusFirst() — so every press of "Longer" bounced
+   the cursor onto "Shorter". Pressing Longer three times meant Longer, Shorter,
+   Shorter: the value went up once and then down twice, which is the opposite of
+   what the user was doing, on the one setting they were asked to tune.
+
+   first() honours data-nav-first, so re-marking the button that was just pressed
+   is all it takes to leave the cursor where the hand already is. */
+function settings(keep) {
   const s = (window.X3FSync && window.X3FSync.status) ? window.X3FSync.status() : { state: 'unavailable' };
   const off = s.state === 'unavailable' || s.state === 'unconfigured';
+  const at = id => (keep || 'gsDown') === id ? 'data-nav-first' : '';
   const gs = (window.X3FCalFlow && window.X3FCalFlow.getSetMs) ? Math.round(window.X3FCalFlow.getSetMs() / 1000) : 10;
   openModal(`
     <h2>Settings</h2>
     <p>Get-set delay before a calibration starts: <b>${gs} seconds</b>. This is how long you
        have to put the remote down and get into position before the hold begins.</p>
     <div class="row">
-      <button class="big sec" data-nav id="gsDown">Shorter</button>
-      <button class="big sec" data-nav id="gsUp">Longer</button>
+      <button class="big sec" data-nav ${at('gsDown')} id="gsDown">Shorter</button>
+      <button class="big sec" data-nav ${at('gsUp')} id="gsUp">Longer</button>
     </div>
     <p style="margin-top:2rem">Phone sync: <b>${syncWord(s)}</b>${s.pending ? ` · ${s.pending} sets waiting to upload` : ''}</p>
     <div class="row">
@@ -780,17 +880,32 @@ function settings() {
            ${s.household ? '<button class="big sec" data-nav id="syncNow">Sync now</button>' : ''}`}
       <button class="big sec" data-nav id="closeBtn">Close</button>
     </div>`, () => {
-    const gsSet = d => {
+    const gsSet = (d, id) => {
       if (!window.X3FCalFlow) return;
       window.X3FCalFlow.setGetSetMs(window.X3FCalFlow.getSetMs() + d);
-      settings();
+      settings(id);
     };
     const b = id => $(id);
-    if (b('gsDown')) b('gsDown').onclick = () => gsSet(-2000);
-    if (b('gsUp')) b('gsUp').onclick = () => gsSet(2000);
+    if (b('gsDown')) b('gsDown').onclick = () => gsSet(-2000, 'gsDown');
+    if (b('gsUp')) b('gsUp').onclick = () => gsSet(2000, 'gsUp');
     if (b('closeBtn')) b('closeBtn').onclick = closeModal;
     if (b('pairBtn')) b('pairBtn').onclick = pair;
-    if (b('syncNow')) b('syncNow').onclick = () => { window.X3FSync.sync(); closeModal(); };
+    if (b('syncNow')) b('syncNow').onclick = () => {
+      /* NOT sync(). That is the AUTOMATIC path and it throttles itself to one run
+         per 20 seconds, which is right for something triggered by logging a set
+         or by the page regaining focus - and wrong for a button. Opening the home
+         already fires one, so pressing Sync now within twenty seconds of arriving
+         did nothing at all, closed the dialog, and looked like it had worked.
+         A button the user pressed must do the thing. */
+      openModal('<h2>Syncing…</h2><p>Talking to your household.</p>');
+      window.X3FSync.push().then(window.X3FSync.pull).then(r => {
+        openModal(`<h2>Synced</h2><p>${r && r.merged
+            ? esc(r.merged) + ' new set' + (r.merged === 1 ? '' : 's') + ' came in from another device.'
+            : 'Everything here is already up to date.'}</p>
+          <div class="row"><button class="big sec" data-nav data-nav-first id="closeBtn">Close</button></div>`,
+          () => { $('closeBtn').onclick = closeModal; });
+      }).catch(err => pairFailed(err));
+    };
   });
 }
 
@@ -809,7 +924,15 @@ function pairFailed(err) {
 }
 
 function pair() {
-  openModal('<h2>Pair a phone</h2><p>Getting a code…</p>');
+  /* A MODAL WITH NO CONTROL IS A DEAD REMOTE. These two states are transient and
+     usually blink past, but both wait on a network: if startPairing() or
+     confirm() hangs, the television is left showing a dialog with nothing
+     focusable in it. Back does close them now that __x3fCloseOverlay is wired,
+     but "press the key with no button on screen" is not an affordance — so both
+     carry a real Close. */
+  openModal(`<h2>Pair a phone</h2><p>Getting a code…</p>
+    <div class="row"><button class="big sec" data-nav data-nav-first id="closeBtn">Close</button></div>`,
+    () => { $('closeBtn').onclick = closeModal; });
   window.X3FSync.startPairing().then(r => {
     const host = r.url.replace(/^https?:\/\//, '').split('#')[0];
     openModal(`
@@ -834,13 +957,27 @@ function pair() {
         <p>It will be able to see and add to this household's training history.
            Only allow this if it is your phone, or someone you handed the code to.</p>
         <div class="code" style="font-size:3rem;letter-spacing:.05em">${esc(String(uid).slice(0, 12))}…</div>
+        <!-- THE SAFE OPTION TAKES THE CURSOR, NOT THE APPROVING ONE.
+
+             This dialog is not opened by the user: it REPLACES whatever modal was
+             on screen the moment a phone claims the code, which may be while a
+             thumb is already coming down on OK over the previous dialog's Close
+             button. Pre-focusing Allow meant that stray press could grant an
+             unknown device permanent access to the household's history.
+
+             So the cursor starts on "Not now" and reaching Allow costs a
+             deliberate Right. Same rule the destructive confirm on the Progress
+             page follows: when a dialog appears under the cursor, the default
+             must be the choice you can take back. -->
         <div class="row">
-          <button class="big" data-nav data-nav-first id="allowBtn">Allow</button>
-          <button class="big sec" data-nav id="denyBtn">Not now</button>
+          <button class="big sec" data-nav data-nav-first id="denyBtn">Not now</button>
+          <button class="big" data-nav id="allowBtn">Allow</button>
         </div>`, () => {
         $('denyBtn').onclick = closeModal;
         $('allowBtn').onclick = () => {
-          openModal('<h2>A phone is asking to join</h2><p>Letting it in…</p>');
+          openModal(`<h2>A phone is asking to join</h2><p>Letting it in…</p>
+            <div class="row"><button class="big sec" data-nav data-nav-first id="closeBtn">Close</button></div>`,
+            () => { $('closeBtn').onclick = closeModal; });
           window.X3FSync.confirm(r.code, uid).then(() => {
             try { window.X3FSync.sync(); } catch (e) {}
             openModal(`<h2>Paired</h2>
@@ -849,6 +986,21 @@ function pair() {
               () => { $('closeBtn').onclick = closeModal; });
           }).catch(pairFailed);
         };
+      });
+    }, () => {
+      /* The five minutes are up. Saying nothing left this screen showing a code
+         the database had already stopped accepting, under the words "Waiting for
+         the phone" - so the one thing the user needed to know (ask for another
+         one) was the one thing it would not say. */
+      endPairWatch();
+      openModal(`<h2>That code has expired</h2>
+        <p>Codes last five minutes. Nothing was shared.</p>
+        <div class="row">
+          <button class="big" data-nav data-nav-first id="againBtn">New code</button>
+          <button class="big sec" data-nav id="closeBtn">Close</button>
+        </div>`, () => {
+        $('closeBtn').onclick = closeModal;
+        $('againBtn').onclick = pair;
       });
     });
   }).catch(pairFailed);
@@ -885,7 +1037,7 @@ document.addEventListener('keydown', e => {
   try {
     if (window.X3FOnboard && X3FOnboard.needed()) {
       onboarding = true;
-      X3FOnboard.start($('obScrim'), { onDone: seatCursor });
+      obHandle = X3FOnboard.start($('obScrim'), { onDone: () => { obHandle = null; seatCursor(); } });
     }
   } catch (e) { onboarding = false; }
 

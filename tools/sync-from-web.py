@@ -197,10 +197,25 @@ MANIFEST_RE = re.compile(r'<link rel="manifest"[^>]*>')
 # follow, which is why the whole block goes in <head> - that ordering is what
 # lets the same x3f-exercises.js serve the phone build and the TV bundle.
 TV_FILES = """<script>
-/* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames */
+/* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames.
+   THE MENU KEYS ARE NOT OPTIONAL. app.html builds its links in JavaScript, via
+   file(key, webName), which returns X3FFILES[key] or falls back to the WEB
+   filename. The web filename does not exist in the APK - the bundle calls it
+   routine.html, not X3F_Routine.html - so a key missing from this map is a link
+   that navigates to nothing on the television, and MainActivity bounces a failed
+   navigation back to the launcher.
+
+   That is exactly what happened: with only the game keys here, the home screen's
+   Start button and its entire Train rail (Workout, Library, Calibrate, Progress)
+   plus every movement card were dead on the TV, while working perfectly in a
+   browser. LINKS below could not save them, because it rewrites literal
+   href="..." TEXT and a link assembled at runtime has none. Anything added to
+   file() needs a key here. */
 window.X3FFILES={bloom:'bloom.html',splash:'splash.html',nova:'nova.html',flow:'flow.html',
  zone:'arena.html',max:'arena.html',boss:'arena.html',duel:'duel.html',rhythm:'rhythm.html',
- ascent:'ascent.html'};
+ ascent:'ascent.html',
+ routine:'routine.html',library:'library.html',progress:'progress.html',
+ calibrate:'calibrate.html',launcher:'launcher.html'};
 </script>
 """
 
@@ -306,11 +321,22 @@ def main() -> int:
         print("web folder not found: %s" % web)
         return 2
 
-    changed, missing, warnings = [], [], []
+    changed, missing, warnings, fatal = [], [], [], []
     produced = set()          # bundle-relative paths this run is responsible for
 
     def warn(msg):
         warnings.append(msg)
+
+    def fail(msg):
+        """A warning nobody can ship past.
+
+        Warnings here do not affect the exit code, which is right for most of
+        them - an orphaned bundle file or a Play button that was already dead is
+        worth saying and not worth blocking a build over. It is exactly wrong for
+        a dead link on the HOME SCREEN, which is what fail() is for: CI runs this
+        script with --check, and a defect that only reaches the television is a
+        defect nothing else in the pipeline can catch."""
+        fatal.append(msg)
 
     for src_name, dst_name in list(GAMES.items()) + list(MENUS.items()):
         produced.add(dst_name)
@@ -380,6 +406,139 @@ def main() -> int:
                  "produces - that Play button is a dead link on the TV "
                  "(docs/audit/tooling.md D-1)" % target)
 
+    # THE SHELL'S HOOKS MUST EXIST UNDER THE NAMES THE SHELL CALLS.
+    #
+    # MainActivity talks to a page by evaluating `window.__x3fSomething(...)`. If
+    # the page publishes the same function under a different name, the call
+    # short-circuits on the && and nothing happens - no error, no log, no symptom
+    # except a feature that quietly does not work on the television and works
+    # perfectly in a browser. That has now happened twice in this file's lifetime:
+    #
+    #   __x3fCloseOverlay  app.html published it as X3FCloseOverlay, so BACK never
+    #                      closed a dialog and the second press left the home screen.
+    #   __x3fSetBar        app.html published it as X3FBarStatus, so the bar chip
+    #                      never changed - not on scan, connect, or disconnect.
+    #
+    # Neither was findable by reading either side alone; both are obvious the
+    # moment the two are put next to each other, which is all this does. A page
+    # needs the overlay hook if it has a scrim to close, and the status hook if it
+    # has a bar chip to update - and the games get the latter from the bootstrap's
+    # fallback, which installs only when a global setStatus exists.
+    java_src = ""
+    try:
+        java_src = (REPO / "app" / "src" / "main" / "java" / "com" / "goob" /
+                    "x3ftv" / "MainActivity.java").read_text(encoding="utf-8")
+    except Exception:
+        pass
+    if java_src:
+        called = set(re.findall(r"window\.(__x3f[A-Za-z]+)\s*&&", java_src))
+        for rel in sorted(produced):
+            if not rel.endswith(".html") or rel not in set(MENUS.values()):
+                continue
+            try:
+                txt = (ASSETS / rel).read_text(encoding="utf-8")
+            except Exception:
+                continue
+            defines = set(re.findall(r"window\.(__x3f[A-Za-z]+)\s*=", txt))
+            has_setstatus = re.search(r"function\s+setStatus\s*\(", txt) is not None
+            if "__x3fCloseOverlay" in called and ".scrim" in txt and                "__x3fCloseOverlay" not in defines:
+                fail("%s has an overlay but never defines window.__x3fCloseOverlay, "
+                     "which is the name MainActivity calls on BACK. The dialog will "
+                     "not close and the next BACK leaves the page." % rel)
+            # has_setstatus IS the bootstrap-fallback test: that fallback reads
+            # `if (!window.__x3fSetBar && typeof setStatus === 'function')`, so a
+            # page with a global setStatus is covered and a page without one is not.
+            if "__x3fSetBar" in called and "barChip" in txt and                "__x3fSetBar" not in defines and not has_setstatus:
+                fail("%s shows a bar status chip but defines neither "
+                     "window.__x3fSetBar nor a global setStatus() for the "
+                     "bootstrap's fallback to find, so the chip never updates on "
+                     "the TV." % rel)
+
+    # EVERY KEY file() ASKS FOR MUST BE IN X3FFILES.
+    #
+    # This is the check that would actually have caught the bug, and the static
+    # href sweep below would not have: app.html builds its links at RUNTIME with
+    # file(key, webName), so the emitted HTML contains no anchor to inspect. What
+    # it contains is the CALL, and the call names the key.
+    #
+    # file() returns X3FFILES[key] or falls back to webName - and webName is the
+    # WEB filename, which by construction never exists in a bundle that renames
+    # every menu page. So a key missing here is not a soft failure, it is a link
+    # that navigates to nothing. With only the game keys present, the TV home's
+    # Start button and its whole Train rail were dead while the browser build was
+    # perfect, which is the worst possible shape for a bug: invisible everywhere
+    # it is convenient to test.
+    file_call = re.compile(r"file\(\s*['\"](\w+)['\"]")
+    for rel in sorted(produced):
+        if not rel.endswith(".html"):
+            continue
+        try:
+            txt = (ASSETS / rel).read_text(encoding="utf-8")
+        except Exception:
+            continue
+        if "X3FFILES" not in txt:
+            continue
+        mm = re.search(r"window\.X3FFILES\s*=\s*\{(.*?)\};", txt, re.S)
+        known = set(re.findall(r"(\w+)\s*:", mm.group(1))) if mm else set()
+        for key in sorted(set(file_call.findall(txt))):
+            if key not in known:
+                fail("%s calls file('%s') but X3FFILES has no such key, so it "
+                     "falls back to the WEB filename - which is not in the bundle. "
+                     "That link is dead on the TV. Add it to TV_FILES." % (rel, key))
+
+    # EVERY LINK IN THE BUNDLE MUST POINT AT SOMETHING IN THE BUNDLE.
+    #
+    # The check above only covers X3FFILES. It cannot see a link the page builds
+    # at RUNTIME, and that is precisely how the worst dead-link bug in this
+    # project's history shipped: app.html composes its targets with
+    # file(key, webName), which falls back to the WEB filename when the key is
+    # missing from X3FFILES - and the web filename never exists in the APK,
+    # because the bundle renames every menu page. With only game keys in the map,
+    # the home screen's Start button and its whole Train rail navigated to nothing
+    # on the television while working perfectly in a browser. The LINKS rewrite
+    # could not help: it replaces literal href="..." TEXT, and a link assembled in
+    # JavaScript has none to replace.
+    #
+    # So check the artefact rather than the intention. Walk the emitted HTML, take
+    # every static href, and require the file to be there. It costs milliseconds
+    # and it is the only thing standing between a renamed page and a home screen
+    # whose buttons all bounce to the launcher.
+    # ANCHORS ONLY, and that restriction is load-bearing in both directions.
+    # A bare href= scan matches <link rel="apple-touch-icon"> (an iOS icon hint
+    # the television never requests, and which is deliberately absent from the
+    # bundle) and it matches href= appearing inside a JavaScript template literal,
+    # which is a string being built rather than a link that exists. Both are noise,
+    # and a check that cries wolf stops being read. Only <a> navigates.
+    Q, A = chr(34), chr(39)
+    href_pats = [re.compile("<a" + chr(92) + "s[^>]*?href=" + Q + "([^" + Q + ">]+)" + Q, re.I),
+                 re.compile("<a" + chr(92) + "s[^>]*?href=" + A + "([^" + A + ">]+)" + A, re.I)]
+    for rel in sorted(produced):
+        if not rel.endswith(".html"):
+            continue
+        try:
+            txt = (ASSETS / rel).read_text(encoding="utf-8")
+        except Exception:
+            continue
+        seen_href = set()
+        for pat in href_pats:
+            seen_href.update(pat.findall(txt))
+        for href in sorted(seen_href):
+            href = href.split("#")[0].split("?")[0].strip()
+            if not href or href.startswith(("http:", "https:", "data:", "mailto:",
+                                            "javascript:", "//", "tel:")):
+                continue
+            # A link the page ASSEMBLES cannot be resolved from here, and saying so
+            # every run would be noise rather than a finding. Library builds its
+            # Play links as "<a href='" + gameUrl(...) + "'", and gameUrl reads
+            # X3FFILES, so those are already covered by the launch-target check
+            # above. None of these characters can appear in a real static path.
+            if any(c in href for c in "'+${}" + chr(10) + chr(13)):
+                continue
+            if not (ASSETS / href).exists():
+                fail("%s links to %s, which is not in the bundle - on the TV that "
+                     "navigation fails and MainActivity bounces to the launcher"
+                     % (rel, href))
+
     # Orphans: nothing is deleted, because some bundle files are legitimately
     # hand-maintained. But a file left behind by a rename used to ship forever
     # AND be staged, audited and syntax-checked by both suites, so it is named.
@@ -396,6 +555,14 @@ def main() -> int:
     print(("would change: " if check else "synced: ") + (", ".join(changed) if changed else "nothing"))
     for w in warnings:
         print("  warning: " + w)
+    for f in fatal:
+        print("  BROKEN ON TV: " + f)
+    if fatal:
+        print("The bundle would ship a control that does nothing on the television and "
+              "everything in a browser - a link to a file the APK does not contain, or a "
+              "shell hook under a name the shell never calls. Nothing else in this "
+              "pipeline can see either one.")
+        return 2
     if missing:
         # Registered, and gone. Something was renamed or deleted without updating
         # the list above, and the bundle now holds a stale copy of it.

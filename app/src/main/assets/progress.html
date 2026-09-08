@@ -413,10 +413,25 @@ textarea{display:block;width:100%;min-height:11rem;font-family:var(--font-num);
 .pad{height:8rem}
 </style>
 <script>
-/* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames */
+/* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames.
+   THE MENU KEYS ARE NOT OPTIONAL. app.html builds its links in JavaScript, via
+   file(key, webName), which returns X3FFILES[key] or falls back to the WEB
+   filename. The web filename does not exist in the APK - the bundle calls it
+   routine.html, not X3F_Routine.html - so a key missing from this map is a link
+   that navigates to nothing on the television, and MainActivity bounces a failed
+   navigation back to the launcher.
+
+   That is exactly what happened: with only the game keys here, the home screen's
+   Start button and its entire Train rail (Workout, Library, Calibrate, Progress)
+   plus every movement card were dead on the TV, while working perfectly in a
+   browser. LINKS below could not save them, because it rewrites literal
+   href="..." TEXT and a link assembled at runtime has none. Anything added to
+   file() needs a key here. */
 window.X3FFILES={bloom:'bloom.html',splash:'splash.html',nova:'nova.html',flow:'flow.html',
  zone:'arena.html',max:'arena.html',boss:'arena.html',duel:'duel.html',rhythm:'rhythm.html',
- ascent:'ascent.html'};
+ ascent:'ascent.html',
+ routine:'routine.html',library:'library.html',progress:'progress.html',
+ calibrate:'calibrate.html',launcher:'launcher.html'};
 </script>
 <style>
 /* 10-foot pass: wider columns and bigger type for couch distance. The native
@@ -1336,8 +1351,14 @@ function syncLine() {
       ? Math.max(1, Math.round((Date.now() - st.lastSync) / 60000)) + ' min ago'
       : 'not yet';
     if (lede) {
-      lede.textContent = 'Paired with your household - sets logged on any paired device appear ' +
-        'on all of them. Export and import still work, and still need no network.';
+      /* "Paired" is what x3f-sync.js calls belonging to a household, and a device
+         belongs to one the moment it CREATES one - before anything else has
+         joined. Saying "paired with your household" there told a television that
+         had never met a phone that it had. Describe what is actually true: sync
+         is on, and whatever is paired shares this log. */
+      lede.textContent = 'Sync is on for this device - anything logged here goes to your ' +
+        'household, and sets from any other device you have paired appear here. Export and ' +
+        'import still work, and still need no network.';
     }
     box.innerHTML = '<div class="msg">Synced: <b>' + esc(ago) + '</b>' +
       (st.pending ? ' · <b>' + st.pending + '</b> waiting to upload' : '') +

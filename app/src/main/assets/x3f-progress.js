@@ -354,8 +354,23 @@
     var h = history().slice(), cut = -1;
     for (var i = h.length - 1; i >= 0; i--) { if (h[i] && h[i].t === t) { cut = i; break; } }
     if (cut < 0) return 0;
+    var gone = h[cut];
     h.splice(cut, 1);
     var stored = writeHistory(h);
+    /* A DELETE THAT DOES NOT REACH SYNC IS NOT A DELETE.
+
+       Sets are pushed to the household and pulled back by content-addressed id,
+       so removing one here and nowhere else means the next pull re-adds it -
+       silently, on every paired device. x3f-sync.js keeps the tombstone list
+       that pull() consults; it just never had anything writing to it.
+
+       Guarded and optional, like every other cross-module call in this codebase:
+       this engine runs on pages that do not load sync at all, and a household
+       that has never paired has nothing to tell. */
+    if (stored) {
+      try { if (window.X3FSync && window.X3FSync.tombstone) window.X3FSync.tombstone(gone); }
+      catch (e) {}
+    }
     bust();
     return stored ? 1 : 0;
   }

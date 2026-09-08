@@ -215,6 +215,85 @@
 
   function walk() { return exhaustive() ? walkBFS() : walkSweep(); }
 
+  /* ── does holding a direction actually GO that way? ────────────────────
+
+     Reachability is not the whole of a good remote. A page can be perfectly
+     reachable and still feel broken, and the way it feels broken is BOUNCING:
+     you press Up, the cursor goes up one, then back down to something you have
+     already passed, then up again. It is the single most common symptom of
+     spatial navigation being computed in viewport coordinates while something on
+     screen is not where the content thinks it is.
+
+     That is not hypothetical. A `position:sticky` top bar sits at viewport y=0
+     no matter how far the content beneath it has scrolled, which made it the
+     nearest thing "above" the cursor from anywhere on the page: the Progress
+     dashboard bounced to its top bar on six of twelve Up presses. Reachability
+     alone called that page CLEAN, because every control could still be got to
+     eventually - by an unpleasant path nobody would choose.
+
+     So: seat the cursor at the far end, press one direction repeatedly, and
+     assert the walk never returns to an element it has just left. A correct page
+     visits each thing once on the way past and then stops. */
+  function bounceWalk(dir, seatAt) {
+    var order = [], seen = [];
+    try { if (window.__x3fSeat) window.__x3fSeat(seatAt); else if (window.X3FNav) X3FNav.set(seatAt); }
+    catch (e) { return null; }
+    for (var i = 0; i < 30; i++) {
+      var before = focused();
+      try { window.__x3fNav(dir); } catch (e) { break; }
+      var after = focused();
+      if (!after || after === before) break;
+      order.push(after);
+      if (seen.indexOf(after) >= 0) {
+        /* Returned to somewhere already visited: report the loop, not just the
+           fact of it, because "A -> B -> A" names the two elements fighting. */
+        var at = seen.indexOf(after);
+        return { bounce: seen.slice(at).concat([after]).map(name) };
+      }
+      seen.push(after);
+    }
+    return { bounce: null, steps: order.length };
+  }
+
+  /* ── is the cursor actually VISIBLE? ───────────────────────────────────
+
+     Reachability says the remote can get there. Bouncing says it gets there
+     sensibly. Neither says the user can SEE where it landed, and on a television
+     that is the whole game - a focus ring you cannot read from a sofa is the same
+     as no focus at all.
+
+     This is not theoretical. x3f-nav injected `[data-nav]:focus{outline:none}` to
+     suppress the browser's own ring, and setCursor() both adds the cursor class
+     AND calls el.focus() - so at (0,2,0) that rule outranked x3f-ui.css's `.foc`
+     at (0,1,0) and cancelled the design system's 10px outline on precisely the
+     element it marked. Every page built on x3f-ui.css shipped with no ring, and
+     every existing check passed, because every control was still reachable.
+
+     Two ways to draw a ring here and both are legitimate: the design-system pages
+     use `outline`, the games use x3f-nav's own `box-shadow` (OWN_RING). Accept
+     either, and require it to be big enough to see - the 10-foot guidance in
+     x3f-ui.css asks for six pixels minimum. */
+  function ringOf(el) {
+    if (!el) return null;
+    var cs;
+    try { cs = getComputedStyle(el); } catch (e) { return null; }
+    if (!cs) return null;
+    var w = parseFloat(cs.outlineWidth) || 0;
+    if (cs.outlineStyle && cs.outlineStyle !== 'none' && w >= 3) {
+      return { kind: 'outline', px: w };
+    }
+    /* A box-shadow spread reads as a ring too. Pull the widest number out of the
+       first shadow rather than parsing the whole grammar. */
+    var sh = cs.boxShadow || '';
+    if (sh && sh !== 'none') {
+      var nums = sh.match(/-?[0-9.]+px/g) || [];
+      var widest = 0;
+      for (var i = 0; i < nums.length; i++) widest = Math.max(widest, Math.abs(parseFloat(nums[i])));
+      if (widest >= 2) return { kind: 'box-shadow', px: widest };
+    }
+    return null;
+  }
+
   function audit(label) {
     var ov = openOverlay();
     var root = ov || document;
@@ -237,10 +316,36 @@
     if (ov) OUT.push('  ' + (outside.length ? 'ESCAPED OVERLAY (' + outside.length + '): ' + outside.map(name).join(', ')
                                             : 'ok - cursor trapped in the overlay'));
     if (w.dead.length) OUT.push('  dead ends: ' + w.dead.slice(0, 3).join(' | '));
+
+    /* Can the user SEE the cursor? Sampled on the element the walk actually
+       focused, not on a guess about which selector should apply. */
+    if (exhaustive()) {
+      var lit = focused();
+      var ring = ringOf(lit);
+      if (lit) {
+        OUT.push('  ' + (ring
+          ? 'ok - the cursor is drawn (' + ring.kind + ' ' + Math.round(ring.px) + 'px)'
+          : 'NO FOCUS RING: ' + name(lit) + ' carries the cursor class but computes no '
+            + 'visible outline or box-shadow'));
+      }
+    }
+
+    /* Only meaningful with the real engine; the bootstrap fallback keeps its
+       cursor private and sweeps rather than walks. */
+    if (exhaustive() && expect.length > 2) {
+      var vis = expect.filter(seenVisible);
+      if (vis.length > 2) {
+        var up = bounceWalk('up', vis[vis.length - 1]);
+        var down = bounceWalk('down', vis[0]);
+        var b = (up && up.bounce) || (down && down.bounce);
+        OUT.push('  ' + (b ? 'BOUNCES (' + ((up && up.bounce) ? 'up' : 'down') + '): ' + b.join(' -> ')
+                           : 'ok - Up and Down walk without doubling back'));
+      }
+    }
   }
 
   function report() {
-    var bad = OUT.filter(function (l) { return /UNREACHABLE|FOCUSED INVISIBLE|ESCAPED/.test(l); }).length;
+    var bad = OUT.filter(function (l) { return /UNREACHABLE|FOCUSED INVISIBLE|ESCAPED|BOUNCES|NO FOCUS RING/.test(l); }).length;
     var d = document.createElement('div');
     d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b0f18;color:#eaf0fa;font:13px/1.5 Consolas,monospace;padding:18px;white-space:pre-wrap;overflow:auto';
     d.textContent = 'AUDIT ' + (location.pathname.split('/').pop()) + '  ' +
