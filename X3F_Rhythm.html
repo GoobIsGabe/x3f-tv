@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<!-- X3F RHYTHM - the tempo trainer.
+
+     WHAT THIS GAME USED TO SCORE, AND WHY IT WAS THE WRONG THING
+
+     The audit (docs/audit/games-b.md D-09) called this "the most anti-X3 thing
+     in the repo", and the derivation is not arguable:
+
+       * Every tempo option was faster than the protocol's FASTEST legal tempo.
+         The select offered 50/66/84 read as beats per minute, i.e. 1200/909/714
+         ms per phase, against a program that says "two to three seconds up and
+         two to three seconds down". To reach two seconds the value would have
+         had to be 30. The game's own first-run copy called this "controlled".
+
+       * A high note was hit only when force landed between 0.55 and 0.89 of the
+         calibrated range. Pulling to 100% MISSED and zeroed the combo. So on the
+         last few reps of a set - the part the program calls the entire workout -
+         the feedback was maximally negative exactly when the training was
+         maximally correct.
+
+       * A low note's window included force = 0, a fully slack band. "Never let
+         the band go slack at the bottom" is one of two non-negotiable technique
+         rules, and this game paid you to break it once a second, all set.
+
+     WHAT IT SCORES NOW
+
+     The note is still a note and the metronome is still the point - a metronome
+     is the natural way to teach "two to three seconds each way", which is the
+     one instruction the program repeats more than any other. What changed is
+     what closes a note:
+
+       A NOTE IS HIT BY ARRIVING AT THE TURNAROUND ON TIME.
+
+     A TOP note is claimed by the moment your rep peaks - wherever that peak is.
+     There is no upper bound and there never can be one: the harder you pull, the
+     more the note is worth, and a rep that beats the best you have managed this
+     set pays a bonus on top. A BOTTOM note is claimed by the moment your rep
+     bottoms out, and it only counts if the band was still loaded down there.
+     Slack is the miss now, not the release.
+
+     Two further consequences fall out of scoring tempo rather than amplitude:
+
+       * Partials past full-range failure are worth MORE, not less. Once the set
+         has dropped into mid or weak range the shared engine says so, and every
+         note from then on carries a "past failure" bonus. That is the part of a
+         set the source says counts most, and it used to be the part this game
+         scored worst.
+
+       * Nothing in here compares X3FCal.frac() against anything. That is the
+         eased DISPLAY curve, it is used to draw the marker and nothing else, and
+         it must never reach a threshold - 0.85 eased is 0.90 linear, so a
+         threshold that borrows it silently moves. Every judgement below is on
+         the LINEAR proportion of the calibrated range.
+
+     Rep counts, the three tiers and the form faults are NOT computed here. They
+     come from x3f-set.js, which measures them from the same signal for all eight
+     games, and are shown on the shared in-set scoreboard (x3f-hud.js). -->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>X3F Rhythm</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+/* --font-display / --font-num / --amber / --mint are the token names the shared
+   scoreboard (x3f-hud.js) reads. They are aliased onto this page's own palette
+   rather than duplicated, so the enormous rep counter is in the same faces and
+   the same greens as everything else on screen instead of falling back to
+   system-ui and a stock purple. */
+:root{--bg:#06080e;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--hot:#ff5d78;--cyan:#37d6ff;--amber:#ff9e4a;--mint:#2ff0b0;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--font-display:var(--d);--font-num:var(--n);--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{font-family:var(--d);color:var(--txt);background:var(--bg);-webkit-user-select:none;user-select:none}
+.app{position:relative;height:100dvh;max-width:820px;margin:0 auto;display:flex;flex-direction:column;padding-top:var(--sat)}
+.topbar{display:flex;align-items:center;gap:8px;padding:12px 14px 6px;flex-wrap:wrap}
+.brand{font-weight:800;font-size:17px;letter-spacing:2px}.brand b{color:var(--accent)}
+.spacer{flex:1}
+.status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);font-size:12px;color:var(--dim);font-family:var(--n)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--hot)}.dot.on{background:var(--accent);box-shadow:0 0 12px var(--accent)}.dot.wait{background:var(--gold)}
+select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);color:var(--txt);border:1px solid var(--brd2);border-radius:11px;padding:9px 11px;cursor:pointer}
+.stage{flex:1;min-height:0;position:relative;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+/* The score chrome moved to the BOTTOM of the stage. The shared scoreboard owns
+   the top of the screen now, and two scoreboards fighting for the same corner is
+   worse than either of them alone. */
+.hud{position:absolute;bottom:8px;left:10px;right:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
+.chip{background:rgba(10,14,22,.66);backdrop-filter:blur(6px);border:1px solid var(--brd);border-radius:14px;padding:8px 13px;min-width:78px}
+.chip .k{font-family:var(--n);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
+.chip .v{font-family:var(--n);font-weight:700;font-size:20px}
+.v.accent{color:var(--accent)}.v.gold{color:var(--gold)}
+.toast{position:absolute;left:0;right:0;top:44%;text-align:center;font-family:var(--n);font-weight:700;font-size:clamp(1.4rem,6vw,2.2rem);opacity:0;transition:opacity .3s;pointer-events:none;text-shadow:0 4px 30px #000}
+.toast.show{opacity:1}
+.ctrl{display:flex;gap:8px;align-items:center;padding:8px 12px calc(8px + var(--sab));border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(0,0,0,.4))}
+.cta{font-family:var(--d);font-weight:700;font-size:16px;border:none;border-radius:14px;padding:14px 18px;cursor:pointer;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c}
+.cta:active{transform:translateY(1px)}.cta.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--brd2)}
+.grow{flex:1}
+.scrim{position:fixed;inset:0;background:rgba(4,6,11,.74);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:30;opacity:0;pointer-events:none;transition:opacity .25s;padding:24px}
+.scrim.show{opacity:1;pointer-events:auto}
+.card{width:100%;max-width:420px;text-align:center;display:flex;flex-direction:column;gap:14px}
+.card h1{font-size:28px;font-weight:800}.card h1 b{color:var(--accent)}.card p{color:var(--dim);font-size:14px;line-height:1.55}
+</style>
+<!-- Order matters. x3f-cal.js asks X3FEX for a movement's floor fraction and
+     strength curve, and asks X3FBand for the band, at call time - but loading
+     its dependencies first means the very first ref() on this page is already
+     the right number rather than a fallback that is corrected a frame later. -->
+<script src="x3f-exercises.js"></script>
+<script src="x3f-band.js"></script>
+<script src="x3f-cal.js"></script>
+</head>
+<body>
+<div class="app">
+<div class="topbar">
+<button onclick="history.length>1?history.back():location.href='index.html'" aria-label="Back" style="display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:22px;font-weight:700;line-height:1;flex:0 0 auto;cursor:pointer;font-family:inherit">&lsaquo;</button>
+<button onclick="x3tv()" aria-label="TV mode" style="display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 12px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:12px;font-weight:800;letter-spacing:1px;cursor:pointer;font-family:inherit;flex:0 0 auto">TV</button>
+<div class="brand">X3F <b>RHYTHM</b></div><div class="spacer"></div>
+<div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
+<select id="bandSel" title="Band"></select>
+</div>
+<div class="stage" id="stage">
+<canvas id="cv"></canvas>
+<div class="hud">
+<div class="chip"><div class="k">Score</div><div class="v accent" id="hScore">0</div></div>
+<div class="chip"><div class="k">On Tempo</div><div class="v" id="hCombo">x0</div></div>
+<div class="chip"><div class="k">Best Run</div><div class="v gold" id="hBest">0</div></div>
+</div>
+<div class="toast" id="toast"></div>
+</div>
+<div class="ctrl">
+<button class="cta ghost" id="zeroBtn">Re-Zero</button>
+<select id="tempoSel" title="Tempo"></select>
+<div class="grow"></div>
+<button class="cta" id="startBtn" data-nav-first>Start Set</button>
+</div>
+</div>
+<div class="scrim show" id="firstrun"><div class="card">
+<h1>X3F <b>RHYTHM</b></h1>
+<p>Two seconds up, two seconds down &mdash; on the beat. Notes fall to the metronome: take the <b>top</b> note by peaking your rep as it lands, and the <b>bottom</b> note by turning around without letting the band go slack.</p>
+<p>Pull as hard as you can. There is no ceiling here &mdash; a harder rep is always worth more, and once full range is gone every partial is worth more again.</p>
+<button class="cta" id="frConnect">Connect Bar</button>
+<button class="cta ghost" id="frDemo">Try Demo (hold to pull)</button>
+</div></div>
+<script>
+"use strict";
+const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6';
+const $=id=>document.getElementById(id);
+function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
+function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
+
+/* The dead logSession() that used to sit here is gone. It was never called - the
+   only call sites read `window.X3FSet ? report() : logSession()` and x3f-set.js
+   is a plain <script src> - but it capped x3f_history at 250 entries with a
+   shift() loop, while the real engine keeps 56 days and rolls the rest up. One
+   service-worker cache miss on x3f-set.js and the fallback would have fired and
+   truncated the user's training history, permanently. An armed data-loss path
+   with no caller is not dead code (docs/audit/games-b.md D-14). */
+
+const BANDS=(window.X3FEX&&X3FEX.bands)||['White','Light Gray','Dark Gray','Black','Elite Black'];
+const EXSLUG=window.X3FCal?X3FCal.slug():null;
+const EXNAME=(function(){try{var e=window.X3FEX&&X3FEX.get(EXSLUG);return (e&&e.name)||''}catch(e){return ''}})();
+
+/* ONE OWNER FOR "WHICH BAND". Never localStorage.x3f_band, never the library's
+   per-movement key: X3FBand.forMovement() applies ?band=, the explicit
+   per-movement choice, an existing calibration and the global in that order, and
+   Calibrate asks the same function. Reading the raw key here is exactly how a
+   calibration got filed under one band and looked up under another. */
+let band=window.X3FBand?X3FBand.forMovement(EXSLUG):'White';
+window.__x3fBand=function(){return band};
+
+/* The span of THIS movement's calibrated range, not the raw band max: a chest
+   press and an overhead press on one band are nowhere near the same scale. */
+function ref(){return window.X3FCal?X3FCal.span(EXSLUG,band):130}
+/* The movement's own start position already carries load (an overhead press
+   starts at chin height with the band loaded). That load is the zero. */
+function calLo(){return window.X3FCal?X3FCal.floor(EXSLUG,band):0}
+/* EASED, for drawing only. Never compared against anything. */
+function disp(f){return window.X3FCal?X3FCal.frac(EXSLUG,band,f):0}
+
+/* THE PROGRAM'S OWN NUMBERS. Nothing here invents a tempo.
+
+     "you're gonna always aim for two to three seconds up and two to three
+      seconds down"
+
+   repMinMs is the protocol's "a rep faster than this is being rushed" figure, so
+   half of it is the fastest phase the program will accept; tempoUpMs is the
+   middle of the stated range and is the default; the slow end is the same
+   distance the other side of that middle. The old select's three options were
+   1200, 909 and 714 ms - all three faster than PH_FAST. */
+const P=(window.X3FEX&&X3FEX.protocol)||{repMinMs:4000,tempoUpMs:2500,repsMin:15,repsMax:40};
+const PH_FAST=Math.round(P.repMinMs/2);
+const PH_MID=Math.round(P.tempoUpMs);
+const PH_SLOW=Math.round(2*PH_MID-PH_FAST);
+
+let bestRun=xget('rhythmBest',0);$('hBest').textContent=bestRun;
+
+const bandSel=$('bandSel');
+BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';bandSel.appendChild(o)});
+if(BANDS.indexOf(band)>=0)bandSel.value=band;
+/* A band chosen here is a choice about THIS movement, so it is stored against
+   the movement. Writing the global instead is what silently moved every other
+   lift when you changed one (v1.4). */
+bandSel.onchange=()=>{band=bandSel.value;
+  try{ if(window.X3FBand){ EXSLUG?X3FBand.set(EXSLUG,band):X3FBand.setCurrent(band); } }catch(e){}
+  resetSet();};
+
+const tempoSel=$('tempoSel');
+[[PH_FAST,'Brisk'],[PH_MID,'Standard'],[PH_SLOW,'Deep']].forEach(function(t){
+  const o=document.createElement('option');o.value=t[0];
+  o.textContent=t[1]+' '+(t[0]/1000).toFixed(1)+'s';
+  if(t[0]===PH_MID)o.selected=true;tempoSel.appendChild(o)});
+let phaseMs=PH_MID;
+
+/* ?tempo= is milliseconds per PHASE. ?bpm= is the legacy beats-per-minute form
+   this page used to take; it is still honoured so an old bookmark or a stale
+   routine link keeps working, but it is converted and then CLAMPED into the
+   protocol, which is why the three legacy values (50/66/84) all now land on the
+   fastest legal tempo instead of one that is 40% too quick. */
+(function(){
+  const p=new URLSearchParams(location.search);
+  let ms=null;
+  const tp=parseFloat(p.get('tempo'));if(isFinite(tp)&&tp>0)ms=tp;
+  const bp=parseFloat(p.get('bpm'));if(ms===null&&isFinite(bp)&&bp>0)ms=60000/bp;
+  if(ms===null)return;
+  ms=Math.max(PH_FAST,Math.min(PH_SLOW,ms));
+  /* Snap to whichever option is closest so the select never disagrees with what
+     the game is actually doing. */
+  let best=PH_MID,bd=Infinity;
+  [PH_FAST,PH_MID,PH_SLOW].forEach(function(v){const d=Math.abs(v-ms);if(d<bd){bd=d;best=v}});
+  phaseMs=best;tempoSel.value=String(best);
+})();
+tempoSel.onchange=()=>{phaseMs=+tempoSel.value||PH_MID};
+
+/* ------------------------------------------------------------------ *
+ *  Force pipeline. ONE conditioning path, used by both builds.        *
+ * ------------------------------------------------------------------ */
+
+let device=null,connected=false,demo=false,raw=0,baseline=null,taring=false,tSamp=[],tStart=0,tEnd=0;
+let force=0;     // floored by the movement's start tension - what the game draws
+let absF=0;      // the bar's absolute reading - what the slack rule needs
+
+function setStatus(t,c){$('statusTxt').textContent=t;$('dot').className='dot'+(c?' '+c:'')}
+async function connect(){
+  if(!navigator.bluetooth){setStatus('No Web Bluetooth','');alert('Bluetooth needs Chrome on Android, or the free Bluefy browser on iPhone (App Store). Or press Demo to play without the bar.');return;}
+  if(!window.isSecureContext){setStatus('Not secure','');alert('Serve over https or localhost.');return;}
+  try{setStatus('Scanning...','wait');
+    device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE]});
+    device.addEventListener('gattserverdisconnected',()=>{connected=false;setStatus('Disconnected','')});
+    setStatus('Connecting...','wait');
+    const srv=await(await device.gatt.connect()).getPrimaryService(SERVICE);
+    const fc=await srv.getCharacteristic(CH_FORCE);await fc.startNotifications();
+    fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);onSample()});
+    /* STOP THE DEMO DRIVER. It used to keep running at 27 ms after a real bar
+       connected, interleaving a decaying fake signal with live notifications, so
+       the reading flickered between the true value and near zero and reps were
+       double-counted or lost with no way out but a page reload. */
+    stopDemo();
+    demo=false;connected=true;$('firstrun').classList.remove('show');startTare();
+  }catch(e){console.error(e);if(e.name==='NotFoundError'){setStatus('No bar found','');alert('No device selected, or nothing advertising.')}else{setStatus(e.name,'')}}
+}
+function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
+function onSample(){
+  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
+  if(baseline==null)baseline=raw;
+  absF=Math.max(0,raw-baseline);
+  force=Math.max(0,absF-calLo());
+  feed(performance.now());
+}
+
+/* THE SHELL'S ENTRY POINT INTO THIS PAGE, and the reason there is only one
+   conditioning path to keep correct.
+
+   The Android TV shell used to assign `force` itself, which REPLACED this
+   function - so anything that conditioned the raw signal had to be written twice
+   or it silently did not exist on the TV. Three shipped bugs came out of that
+   one shape (docs/OVERHAUL-PLAN.md invariant 1). The shell now hands the raw
+   sample here instead, so the turnaround detector, the slack rule, absF and the
+   tare all behave identically in a browser and on the couch, because they are
+   literally the same code running.
+
+     v   one sample in BAR UNITS, straight off the characteristic. The shell has
+         already removed its own native zero and pins `baseline` to 0, so the
+         raw-baseline arithmetic above stays an identity. */
+window.__x3fIngest=function(v){raw=+v||0;onSample()};
+
+let demoF=0,pull=false;
+/* The demo ramps at exactly the selected tempo - a full phase to travel the
+   whole calibrated range - so holding the key in time with the metronome is what
+   scores, which is the thing the game is teaching. It also feeds raw ABOVE the
+   movement's floor, because releasing a key is a person returning to the start
+   position, not a person letting the band go slack, and a demo that accused you
+   of slack every rep would teach the wrong lesson about the one force rule here. */
+function startDemo(){demo=true;connected=false;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
+  if(!startDemo.l)startDemo.l=setInterval(()=>{const step=ref()*(27/phaseMs);
+    if(pull)demoF=Math.min(ref()*1.02,demoF+step);else demoF=Math.max(0,demoF-step);
+    raw=demoF+calLo();onSample()},27)}
+function stopDemo(){if(startDemo.l){clearInterval(startDemo.l);startDemo.l=null}demoF=0;pull=false}
+$('stage').addEventListener('pointerdown',()=>{if(demo)pull=true});addEventListener('pointerup',()=>pull=false);
+addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});addEventListener('keyup',e=>{if(e.code==='Space')pull=false});
+$('frConnect').onclick=connect;$('frDemo').onclick=startDemo;
+$('zeroBtn').onclick=()=>{if(demo){baseline=0}else startTare()};
+
+let ac=null;function beep(f,d,g){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();const o=ac.createOscillator(),gn=ac.createGain();o.type='triangle';o.frequency.value=f;o.connect(gn);gn.connect(ac.destination);gn.gain.setValueAtTime(0.0001,ac.currentTime);gn.gain.exponentialRampToValueAtTime(g||0.22,ac.currentTime+0.01);gn.gain.exponentialRampToValueAtTime(0.0001,ac.currentTime+d);o.start();o.stop(ac.currentTime+d+0.03)}catch(e){}}
+function toast(t){$('toast').textContent=t;$('toast').classList.add('show');toast.e=performance.now()+900}
+
+/* ------------------------------------------------------------------ *
+ *  Turnaround detection - TIMING ONLY.                                *
+ *                                                                     *
+ *  This is not a rep counter. x3f-set.js counts the reps, grades the   *
+ *  three tiers and finds the form faults for every game in the suite,  *
+ *  and this page reads those back through X3FSet.live(). What it does  *
+ *  not expose - because no other game needs it - is the INSTANT a rep  *
+ *  turned around, and that instant is the whole judgement here. So the *
+ *  only thing computed locally is a direction reversal and its         *
+ *  timestamp.                                                          *
+ * ------------------------------------------------------------------ */
+
+/* The reversal threshold, as a fraction of the calibrated span. It has to be
+   small: the end of a set is supposed to be reps an inch long ("until the last
+   rep is an inch"), and a detector that cannot see those would stop scoring at
+   exactly the point the program cares about most. On a real White-band overhead
+   press capture (52 hold, 78 max, span 26) 0.035 is 0.9 force units - far below
+   any deliberate movement and far above load-cell jitter. x3f-set.js's own
+   REP_MIN_AMP is 0.06 for the same signal, so this deliberately triggers a
+   little before the shared counter does rather than after it. */
+const TURN=0.035;
+/* A light low-pass, on the detector's copy of the signal only. Never on the
+   value that is drawn and never on anything the shared engine sees. */
+const SMOOTH=0.35;
+
+let sm=0,rising=true,hiX=0,tHi=0,loX=0,tLo=0,primed=false;
+let lastTurnAt=0;        // when the bar last changed direction
+let slackSeen=false;     // did the band go slack on the way down to this bottom
+let setTop=0;            // the best rep amplitude this set, linear
+let topDisp=0;           // ...and how high that read on screen, for the gold line
+let dispF=0;             // the eased display position, this frame
+
+function slackLine(){const lo=calLo();return lo>0?lo*0.90:-1}
+function clamp01(v){return v<0?0:(v>1?1:v)}
+
+/* THE UNCLAMPED position in the calibrated range.
+
+   X3FCal.raw() is this same arithmetic with a clamp at both ends - x3f-set.js
+   states the identity outright: a game's floored force over X3FCal.span() IS
+   X3FCal.raw() of the unfloored signal. The clamp is exactly what has to go
+   here, and only here. When the band goes slack the trough sits BELOW the
+   movement's start tension, and a signal clamped at zero flattens that whole
+   stretch into one flat line - so the "turnaround" drifts from the moment the
+   bar actually reversed to the moment the user climbed back out of the slack,
+   which on a measured trace was 1.9 seconds late. That single instant is the
+   only thing this game judges, so it has to be the real one. Every THRESHOLD
+   below is still applied to the clamped 0..1 value. */
+function linU(f){return (f-calLo())/ref()}
+
+function feed(t){
+  const u=linU(absF);
+  dispF=disp(absF);
+  if(dispF>topDisp)topDisp=dispF;
+  /* SLACK IS THE ONLY FORCE RULE IN THIS GAME, and it is a floor, never a
+     ceiling. The 10% margin is there because an uncalibrated movement's floor is
+     an estimate that x3f-cal deliberately errs LOW; under-reporting slack is the
+     safe direction, because the penalty is a broken combo. */
+  const sl=slackLine();
+  if(sl>=0&&absF<sl)slackSeen=true;
+  /* Seed from the first real sample. Starting the detector at zero while the bar
+     is still on the floor - u is strongly negative there, because the start
+     position carries load and nobody is holding it yet - would fire one phantom
+     turnaround before the user has touched anything. */
+  if(!primed){primed=true;sm=u;hiX=u;loX=u;tHi=tLo=t;return}
+  sm=sm+(u-sm)*SMOOTH;
+  if(rising){
+    if(sm>=hiX){hiX=sm;tHi=t}
+    else if(hiX-sm>=TURN){turn(true,tHi,hiX);rising=false;loX=sm;tLo=t}
+  }else{
+    if(sm<=loX){loX=sm;tLo=t}
+    else if(sm-loX>=TURN){turn(false,tLo,loX);rising=true;hiX=sm;tHi=t}
+  }
+}
+
+function turn(isTop,tAt,level){
+  lastTurnAt=tAt;
+  level=clamp01(level);
+  let fresh=false;
+  if(isTop){
+    fresh=level>setTop+0.01;
+    if(level>setTop)setTop=level;
+  }
+  if(running)consume(isTop,tAt,level,fresh);
+  /* A new descent begins at the top, so the slack flag describes the trough that
+     is about to happen rather than the one before it. */
+  if(isTop)slackSeen=false;
+}
+
+/* ------------------------------------------------------------------ *
+ *  The note highway.                                                  *
+ * ------------------------------------------------------------------ */
+
+const cv=$('cv'),ctx=cv.getContext('2d');let W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener('resize',resize);
+
+/* The hit window and the two grade bands, as fractions of one phase.
+
+   Sized from a measurement, not a guess. At the metronome's own tempo the
+   detector lands within 30 ms of the beat, so anything here is generous to an
+   honest rep. What it has to discriminate is RUSHING: at the tempo this game
+   used to default to (909 ms a phase) a player's turnarounds drift against the
+   beat by 454 ms each note, so with a window of 0.32 of a phase - 800 ms at the
+   standard tempo - about a third of the notes fall outside it and the rest drop
+   out of PERFECT. Measured on a synthetic 20-phase trace: 7557 points taken at
+   the protocol's tempo against 5079 for nearly three times as many reps taken
+   fast, with four notes missed outright.
+
+   That is the whole point. "Sometimes individuals will start to increase the
+   repetition speed so they can break a personal record. Don't do that." Going
+   faster has to be worth LESS, and it is - while a rep taken anywhere inside the
+   program's own two-to-three-second range still lands cleanly. */
+const WIN=0.32, WIN_PERFECT=0.12, WIN_GOOD=0.24;
+let running=false,notes=[],nextNoteAt=0,noteIdx=0,score=0,combo=0,travel=4000;
+let liveTier='full',hud=null,ending=false;
+
+function hitX(){return W*0.26}
+function playTop(){return 56}
+function playBot(){return Math.max(playTop()+40,H-84)}
+function mapY(f){const t=playTop(),b=playBot();return b-(b-t)*Math.max(0,Math.min(1,f))}
+/* The two lanes are LANES, not force targets. A top note does not say "pull this
+   hard" - nothing in this game ever does - it says "this is the beat your rep
+   should peak on". */
+function laneTopY(){return mapY(0.88)}
+function laneBotY(){return mapY(0.10)}
+
+function chips(){$('hScore').textContent=score;$('hCombo').textContent='x'+combo}
+
+function consume(isTop,tAt,level,fresh){
+  const win=phaseMs*WIN;
+  let best=null,bd=Infinity;
+  for(let i=0;i<notes.length;i++){
+    const n=notes[i];
+    if(n.judged||n.top!==isTop)continue;
+    const d=Math.abs(tAt-n.t);
+    if(d<=win&&d<bd){best=n;bd=d}
+  }
+  /* An extra turnaround between notes costs nothing. Doing MORE work than the
+     metronome asked for must never be a penalty - that is the mistake this whole
+     rewrite exists to undo. */
+  if(!best)return;
+  judge(best,bd,level,isTop,fresh);
+}
+
+function judge(n,dt,level,isTop,fresh){
+  n.judged=true;
+  /* The only way to fail a bottom note: the band went slack. "Never let the band
+     go slack at the bottom" - the game used to pay for exactly this. */
+  if(!isTop&&slackSeen){n.ok=false;n.why='slack';combo=0;chips();toast('SLACK - HOLD THE TENSION');beep(180,0.20,0.24);return}
+  n.ok=true;
+  const g=dt<=phaseMs*WIN_PERFECT?2:(dt<=phaseMs*WIN_GOOD?1:0);
+  n.grade=g;
+  combo++;
+  let pts=100+(g===2?160:g===1?70:0)+Math.min(200,combo*5);
+  if(isTop){
+    /* MONOTONIC IN EFFORT. Every extra unit of force is worth more points, all
+       the way to the top of the calibrated range and beyond it. There is no
+       window, no ceiling and no "too hard". */
+    pts+=Math.round(150*clamp01(level));
+    if(fresh){pts+=150;toast('NEW TOP');}
+  }else if(slackLine()>=0){
+    pts+=60;                       // constant tension held through the turnaround
+  }
+  /* PAST FULL-RANGE FAILURE IS WORTH MORE, not less. The shared engine says when
+     the set has dropped out of full range; from that moment every note carries
+     this bonus, because "what you did after full-range failure" is the part of
+     the set the source says counts most - and it is the part this game used to
+     score worst, since shorter reps sat further from the old force window. */
+  if(liveTier==='mid'||liveTier==='weak')pts+=100;
+  score+=pts;
+  chips();
+  /* Shown live, written once at the end of the set. A localStorage write per
+     note is a synchronous disk touch inside the audio scheduler's frame. */
+  if(score>bestRun){bestRun=score;$('hBest').textContent=bestRun}
+  if(g===2)beep(isTop?1244:988,0.06,0.20);else beep(isTop?988:784,0.05,0.15);
+  if(combo>0&&combo%10===0)toast(combo+' ON TEMPO');
+  if(navigator.vibrate)navigator.vibrate(g===2?24:14);
+}
+
+function resetSet(){
+  notes.length=0;noteIdx=0;nextNoteAt=0;
+  primed=false;rising=true;setTop=0;topDisp=0;slackSeen=false;
+  lastTurnAt=performance.now();
+}
+
+function start(){
+  resetSet();
+  score=0;combo=0;chips();
+  phaseMs=+tempoSel.value||PH_MID;
+  travel=phaseMs*1.6;
+  /* The lead-in IS the count-in: the first note is spawned a full lane away plus
+     a beat, so it is visibly falling while you put the remote down and pick the
+     bar up. Nothing has to be pressed once the set is running. */
+  nextNoteAt=performance.now()+travel+phaseMs*0.5;
+  running=true;ending=false;
+  tempoSel.disabled=true;
+  $('startBtn').textContent='End Set';
+  /* The peak/TUT/rep watcher accumulates from page load until something resets
+     it. Four games never did, so a hard test-yank before the set became the
+     set's logged peak - and X3FCal.observe() then banked that as the movement's
+     ceiling for every other game (docs/audit/games-b.md D-05). */
+  try{if(window.X3FSet)X3FSet.reset()}catch(e){}
+  if(window.X3FHUD){
+    if(hud){try{hud.destroy()}catch(e){}}
+    hud=X3FHUD.create({host:document.body,name:EXNAME||'Rhythm'});
+  }
+  toast('GET SET');beep(660,0.14,0.24);
+}
+
+function stop(auto){
+  if(!running)return;
+  running=false;
+  tempoSel.disabled=false;
+  $('startBtn').textContent='Start Set';
+  notes.length=0;
+  let L={reps:0};
+  try{if(window.X3FSet)L=X3FSet.live()}catch(e){}
+  /* NO SET IS LOGGED FOR A SET THAT DID NOT HAPPEN. Start then Stop used to
+     write a history entry, which makes today a training day, extends the streak
+     and flips which workout the 12-week program offers tomorrow - all from a
+     mis-tap with the bar unplugged (docs/audit/games-b.md D-12). The scoreboard
+     goes away with it, rather than sitting on the screen announcing a set of
+     nought. */
+  if(!(L.reps>0)){
+    if(hud){try{hud.destroy()}catch(e){}hud=null}
+    try{if(window.X3FSet)X3FSet.reset()}catch(e){}
+    toast('No reps - nothing logged');return;
+  }
+  /* The counter STAYS on screen with the last number on it. That number is the
+     one you want to read, and replacing it the moment you stop is how a rep
+     count gets missed. */
+  if(hud){try{hud.done()}catch(e){}}
+  xset('rhythmBest',bestRun);
+  /* Reported as a SET, not as an arcade run. The reporter tells the two apart by
+     "has a score and no rep count", and this game genuinely has a rep count now -
+     the shared engine's, read straight back out of X3FSet.live(). It then fills
+     in the three tiers, the peak, the time under tension and the form faults from
+     the same trace, so Rhythm finally contributes everything the program asks
+     for instead of a bare score. */
+  try{
+    if(window.X3FSet)X3FSet.report({g:'rhythm',reps:L.reps,score:score});
+  }catch(e){}
+  toast(auto?'SET COMPLETE':'SET LOGGED');
+  beep(1046,0.12,0.24);
+}
+
+$('startBtn').onclick=()=>{running?stop(false):start()};
+
+function loop(now){
+  if(!W)resize();
+  if(running){
+    while(nextNoteAt<now+travel){
+      notes.push({t:nextNoteAt,top:(noteIdx%2===0),judged:false,ok:false,grade:0,tick:false,why:''});
+      noteIdx++;nextNoteAt+=phaseMs;
+    }
+    const win=phaseMs*WIN;
+    for(let i=0;i<notes.length;i++){
+      const n=notes[i];
+      /* The metronome ticks when the note LANDS. It used to beep when the note
+         was spawned, a full lane-length - 2.1 seconds - before the beat it was
+         supposed to mark. */
+      if(!n.tick&&now>=n.t){n.tick=true;beep(n.top?784:392,0.05,0.13)}
+      /* Nothing turned around inside the window: the beat went past. Say so once
+         a run was worth having, and say it in terms of TEMPO, because tempo is
+         the only thing that can be off here. */
+      if(!n.judged&&now>n.t+win){n.judged=true;n.ok=false;n.why='late';
+        if(combo>=5)toast('OFF TEMPO - '+(phaseMs/1000).toFixed(1)+'s EACH WAY');
+        combo=0;chips()}
+    }
+    /* Trim from the front instead of rebuilding the array: notes are in time
+       order, and `beats.filter(...)` allocated a fresh array every single frame. */
+    while(notes.length&&notes[0].t<now-phaseMs*0.9)notes.shift();
+
+    if(window.X3FSet){
+      const L=X3FSet.live();
+      liveTier=L.tier||'full';
+      if(hud)hud.set({reps:L.reps,full:L.full,mid:L.mid,weak:L.weak,tier:liveTier,frac:dispF});
+      /* A set ends at failure, not at a button. Six phases - three whole reps -
+         with the bar not turning around at all is the bar being put down, so the
+         set closes itself and reports. Generous on purpose: a long grind at the
+         top of a rep is training, not stopping.
+
+         Handed to a timer rather than run here: report() walks the whole history
+         and evaluates the entire achievement catalogue, and doing that inside an
+         animation frame is a visible hitch on a television (docs/audit/games-b.md
+         D-19). `ending` stops the next few frames queuing it again. */
+      if(L.reps>0&&!ending&&now-lastTurnAt>phaseMs*6){
+        ending=true;setTimeout(function(){stop(true)},0);
+      }
+    }
+  }
+  draw(now);
+  if(toast.e&&now>toast.e){$('toast').classList.remove('show');toast.e=0}
+  requestAnimationFrame(loop);
+}
+
+function draw(now){
+  ctx.clearRect(0,0,W,H);
+  const bot=playBot(),hx=hitX(),slack=slackLine()>=0&&absF<slackLine();
+
+  /* THE FLOOR. Below this line the band is slack, and the strip lights when you
+     are in it. This is the only place in the game where being somewhere is
+     wrong, and it is the bottom of the range, not the top. */
+  ctx.fillStyle=slack?'rgba(255,93,120,.22)':'rgba(255,93,120,.06)';
+  ctx.fillRect(0,bot,W,16);
+  ctx.strokeStyle=slack?'rgba(255,93,120,.9)':'rgba(255,93,120,.30)';
+  ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,bot);ctx.lineTo(W,bot);ctx.stroke();
+
+  // the two note lanes
+  ctx.strokeStyle='rgba(255,255,255,.07)';ctx.lineWidth=1;
+  [laneTopY(),laneBotY()].forEach(y=>{ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()});
+
+  // the best rep of this set - a line that only ever goes up
+  if(topDisp>0.03){
+    const y=mapY(topDisp);
+    ctx.strokeStyle='rgba(255,211,92,.55)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
+  }
+
+  // the hit line
+  ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(hx,playTop()-14);ctx.lineTo(hx,bot+16);ctx.stroke();
+
+  // notes: a top note is a filled disc, a bottom note a ring. Shape first, hue
+  // third - the same rule the shared scoreboard follows.
+  const pps=(W-hx)/travel;
+  for(let i=0;i<notes.length;i++){
+    const n=notes[i],x=hx+(n.t-now)*pps,y=n.top?laneTopY():laneBotY();
+    if(x<-30||x>W+30)continue;
+    /* A judged note keeps its verdict on the lane behind you: gold for a rep
+       that turned around dead on the beat, white for one inside the window, red
+       for a beat that went past or a bottom that went slack. */
+    const col=n.judged?(n.ok?(n.grade===2?'#ffd35c':'#eaf0fa'):'#ff5d78'):(n.top?'#2ff0b0':'#37d6ff');
+    ctx.beginPath();ctx.arc(x,y,n.judged?9:14,0,7);
+    ctx.shadowColor=col;ctx.shadowBlur=n.judged?0:12;
+    if(n.top||n.judged){ctx.fillStyle=col;ctx.fill()}
+    else{ctx.strokeStyle=col;ctx.lineWidth=4;ctx.stroke()}
+    ctx.shadowBlur=0;
+  }
+
+  // you
+  const my=mapY(dispF);
+  ctx.fillStyle=slack?'#ff5d78':'#eaf0fa';ctx.shadowColor=slack?'#ff5d78':'#fff';ctx.shadowBlur=10;
+  ctx.beginPath();ctx.arc(hx,my,9,0,7);ctx.fill();ctx.shadowBlur=0;
+
+  ctx.font="11px 'Space Grotesk'";ctx.textAlign='right';
+  ctx.fillStyle='rgba(47,240,176,.75)';ctx.fillText('TOP OF REP',W-10,laneTopY()-14);
+  ctx.fillStyle='rgba(55,214,255,.75)';ctx.fillText('BOTTOM OF REP',W-10,laneBotY()-14);
+  ctx.fillStyle=slack?'rgba(255,93,120,.95)':'rgba(255,93,120,.55)';
+  ctx.fillText(slack?'SLACK':'KEEP TENSION BELOW HERE',W-10,bot+13);
+  ctx.textAlign='left';
+}
+
+resize();requestAnimationFrame(loop);
+</script>
+<script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
+<script src="x3f-hud.js"></script>
+<script src="x3f-progress.js"></script>
+<script src="x3f-set.js"></script>
+<script src="x3f-music.js"></script>
+<script>/* soundtrack: reacts to your pull where the page exposes one */
+addEventListener("load",function(){try{
+  var f=function(){ try{ return Math.min(1,(force/ref())*1.05); }catch(e){ return 0.25; } };
+  X3FMusic.attach({mood:"rhythm",getIntensity:f,
+    buttonHost:document.querySelector(".topbar")||document.body,buttonClass:"mini"});
+}catch(e){}});</script>
+<script>/* The reporter measures peak, time under tension, time in the strong range,
+   the three rep tiers and the form faults itself. opts.abs hands it the UNFLOORED
+   reading, which turns its slack detection from a dwell heuristic into the literal
+   "below the movement's start tension" test this page already applies. */
+addEventListener('load',function(){try{X3FSet.watch(
+  function(){return force},
+  function(){return ref()},
+  {abs:function(){return absF}});}catch(e){}});</script>
+</body></html>

@@ -1,0 +1,192 @@
+/* X3F fonts — bundled, local, and the reason the app can now start with no network.
+
+   ─────────────────────────────────────────────────────────────────────────
+   WHAT THIS REPLACES, AND WHY IT HAD TO GO
+   ─────────────────────────────────────────────────────────────────────────
+
+   Until now 12 of the 13 pages in web/ — every one except Ascent, which is
+   phone-only and uses a plain system stack — carried a pair of preconnects to
+   Google's font hosts plus a `css2?family=…&display=swap` stylesheet <link>.
+   (docs/audit/shell.md D-36 quotes the exact markup. It is deliberately not
+   quoted here, and neither of Google's two *font* host names appears anywhere
+   under web/ — including in this sentence, which is why it talks around them.
+   So the guard is exact:
+
+       grep -rn "fonts\.googleapis\.com\|fonts\.gstatic\.com" web/
+
+   That returns nothing today, and any hit is a real regression rather than a
+   comment matching itself. Grep for the bare word "googleapis" instead and you
+   will hit x3f-sync.js, which talks to Firebase's auth endpoints on purpose —
+   a different question entirely, and one AD-6 answers.)
+
+   A stylesheet <link> is render-blocking. So the normal TV start-up — turn on
+   the set, open the app, the Wi-Fi has not associated yet — meant the WebView
+   had to resolve DNS, complete a TLS handshake and fetch a stylesheet before
+   it could paint anything at all. The shell sets no cache mode, so a cold
+   start had nothing to fall back on either. What the user saw was not a
+   fallback font: it was a blank screen for however long the network stack
+   took to give up. OVERHAUL-PLAN AD-5 makes offline a hard requirement, and
+   AD-5's second half — setBlockNetworkLoads(true) on the WebView — would have
+   turned that hang into a permanent, silent loss of the typeface.
+
+   These three files are those same fonts, on disk. No page under web/ fetches
+   a font over the network any more.
+
+   Two things outside web/ still do, and neither can be fixed from here:
+   app/src/main/assets/launcher.html and its byte-identical twin index.html are
+   hand-maintained (sync-from-web.py lists them UNMANAGED) and still carry both
+   links — and the launcher is the very first screen the TV paints, so D-36 is
+   not closed until someone adds this stylesheet to those two by hand. Ascent
+   still pulls Three.js from a CDN, but it is deliberately not in the TV bundle
+   and says so in its own header.
+
+   ─────────────────────────────────────────────────────────────────────────
+   WHAT IS BUNDLED, AND WHY IT IS ONLY THREE FILES
+   ─────────────────────────────────────────────────────────────────────────
+
+   The pages between them asked Google for eight faces: Fredoka 500/600/700,
+   Sora 500/600/700/800, Space Grotesk 500/700. But Google does not serve eight
+   files — each of these families is a single *variable* font, and every weight
+   of a family resolves to the same URL with the weight axis set by CSS. So the
+   whole of the app's typography is three files:
+
+       fredoka-var-latin.woff2         29,732 B   wght 300–700
+       sora-var-latin.woff2            33,652 B   wght 100–800
+       space-grotesk-var-latin.woff2   22,288 B   wght 300–700
+                                       ─────────
+                                       85,672 B   (~84 KB, one-time, on disk)
+
+   Each is the unmodified "latin" subset straight off Google's font CDN — the
+   exact bytes these pages were already downloading on every cold start. That
+   is deliberate. Re-subsetting them here would shave maybe 45 KB off a bundle
+   whose budget is 5 MB, in exchange for a class of bug that is invisible until
+   someone adds a character to a string: a glyph that used to render suddenly
+   falling back to the system face mid-word. Identical bytes means the offline
+   build renders identically to the online one, and no glyph can go missing
+   that was not already missing.
+
+   Verified with fontTools after download: all three carry a wght axis covering
+   the weights the pages ask for, all three cover U+0020–U+007E completely, and
+   Sora and Space Grotesk both carry `tnum`, which is what makes the design
+   system's `font-variant-numeric: tabular-nums` (and therefore the fixed-width
+   rep counter of AD-3) actually do something.
+
+   What they do NOT carry — and did not carry before either, so this is not a
+   regression — is the symbol set the pages sprinkle around: → ✓ ✕ ✦ ▶ ◀ ★ ≈ ≥.
+   Google's latin subset stops at U+2000–U+206F plus a handful of strays, so
+   those characters have always fallen through to the system face, one glyph at
+   a time. · — – … × are present. ↑ ↓ are present in Space Grotesk only. The
+   emoji scattered through the menus (🔥 💪 🎯 …) come from the system emoji
+   font and never came from here.
+
+   To re-fetch after a Google Fonts version bump, ask their css2 endpoint for
+   this query with a *modern* browser User-Agent (an old or absent UA gets you
+   .ttf, roughly four times the bytes) and take the `latin` block's URL:
+
+       family=Fredoka:wght@300..700&family=Sora:wght@100..800
+       &family=Space+Grotesk:wght@300..700&display=block
+
+   ─────────────────────────────────────────────────────────────────────────
+   font-display: block, NOT swap
+   ─────────────────────────────────────────────────────────────────────────
+
+   The old links all said `&display=swap`, which is the right answer on the
+   web: paint immediately in a fallback face, then swap the real one in when it
+   arrives. It is the wrong answer here for two reasons.
+
+   First, the wait is not a wait. These files are on the local disk, so the
+   "block period" is a frame or two, not the seconds a network fetch costs.
+
+   Second, and this is the one that matters: a swap is a full re-layout of
+   every piece of text on screen, and on a TV the user is eight feet away and
+   often looking somewhere else entirely (AD-3 — during a set their eyes are on
+   the bar, and motion in peripheral vision reads as an alert). A reflow that
+   is a barely-perceptible flicker on a phone at arm's length is a whole screen
+   visibly jumping from across a room. Better a frame of nothing than a frame
+   of the wrong thing followed by a lurch.
+
+   If a file ever goes missing the load fails immediately rather than waiting
+   out the block period, and every stack below ends in a system face, so the
+   worst case is the old system-ui look — never a hang.
+
+   No `unicode-range` is declared. Google's CSS uses it to pick one of eleven
+   language subsets per family; we ship one subset per family, so the only
+   thing a range would add is a way for the face not to match. A character the
+   face lacks falls back per-glyph either way. No `font-stretch` either: these
+   files carry a wght axis and nothing else (checked, not assumed), so there is
+   no width axis to select and declaring one would only be another match to
+   fail.
+
+   Licence: all three are SIL Open Font License 1.1, which is what makes
+   bundling them legal and which requires the notice to ship alongside them.
+   It is in OFL.txt in this folder. Do not delete it.
+*/
+
+/* ─── the three real families ──────────────────────────────────────────────
+   Declared under their own names because the 13 pages already reference them
+   that way, in their own `--d` / `--n` (or `--display` / `--num`) variables.
+   Those pages are untouched by this change beyond swapping the <link>: Bloom,
+   Nova and Splash keep bubbly Fredoka, everything else keeps Sora, and all 13
+   keep Space Grotesk for numbers. */
+
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 300 700;          /* the file's actual wght axis */
+  font-display: block;
+  src: url(fredoka-var-latin.woff2) format('woff2');
+}
+
+@font-face {
+  font-family: 'Sora';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: block;
+  src: url(sora-var-latin.woff2) format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: block;
+  src: url(space-grotesk-var-latin.woff2) format('woff2');
+}
+
+/* ─── the design system's two names ───────────────────────────────────────
+   x3f-ui.css asks for 'X3F Display' and 'X3F Num' rather than for a typeface
+   by name, so that the design can be re-cut later without touching a single
+   rule. These two blocks are what those names resolve to. They point at files
+   already declared above; a browser fetches each URL once, so the aliases cost
+   nothing on disk or on the wire.
+
+   Display → Sora. The pages disagreed about this and had visibly diverged:
+   web/index.html uses Sora while the TV's own launcher.html uses Fredoka, so
+   the hub and the TV home screen are in different typefaces today. Sora wins
+   here on three counts — it is what nine of the twelve pages already use, it
+   is what every menu the new shell replaces (index, Routine, Library,
+   Progress, Calibrate) already uses, and it is the family that matches the
+   fallback stack x3f-ui.css already wrote for this name (system-ui / Segoe UI
+   — a neutral geometric sans, which Fredoka's rounded display face is not).
+   Fredoka stays a real, bundled family for the three bubbly games; it is just
+   not the voice of the shell.
+
+   Num → Space Grotesk, which is unanimous: all 13 pages already use it for
+   numbers, and it has the `tnum` feature the fixed-width rep counter needs.
+   Fredoka does not have `tnum`, which is a second reason it is not this. */
+
+@font-face {
+  font-family: 'X3F Display';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: block;
+  src: url(sora-var-latin.woff2) format('woff2');
+}
+
+@font-face {
+  font-family: 'X3F Num';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: block;
+  src: url(space-grotesk-var-latin.woff2) format('woff2');
+}

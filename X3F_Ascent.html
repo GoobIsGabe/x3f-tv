@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<!--
+  X3F ASCENT — a 3D Three.js flight game powered by the X3 Force bar.
+  Force = thrust. Pull to climb against gravity, fly the core through energy rings.
+  Protocol: service e3458900 / force char e3458901 (LE float64, ~37Hz), auto-zeroed.
+  Open in Chrome/Edge (or Brave w/ Web Bluetooth flag on). Hit DEMO to play now:
+  hold SPACE or mouse to thrust. Needs internet (loads Three.js from CDN).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>X3F Ascent</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  html,body{margin:0;height:100%;background:#05070d;overflow:hidden;
+    font-family:'Segoe UI',system-ui,sans-serif;color:#eaf2ff;user-select:none;-webkit-tap-highlight-color:transparent}
+  #c{position:fixed;inset:0;display:block}
+  .hud{position:fixed;inset:0;pointer-events:none}
+  .top{position:absolute;top:16px;left:16px;right:16px;display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+  .card{background:rgba(14,20,34,.66);backdrop-filter:blur(6px);border:1px solid #263149;
+    border-radius:14px;padding:10px 16px}
+  .lbl{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8092ad}
+  .val{font-size:26px;font-weight:800;line-height:1.1}
+  .val.sm{font-size:18px}
+  .accent{color:#2ee6a6}.gold{color:#ffd35c}.combo{color:#7cf}
+  .grow{flex:1}
+  .btns{pointer-events:auto;display:flex;gap:8px}
+  button{font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;border:none;border-radius:11px;
+    padding:10px 15px;color:#06110c;background:#2ee6a6;transition:transform .06s,filter .15s}
+  button.ghost{background:rgba(20,28,46,.8);color:#eaf2ff;border:1px solid #2b3852}
+  button:hover{filter:brightness(1.08)}button:active{transform:translateY(1px)}
+  /* force meter */
+  .fbar{position:absolute;left:18px;bottom:18px;width:42px;top:120px;background:rgba(14,20,34,.6);
+    border:1px solid #263149;border-radius:12px;overflow:hidden}
+  .ffill{position:absolute;left:0;right:0;bottom:0;height:0%;
+    background:linear-gradient(180deg,#2ee6a6,#0f9c7a);transition:height .05s linear}
+  .fhover{position:absolute;left:0;right:0;height:2px;background:#ffd35c;opacity:.8}
+  .center{position:absolute;left:0;right:0;top:42%;text-align:center}
+  .center .big{font-size:40px;font-weight:800;text-shadow:0 4px 30px #000}
+  .center .sm{font-size:15px;color:#aeb9cc;margin-top:6px}
+  .conn{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#ff5470}.dot.on{background:#2ee6a6;box-shadow:0 0 10px #2ee6a6}
+  .tag{font-size:11px;color:#8092ad;position:absolute;right:16px;bottom:14px}
+  #err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:30px;font-size:16px;color:#ffb4c0}
+</style>
+<script src="x3f-cal.js"></script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud">
+  <div class="top">
+    <div class="card"><div class="lbl">Score</div><div class="val accent" id="hScore">0</div></div>
+    <div class="card"><div class="lbl">Combo</div><div class="val combo" id="hCombo">x1</div></div>
+    <div class="card"><div class="lbl">Altitude</div><div class="val sm" id="hAlt">0 m</div></div>
+    <div class="card"><div class="lbl">Best</div><div class="val sm gold" id="hBest">0</div></div>
+    <div class="grow"></div>
+    <div class="btns">
+<button onclick="history.length>1?history.back():location.href='index.html'" aria-label="Back" style="display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:22px;font-weight:700;line-height:1;flex:0 0 auto;cursor:pointer;font-family:inherit">&lsaquo;</button>
+<button onclick="x3tv()" aria-label="TV mode" style="display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 12px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:12px;font-weight:800;letter-spacing:1px;cursor:pointer;font-family:inherit;flex:0 0 auto">TV</button>
+      <span class="card conn"><span class="dot" id="dot"></span><span id="connTxt" style="font-size:12px">Not connected</span></span>
+      <select id="bandSel" style="background:rgba(20,28,46,.85);color:#eaf2ff;border:1px solid #2b3852;border-radius:11px;padding:9px;font-family:inherit;font-weight:700;font-size:12px"></select>
+      <button id="connectBtn">Connect Bar</button>
+      <button id="demoBtn" class="ghost">Demo</button>
+    </div>
+  </div>
+  <div class="fbar"><div class="ffill" id="ffill"></div><div class="fhover" id="fhover" style="bottom:38%"></div></div>
+  <div class="center" id="center">
+    <div class="big" id="cBig">X3F ASCENT</div>
+    <div class="sm" id="cSm">Connect the bar or press Demo · hold SPACE / mouse to thrust</div>
+  </div>
+  <div class="tag" id="battTag"></div>
+</div>
+<div id="err">Couldn't load the 3D engine (Three.js) — check your internet connection, then reload.</div>
+
+<!-- The one page in this app that needs the network. three.js is ~600 KB, which
+     does not fit the sub-5MB APK budget, so Ascent is phone-only and online-only
+     and is deliberately not in the TV bundle or the service worker's precache.
+     If the library does not arrive, say so plainly rather than showing a black
+     screen that looks like a crash. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+if (typeof THREE === 'undefined') {
+  document.addEventListener('DOMContentLoaded', function () {
+    document.body.innerHTML =
+      '<div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;' +
+      'text-align:center;padding:2rem;font:600 1.25rem system-ui;color:#ECEEF2;background:#0F1114">' +
+      '<div><p style="margin-bottom:1rem">Ascent needs an internet connection.</p>' +
+      '<p style="color:#8B93A5;font-weight:500;max-width:32rem;line-height:1.5">It is the only game ' +
+      'that loads a 3D library from the web, so it cannot run offline. Every other game works ' +
+      'with no connection at all.</p>' +
+      '<p style="margin-top:1.5rem"><a href="index.html" style="color:#7C6CFF">Back</a></p></div></div>';
+  });
+}
+</script>
+<script>
+"use strict";
+if(!window.THREE){ document.getElementById('err').style.display='flex'; }
+else { (function(){
+// ---------------- BLE ----------------
+const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6';
+const CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6';
+const CH_BATT ='e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6';
+let device=null, connected=false, demo=false;
+let raw=0, baseline=null, taring=false, tSamp=[], tStart=0, tEnd=0;
+let force=0, peak=0, forceRef=180;
+const $=id=>document.getElementById(id);
+const store={get(k,d){try{return JSON.parse(localStorage.getItem('ascent_'+k))??d}catch(e){return d}},
+             set(k,v){try{localStorage.setItem('ascent_'+k,JSON.stringify(v))}catch(e){}}};
+let best=store.get('best',0); $('hBest').textContent=best;
+function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
+const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
+const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
+let band=xget('band','White');
+let bandMaxMap=Object.assign({},BAND_DEF,xget('bandMax',{}));
+const EXSLUG=window.X3FCal?X3FCal.slug():null;
+// same per-movement scale the rest of the suite uses: the span of THIS
+// movement's calibrated range, floored by the load its start position carries
+function bandRef(){return window.X3FCal?X3FCal.span(EXSLUG,band):Math.max(60,bandMaxMap[band]||130)}
+function calLo(){return window.X3FCal?X3FCal.floor(EXSLUG,band):0}
+window.__x3fBand=function(){return band};
+const bandSelEl=$('bandSel');
+BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSelEl.appendChild(o)});
+bandSelEl.onchange=()=>{band=bandSelEl.value;try{localStorage.setItem('x3f_band',JSON.stringify(band))}catch(e){}};
+(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;bandSelEl.value=band;}})();
+
+async function connect(){
+  if(!navigator.bluetooth){ setConn('No Web Bluetooth in this browser',false);
+    $('cBig').textContent='Web Bluetooth is off'; $('cSm').textContent='Use Chrome on Android, or the Bluefy browser on iPhone (App Store). Or press Demo.';
+    return; }
+  if(!window.isSecureContext){ setConn('Not a secure context',false);
+    $('cBig').textContent='Blocked (not secure context)'; $('cSm').textContent='Open via the Start Games launcher so it runs on http://localhost'; return; }
+  try{
+    setConn('Opening chooser…',false);
+    device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE]});
+    device.addEventListener('gattserverdisconnected',()=>{connected=false;setConn('Disconnected',false);});
+    setConn('Connecting…',false);
+    const srv=await(await device.gatt.connect()).getPrimaryService(SERVICE);
+    const fc=await srv.getCharacteristic(CH_FORCE); await fc.startNotifications();
+    fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);sample();});
+    try{const bc=await srv.getCharacteristic(CH_BATT);await bc.startNotifications();
+      bc.addEventListener('characteristicvaluechanged',e=>{const mv=e.target.value.getUint16(0,true);
+        $('battTag').textContent='🔋 '+(mv/1000).toFixed(2)+'V';});}catch(e){}
+    demo=false; connected=true; setConn('Connected — '+(device.name||'X3F'),true); startTare();
+  }catch(e){ console.error(e);
+    if(e.name==='NotFoundError'){ setConn('No device picked / none found',false); $('cSm').textContent='Chooser empty? Disconnect the bar from your phone first.'; }
+    else { setConn('Error: '+e.name,false); $('cBig').textContent='Bluetooth error'; $('cSm').textContent=e.name+' — '+(e.message||''); }
+  }
+}
+function setConn(t,on){$('connTxt').textContent=t;$('dot').classList.toggle('on',on);}
+function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;$('cBig').textContent='Zeroing…';$('cSm').textContent='hold the bar still';}
+function sample(){
+  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw); if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;if(!running)armReady();} return;}
+  if(baseline==null)baseline=raw;
+  force=Math.max(0,raw-baseline-calLo());
+  if(force>peak)peak=force;
+  forceRef=bandRef();
+}
+// demo input
+let demoF=0,pull=false;
+function startDemo(){demo=true;connected=false;baseline=0;setConn('Demo — hold SPACE / mouse',true);
+  if(!startDemo.l)startDemo.l=setInterval(()=>{ if(pull)demoF=Math.min(1000,demoF+60+Math.random()*25);
+    else demoF=Math.max(0,demoF*0.85-5); raw=demoF+(Math.random()*2-1); sample(); },26);
+  armReady();}
+addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault(); if(readyToStart)startRun();}});
+addEventListener('keyup',e=>{if(e.code==='Space')pull=false;});
+addEventListener('pointerdown',()=>{pull=true; if(readyToStart)startRun();});
+addEventListener('pointerup',()=>{pull=false;});
+
+// ---------------- THREE scene ----------------
+const scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x05070d,0.0055);
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
+const renderer=new THREE.WebGLRenderer({canvas:$('c'),antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(innerWidth,innerHeight);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+scene.add(new THREE.AmbientLight(0x334466,1.1));
+const key=new THREE.DirectionalLight(0x88bbff,1.2); key.position.set(3,10,-6); scene.add(key);
+
+// starfield
+const starGeo=new THREE.BufferGeometry(); const N=1400, sp=new Float32Array(N*3);
+for(let i=0;i<N;i++){sp[i*3]=(Math.random()-0.5)*160;sp[i*3+1]=(Math.random()-0.5)*120;sp[i*3+2]=Math.random()*260-20;}
+starGeo.setAttribute('position',new THREE.BufferAttribute(sp,3));
+const stars=new THREE.Points(starGeo,new THREE.PointsMaterial({color:0x9fd0ff,size:0.5,transparent:true,opacity:.8}));
+scene.add(stars);
+
+// floor & ceiling grids
+function grid(y,col){const g=new THREE.GridHelper(400,40,col,0x1b2740);g.position.y=y;g.material.transparent=true;g.material.opacity=.5;return g;}
+const floor=grid(-22,0x2ee6a6), ceil=grid(22,0x7c5cff); scene.add(floor,ceil);
+
+// ship (the "core")
+const ship=new THREE.Group();
+const core=new THREE.Mesh(new THREE.OctahedronGeometry(1.5,0),
+  new THREE.MeshStandardMaterial({color:0x0d1a2a,emissive:0x2ee6a6,emissiveIntensity:1.3,metalness:.5,roughness:.3}));
+const halo=new THREE.Mesh(new THREE.TorusGeometry(2.2,0.16,10,36),
+  new THREE.MeshStandardMaterial({color:0x0a1420,emissive:0x34d3ff,emissiveIntensity:1.1}));
+halo.rotation.x=Math.PI/2; ship.add(core,halo);
+const glow=new THREE.PointLight(0x2ee6a6,1.6,40); ship.add(glow);
+scene.add(ship);
+// thrust flame
+const flame=new THREE.Mesh(new THREE.ConeGeometry(0.7,2.4,12),
+  new THREE.MeshBasicMaterial({color:0xffca5c,transparent:true,opacity:.9}));
+flame.rotation.x=Math.PI; flame.position.y=-2.2; ship.add(flame);
+
+// rings pool
+const rings=[];
+function makeRing(){
+  const m=new THREE.Mesh(new THREE.TorusGeometry(3.6,0.42,12,40),
+    new THREE.MeshStandardMaterial({color:0x0a1420,emissive:0x34d3ff,emissiveIntensity:.9}));
+  m.rotation.x=Math.PI/2; m.visible=false; scene.add(m);
+  return {m,scored:false,active:false};
+}
+for(let i=0;i<10;i++)rings.push(makeRing());
+
+// ---------------- game state ----------------
+let running=false, readyToStart=false;
+let shipY=0, vy=0, dist=0, speed=44, score=0, combo=1, spawnZ=0;
+const GRAV=17, THR=44, YCLAMP=19;
+function armReady(){ readyToStart=true; running=false; $('center').style.display='';
+  $('cBig').textContent='READY'; $('cSm').textContent='Pull the bar (or press SPACE) to launch'; }
+function startRun(){
+  if(running)return; running=true; readyToStart=false; $('center').style.display='none';
+  shipY=0;vy=0;dist=0;speed=44;score=0;combo=1;spawnZ=90;
+  rings.forEach(r=>{r.active=false;r.m.visible=false;});
+}
+function endRun(){
+  running=false; if(score>best){best=score;store.set('best',best);$('hBest').textContent=best;}
+  $('center').style.display=''; $('cBig').textContent='RUN OVER · '+score+(score>=best?' 🏆':'');
+  $('cSm').textContent='Pull / SPACE to go again'; readyToStart=true;
+}
+
+function spawnRings(){
+  // keep rings ahead spaced by gap that tightens with distance
+  const gap=Math.max(34, 58 - dist*0.006);
+  while(spawnZ < dist+260){
+    const r=rings.find(x=>!x.active); if(!r)break;
+    r.active=true; r.scored=false; r.m.visible=true;
+    r.worldZ=spawnZ; r.y=(Math.random()*2-1)*15; r.m.material.emissive.setHex(0x34d3ff);
+    spawnZ+=gap;
+  }
+}
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  // force → normalized thrust
+  const norm=Math.min(1.6, force/forceRef);
+  $('ffill').style.height=Math.min(100,norm/1.6*100)+'%';
+  $('fhover').style.bottom=(GRAV/THR)/1.6*100+'%';
+  core.rotation.y+=dt*1.5; core.rotation.x+=dt*0.8; halo.rotation.z+=dt*2;
+  flame.scale.y=0.4+norm*1.3; flame.material.opacity=0.25+Math.min(0.7,norm*0.6);
+  glow.intensity=1.1+norm*1.8;
+
+  if(running){
+    vy += (norm*THR - GRAV)*dt; vy*=0.985; shipY+=vy*dt;
+    if(shipY> YCLAMP){shipY=YCLAMP;vy=0;} if(shipY<-YCLAMP){shipY=-YCLAMP;vy=0;}
+    speed=Math.min(96, speed+dt*1.4); dist+=speed*dt; score+=speed*dt*0.12*combo;
+    spawnRings();
+    for(const r of rings){ if(!r.active)continue;
+      const relZ=r.worldZ-dist;                // world ahead of ship
+      r.m.position.set(0,r.y,relZ);
+      if(!r.scored && relZ<=0){ r.scored=true;
+        if(Math.abs(shipY-r.y)<4.2){ score+=100*combo; combo++; r.m.material.emissive.setHex(0x2ee6a6);
+          $('hCombo').style.color='#2ee6a6'; }
+        else { combo=1; r.m.material.emissive.setHex(0xff5470); $('hCombo').style.color='#ff5470'; }
+      }
+      if(relZ<-16){ r.active=false; r.m.visible=false; }
+    }
+    // lose condition: pinned to floor with no thrust for a moment
+    if(shipY<=-YCLAMP+0.2 && norm<0.05){ endRun.pin=(endRun.pin||0)+dt; if(endRun.pin>1.6){endRun.pin=0;endRun();} }
+    else endRun.pin=0;
+  }
+
+  ship.position.set(0,shipY,0);
+  flame.rotation.x=Math.PI;
+  // camera chase
+  camera.position.set(0, shipY*0.45+5.5, -15);
+  camera.lookAt(0, shipY*0.6+2, 30);
+  // scroll world
+  const sc=(running?speed:14)*dt;
+  floor.position.z=-((dist)%10); ceil.position.z=-((dist)%10);
+  const pos=stars.geometry.attributes.position.array;
+  for(let i=0;i<N;i++){ pos[i*3+2]-=sc; if(pos[i*3+2]<-25){pos[i*3+2]+=270;} }
+  stars.geometry.attributes.position.needsUpdate=true;
+
+  $('hScore').textContent=Math.floor(score);
+  $('hCombo').textContent='x'+combo;
+  $('hAlt').textContent=Math.floor((shipY+YCLAMP)*3)+' m';
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+$('connectBtn').onclick=connect;
+$('demoBtn').onclick=startDemo;
+})();}
+</script>
+<script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script></body>
+</html>

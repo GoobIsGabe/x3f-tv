@@ -1,0 +1,1468 @@
+<!DOCTYPE html>
+<html lang="en">
+<!-- X3F ROUTINE — the guided session.
+
+     This is the most important screen in the app after the home, because it is
+     the one you are looking at BETWEEN MOVEMENTS with a bar in your hands.
+
+     ─────────────────────────────────────────────────────────────────────────
+     WHY IT LOOKS THE WAY IT DOES
+     ─────────────────────────────────────────────────────────────────────────
+
+     It used to carry its own private copy of the design language — one of four
+     that had drifted apart (different accents, different type scales, different
+     panel values; docs/audit/menus.md D20). All of it is gone. Presentation now
+     comes from x3f-ui.css and nothing here is sized in raw px, because a CSS
+     pixel is not a panel pixel: a 1080p Android TV normally hands the page a
+     960 x 540 CSS-px viewport, so a `28px` heading renders at 56 physical px —
+     double what a 1920-wide mock intended. `:root{font-size:calc(100vw/120)}`
+     pins 1rem to 16 design px on a 1920 canvas, so every size below is
+     identical on the panel whether the WebView reports 960, 1280 or 1920.
+
+     THIS PAGE SPANS BOTH DESIGN MODES (OVERHAUL-PLAN AD-3).
+
+       BROWSE — the day screen. You are on the sofa with both hands free.
+       Normal 10-foot rules: bands of content, one D-pad press per band, nothing
+       below 28 design px, 5% overscan on every edge.
+
+       IN-SET — the coach card, the rest timer and the "did that set count?"
+       prompt. Those are read while you are standing on a plate, often side-on,
+       in peripheral vision, for a fraction of a second. They get the scoreboard
+       treatment described in web/x3f-hud.js: one number dominating, tabular
+       numerals in a fixed-width slot, no motion, and state carried by LUMINANCE
+       and LAYOUT before hue. The rest countdown is 192 design px for exactly
+       that reason, and the tier backgrounds come straight from x3f-ui.css's
+       .x3f-tier-* ramp rather than being a colour change.
+
+     BAND IDENTITY IS NEVER A SWATCH. White / Light Gray / Dark Gray / Black /
+     Elite Black is a purely luminance-based palette sitting in the near-white
+     and near-black regions a TV renders worst, and it is invisible to a portion
+     of viewers. Every band on this page is the .x3f-band component — the name
+     in text, a distinct SHAPE, and only then a hue — next to
+     X3FEX.forceLabel(band, slug), which gives the real published pound range
+     for the band configuration this movement actually uses. "Dark Gray" alone
+     tells you nothing; "Dark Gray · 240+ lb" is a number you can reason about.
+
+     ─────────────────────────────────────────────────────────────────────────
+     THE DEFECTS THIS REBUILD CLOSES  (docs/audit/menus.md)
+     ─────────────────────────────────────────────────────────────────────────
+
+     D1  changing a <select> no longer destroys D-pad focus. Two independent
+         defences: the list is updated SURGICALLY rather than rebuilt, and every
+         control carries a stable data-nav-id so focus survives a rebuild too.
+     D2  BACK during a guided session asks before abandoning it, and tells the
+         native shell there is an overlay open so BACK never leaves the page.
+     D3  the page no longer half-handles Escape. One owner: x3f-nav.js.
+     D4  endSession() runs the session row through X3FProg.compact() instead of
+         re-introducing the hard 250-entry truncation the engine was fixed to
+         remove.
+     D5  no confirm(), no alert(). On a TV every confirm() auto-answers "yes"
+         and every alert() is invisible.
+     D8  the day tabs and the list now count "done" against the SAME number.
+     D10 the form demonstrator is paused when the coach closes, instead of
+         repainting a canvas inside an invisible overlay at 60 fps forever.
+     D11 overlay z-index is declared at #id.class specificity, so a page-level
+         `body>*` rule can never silently flatten the stacking order again.
+     D18 nothing is smaller than --t-min (28 design px).
+     D19 nothing sits directly on the moving ambient layer; every surface has
+         its own opaque ground.
+
+     BANNED HERE, because a 1 GB TV SoC has a ~10 ms frame budget: backdrop-
+     filter (single-digit fps), animated blur (~90 ms/frame measured),
+     will-change on list items (7.9 MiB per composited layer), animating
+     anything but transform and opacity, a canvas sized to devicePixelRatio. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>X3F Routine</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0F1114"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="x3f-ui.css">
+<style>
+/* Only what is specific to this screen. Everything shared is in x3f-ui.css. */
+
+:root{
+  /* x3f-nav.js scrolls a focused item to this margin. Its own default is
+     1.5rem; a 10-foot list wants more air above the thing you just landed on. */
+  --x3f-navmargin:3rem;
+}
+
+/* ── surviving the TV bundle's injected 10-foot block ─────────────────────
+   tools/sync-from-web.py injects TV_TYPE into this page (app.html is in its
+   RESOLUTION_INVARIANT set; this file is not), and TV_TYPE is a px-based rescue
+   written for the OLD phone-shaped menus:
+
+       @media (min-width:1200px){ body{font-size:17px}
+                                  select{font-size:14px!important} ... }
+
+   14 design px is half the legibility floor for a sofa, and it is !important,
+   so it can only be answered with a MORE SPECIFIC !important. Everything else
+   TV_TYPE targets is answered by simply not using those class names, which is
+   why the classes below are named the way they are. The full forbidden list:
+
+       .wrap .cwrap .exname .cname .detail .exhint .muscle .note .prog
+       .day .mini .set .play .cta .go
+
+   That is not paranoia. The launch button was called .go for ten minutes and
+   TV_TYPE pinned it to a raw 19px/18px — the one element on the page that had
+   stopped scaling with the panel, invisible on a desktop and wrong on the only
+   device that matters. Verified by measuring every box at 960 and at 1920 CSS
+   px and requiring an identical ratio.
+
+   Delete this block the day X3F_Routine.html joins RESOLUTION_INVARIANT. */
+html body{font-size:var(--t-body)}
+body select{font-size:var(--t-min)!important}
+
+/* ── the one scroll context ───────────────────────────────────────────────
+   x3f-ui.css puts overflow:hidden on <body> on purpose, so a screen owns its
+   own scroller. One container, never two: with a pinned header plus an inner
+   scroller the D-pad has to guess which one a Down belongs to, and cards end up
+   scrolling underneath the header and getting clipped in half. */
+.shell{position:relative;z-index:1;height:100dvh;overflow-y:auto;overflow-x:hidden;
+  padding:0 0 0 var(--safe-x);scrollbar-width:none;
+  scroll-padding-top:9rem;scroll-padding-bottom:5rem}
+.shell::-webkit-scrollbar{display:none}
+
+/* ── top bar ──────────────────────────────────────────────────────────────
+   Sticky, because the way back has to be reachable from anywhere in a long
+   list. The gradient tail lets content slide under it without a hard edge. */
+.top{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:var(--s-2);
+  padding:var(--safe-y) var(--safe-x) var(--s-3) 0;
+  /* Opaque behind the bar itself and only fading below it. A gentle fade the
+     whole way let scrolled content ghost through the brand and the links, which
+     on a TV reads as a rendering fault rather than as depth. */
+  background:linear-gradient(var(--bg) 74%,rgba(15,17,20,.90) 88%,rgba(15,17,20,0))}
+.brand{font-size:var(--t-h2);font-weight:var(--w-bold);letter-spacing:.06em;white-space:nowrap}
+.brand b{color:var(--accent)}
+
+/* .topbtn, not .home / .mini — see the TV_TYPE note above. x3f-music.js is
+   handed this class name so its injected toggle matches the rest of the bar. */
+.topbtn{font-family:var(--font-display);font-size:var(--t-min);font-weight:var(--w-bold);
+  color:var(--txt-2);text-decoration:none;background:var(--surface-2);
+  border:.125rem solid var(--line-2);border-radius:var(--r-pill);
+  padding:var(--s-1) var(--s-3);cursor:pointer;position:relative;white-space:nowrap;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+/* Focus changes the FILL, not only the ring. Colour alone is not readable
+   across a room, in a bright kitchen, or to a viewer who cannot separate the
+   accent hue from the surface. */
+.topbtn.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+
+/* ── hero: what today actually is ─────────────────────────────────────────
+   Not a menu — an answer. The day you are about to train is the biggest thing
+   on the screen, and everything under it is the programme's own reasoning. */
+.hero{padding:var(--s-1) var(--safe-x) var(--s-2) 0;max-width:106rem}
+.kick{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent-2)}
+.htitle{font-size:var(--t-hero);font-weight:var(--w-bold);line-height:1;letter-spacing:-.015em}
+.hsub{font-size:var(--t-h2);color:var(--txt-2);margin-top:var(--s-1)}
+.hsub b{color:var(--txt);font-family:var(--font-num);font-variant-numeric:tabular-nums}
+/* One line each, so the first movement is above the fold on a 1080p panel.
+   Scrolling to reach the thing you came for is the tax a TV screen pays for a
+   generous hero, and four lines of prose is not worth it. */
+.hwhy{font-size:var(--t-min);color:var(--txt-2);margin-top:var(--s-1);line-height:1.4}
+.chal{font-size:var(--t-min);color:var(--txt-2);margin-top:var(--s-1);line-height:1.4}
+.chal b{color:var(--gold)}
+.chal.done b{color:var(--mint)}
+.earned{color:var(--mint)}
+
+/* An in-page message, because a TV auto-confirms every confirm() and swallows
+   every alert() (menus audit D5). Nothing this page has to say is worth a
+   system dialog you have to dismiss with a remote mid-workout. */
+.msg{margin-top:var(--s-2);font-size:var(--t-min);font-weight:var(--w-bold);
+  color:var(--gold);background:#1B1710;border:.125rem solid rgba(255,201,74,.35);
+  border-radius:var(--r-1);padding:var(--s-1) var(--s-3);display:inline-block}
+
+/* ── day tabs ─────────────────────────────────────────────────────────────
+   .dtab, not .day: TV_TYPE would repaint .day in px. */
+.days{display:flex;gap:var(--s-2);padding:0 var(--safe-x) var(--s-2) 0}
+.dtab{font-family:var(--font-display);flex:1 1 0;padding:var(--s-2) var(--s-3);border-radius:var(--r-2);
+  background:var(--surface);border:.125rem solid var(--line);color:var(--txt-2);
+  font-family:var(--font-display);font-size:var(--t-body);font-weight:var(--w-bold);
+  text-align:center;cursor:pointer;position:relative;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear,
+             border-color var(--focus-ms) linear}
+.dtab .n{display:block;font-family:var(--font-num);font-variant-numeric:tabular-nums;
+  font-size:var(--t-min);font-weight:var(--w-body);color:var(--dim);margin-top:.25rem}
+.dtab.on{background:var(--surface-3);border-color:var(--accent);color:var(--txt)}
+.dtab.on .n{color:var(--accent-2)}
+.dtab.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+.dtab.foc .n{color:#0B0813;opacity:.75}
+
+/* ── the action bar ───────────────────────────────────────────────────────
+   Start, rest length, edit and reset in ONE horizontal band. Every extra band
+   on a leanback screen is another D-pad press between the user and the thing
+   they came here to do. */
+.actions{display:flex;align-items:center;gap:var(--s-2);padding:0 var(--safe-x) var(--s-3) 0}
+.big{font-family:var(--font-display);font-size:var(--t-h2);font-weight:var(--w-bold);
+  color:#0B0813;background:var(--accent);border:.125rem solid var(--accent-2);
+  border-radius:var(--r-2);padding:var(--s-2) var(--s-5);cursor:pointer;position:relative;
+  text-align:center;text-decoration:none;white-space:nowrap;flex:0 0 auto;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.big.foc{background:var(--accent-2)}
+.tally{flex:1 1 auto;min-width:0;font-size:var(--t-min);color:var(--dim);text-align:right}
+.tally b{color:var(--txt);font-family:var(--font-num);font-variant-numeric:tabular-nums}
+
+/* ── generic pill control ─────────────────────────────────────────────────
+   .act, not .mini / .set / .play / .cta / .go — all five are TV_TYPE targets. */
+.act{font-family:var(--font-display);font-size:var(--t-min);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-1);padding:var(--s-1) var(--s-3);cursor:pointer;position:relative;
+  white-space:nowrap;flex:0 0 auto;text-decoration:none;text-align:center;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.act.pri{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+.act.on{background:var(--surface-3);border-color:var(--accent-2);color:var(--txt)}
+.act.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+
+select{font-family:var(--font-display);font-size:var(--t-min);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-1);padding:var(--s-1) var(--s-2);cursor:pointer;position:relative;
+  flex:0 0 auto;max-width:100%;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+select.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+/* The native dropdown is never opened on a TV — x3f-nav.js cycles the value in
+   place on OK — but a mouse user on the web build still sees this list. */
+option{background:var(--surface);color:var(--txt)}
+
+.adder{display:flex;align-items:center;gap:var(--s-2);padding:0 var(--safe-x) var(--s-3) 0}
+.adder select{flex:1 1 auto;min-width:0}
+
+.warn{margin:0 var(--safe-x) var(--s-2) 0;max-width:104rem;font-size:var(--t-min);
+  line-height:1.4;color:var(--amber);background:#1B1710;
+  border:.125rem solid rgba(255,158,74,.32);border-radius:var(--r-1);
+  padding:var(--s-1) var(--s-3)}
+
+/* ── a movement ───────────────────────────────────────────────────────────
+   The class name .ex is load-bearing: tools/func-test counts `#list .ex`. */
+.ex{background:var(--surface);border:.125rem solid var(--line);border-radius:var(--r-2);
+  padding:var(--s-2) var(--s-3);margin:0 var(--safe-x) var(--s-2) 0;
+  transition:border-color var(--focus-ms) linear,opacity var(--focus-ms) linear}
+.ex.cur{border-color:var(--accent-2);background:var(--surface-2)}
+.ex.done{opacity:.6}
+.exhead{display:flex;align-items:center;gap:var(--s-2);flex-wrap:wrap}
+.exn{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-size:var(--t-min);
+  font-weight:var(--w-bold);width:3rem;height:3rem;border-radius:var(--r-1);
+  background:var(--surface-2);border:.125rem solid var(--line);flex:none;
+  display:flex;align-items:center;justify-content:center}
+.ex.done .exn{background:var(--mint);color:#0B0813;border-color:transparent}
+.exnm{font-size:var(--t-h2);font-weight:var(--w-bold)}
+.exlb{font-family:var(--font-num);font-variant-numeric:tabular-nums;
+  font-size:var(--t-min);color:var(--txt-2);white-space:nowrap}
+.exmu{font-size:var(--t-min);color:var(--txt-2);margin-top:.25rem}
+.exmu i{font-style:normal;color:var(--accent-2)}
+
+/* Set pips. Named .sdot rather than .pip so they can never collide with
+   x3f-ui.css's .x3f-band .pip, which is a band EMBLEM and a different idea. */
+.sdots{display:flex;gap:.35rem;flex:none}
+.sdot{width:2.2rem;height:.55rem;border-radius:var(--r-pill);background:rgba(236,238,242,.14)}
+.sdot.f{background:var(--mint)}
+
+/* ONE horizontal band per movement, marked data-nav-row so Up/Down treats it as
+   a single band and Left/Right can never leave it. This matters more than it
+   looks: with two vertical columns of controls and no row marking, the nav's
+   overlap rule walks the right-hand column top to bottom and never enters the
+   left one — that is how 28 Library controls became unreachable in one
+   afternoon (docs/audit/phase1-verify.md S-2). A row's CONTAINER is full width
+   even when its children are not, and that is what makes Up/Down land in it. */
+.exrow{display:flex;align-items:center;gap:var(--s-2);margin-top:var(--s-2);flex-wrap:nowrap}
+.exrow .launch{flex:1 1 18rem;min-width:12rem}
+.exrow .log{width:13rem}
+.exrow .band{width:15rem}
+.exrow .game{width:17rem}
+.exrow .sets{width:10rem}
+.exrow .tempo{width:12rem}
+.ex.done .log{background:var(--mint);color:#0B0813;border-color:transparent}
+.exrow.edit{margin-top:var(--s-1)}
+.exrow.edit .act{width:16rem}
+
+/* --dim is the design system's floor at 4.6:1 and is meant for micro-labels.
+   Anything that is actually CONTENT — a phase's teaching line, a movement's
+   target muscles, the method note — sits on --txt-2 at ~9.9:1 instead. */
+.foot{margin:var(--s-4) var(--safe-x) 0 0;max-width:82rem;font-size:var(--t-min);
+  line-height:1.5;color:var(--txt-2)}
+.foot b{color:var(--txt)}
+.endcap{height:.25rem;background:var(--line);border-radius:var(--r-pill);
+  margin:var(--s-4) var(--safe-x) 0 0}
+.pad{height:6rem}
+
+/* ══════════════════════════════════════════════════════ overlays ════════
+   Kept as siblings of .shell, never children, so nothing inherits a stacking
+   context or a transform from the scrolling container.
+
+   The z-index is declared at #id.class specificity (1,1,0) ON PURPOSE. Every
+   declared z-index on these three overlays used to be overridden to 1 by a
+   `body>*:not(#x3ffx)` rule whose :not(#id) argument carried ID-level
+   specificity, and the stacking only looked right because the markup happened
+   to be in paint order (menus audit D11). That rule is gone from x3f-fx.js now,
+   but the ordering must not depend on document order ever again.
+
+   They fade with opacity and keep their layout box. x3f-nav.js walks ancestors
+   for opacity, so a faded overlay's buttons are correctly unfocusable, and the
+   form canvas keeps a real size so it can be measured the moment it is shown. */
+.ovl{position:fixed;inset:0;top:0;right:0;bottom:0;left:0;
+  padding:var(--safe-y) var(--safe-x);display:flex;
+  opacity:0;pointer-events:none;transition:opacity 160ms linear}
+.ovl.show{opacity:1;pointer-events:auto}
+
+#coach.ovl{z-index:50;background:var(--bg);flex-direction:column;gap:var(--s-2)}
+#rest.ovl{z-index:60;flex-direction:column;align-items:center;justify-content:center;
+  gap:var(--s-3);text-align:center}
+#done.ovl{z-index:70;background:rgba(15,17,20,.95);align-items:center;justify-content:center}
+#ask.ovl{z-index:80;background:rgba(15,17,20,.95);align-items:center;justify-content:center}
+
+/* ── the coach ──────────────────────────────────────────────────────────── */
+.chead{display:flex;align-items:center;gap:var(--s-2);flex:none}
+.cstep{flex:1 1 auto;min-width:0;font-size:var(--t-min);font-weight:var(--w-bold);
+  letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.cstep b{color:var(--txt);font-family:var(--font-num);font-variant-numeric:tabular-nums}
+.ctrack{flex:none;height:.5rem;border-radius:var(--r-pill);
+  background:rgba(236,238,242,.10);overflow:hidden}
+/* scaleX, not width. The compositor owns a transform for free; animating width
+   is a layout pass on every frame of the transition. */
+.ctrack i{display:block;height:100%;width:100%;transform:scaleX(0);transform-origin:0 50%;
+  background:var(--accent);transition:transform 220ms var(--ease)}
+
+/* "Did that set count?" — you are back from a game, standing, hands maybe still
+   on the bar. Scoreboard rules: it is a wall of one question, and the state is
+   carried by the background luminance (x3f-ui.css's mid tier) before the hue. */
+.pend{display:none;align-items:center;gap:var(--s-3);flex:none;
+  background:#1B1710;border:.125rem solid rgba(255,201,74,.35);
+  border-radius:var(--r-2);padding:var(--s-2) var(--s-3)}
+.pend.show{display:flex}
+.pendtxt{flex:1 1 auto;min-width:0;font-size:var(--t-h2);font-weight:var(--w-bold);color:var(--gold)}
+
+.cbody{flex:1 1 auto;min-height:0;display:flex;gap:var(--s-4)}
+.cdemo{flex:0 0 32%;max-width:46rem;min-height:0;display:flex;flex-direction:column;gap:var(--s-1)}
+.demobox{position:relative;flex:1 1 auto;min-height:0;border-radius:var(--r-2);overflow:hidden;
+  background:var(--surface);border:.125rem solid var(--line)}
+.demobox canvas{position:absolute;inset:0;top:0;left:0;width:100%;height:100%;display:block}
+.demobox .art{position:absolute;inset:0;top:0;left:0;width:100%;height:100%;
+  object-fit:contain;opacity:0;transition:opacity 300ms linear;pointer-events:none}
+.demotag{flex:none;font-size:var(--t-min);color:var(--dim);text-align:center}
+
+.cinfo{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;
+  gap:var(--s-2);overflow-y:auto;scrollbar-width:none}
+.cinfo::-webkit-scrollbar{display:none}
+.cnm{font-size:var(--t-title);font-weight:var(--w-bold);line-height:1.05}
+.cmu{font-size:var(--t-body);color:var(--txt-2)}
+.cband{display:flex;align-items:center;gap:var(--s-2);flex-wrap:wrap}
+.crange{align-self:flex-start;font-size:var(--t-min);font-weight:var(--w-bold);color:var(--gold);
+  background:rgba(255,201,74,.10);border:.125rem solid rgba(255,201,74,.30);
+  border-radius:var(--r-1);padding:var(--s-1) var(--s-2)}
+.crange.mid{color:var(--amber);background:rgba(255,158,74,.10);border-color:rgba(255,158,74,.32)}
+/* Setup and cue are the two lines you read with a loaded bar in your hands, so
+   they are body size, never the 12.5px they used to be. */
+.cline{font-size:var(--t-body);color:var(--txt-2);line-height:1.4}
+.cline .lbl{display:inline-block;font-size:var(--t-min);font-weight:var(--w-bold);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--cyan);margin-right:var(--s-1)}
+.cline.cue .lbl{color:var(--mint)}
+.cline b{color:var(--txt)}
+.cchips{display:flex;gap:var(--s-1);flex-wrap:wrap}
+.tag{font-size:var(--t-min);font-weight:var(--w-bold);color:var(--txt-2);
+  background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-pill);padding:var(--s-1) var(--s-2);white-space:nowrap}
+.cfoot{flex:none;display:flex;align-items:center;gap:var(--s-2)}
+.cfoot .grow{flex:1 1 auto}
+
+/* ── rest ─────────────────────────────────────────────────────────────────
+   The scoreboard. One number, 192 design px, tabular, in a fixed-width slot so
+   90 -> 9 never reflows the ring around it. The ground is x3f-ui.css's rest
+   tier — a state change you can read at an angle, in a bright room, from a
+   photograph, and without separating two hues. */
+/* The extra bottom padding is a reservation, not decoration: an achievement
+   toast is anchored to the bottom edge, and an unlock fires from logSet() one
+   instant before this overlay opens — so without the reserve the toast lands
+   squarely on top of "Skip rest". */
+#rest.ovl{background:#0E1620;padding-bottom:calc(var(--safe-y) + 10rem)}
+.rlbl{font-size:var(--t-h2);font-weight:var(--w-bold);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim)}
+.rdial{position:relative;display:flex;align-items:center;justify-content:center;
+  width:34rem;height:34rem;flex:none}
+.ring{position:absolute;inset:0;top:0;left:0;width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:3.5;stroke-linecap:round}
+.ring .bg{stroke:rgba(236,238,242,.12)}
+.ring .fg{stroke:var(--accent)}
+.rcount{position:relative;font-family:var(--font-num);font-variant-numeric:tabular-nums;
+  font-size:var(--t-count);font-weight:var(--w-bold);line-height:.9;letter-spacing:-.02em;
+  min-width:3ch;text-align:center;color:var(--txt)}
+.rcount.low{color:var(--gold)}
+.rnext{font-size:var(--t-h2);color:var(--txt-2)}
+.rnext b{color:var(--txt)}
+.restrow{display:flex;gap:var(--s-2);align-items:center}
+
+/* ── summary + confirm ───────────────────────────────────────────────────── */
+.panel{background:var(--surface);border:.125rem solid var(--line-2);border-radius:var(--r-3);
+  padding:var(--s-5);max-width:80rem;width:100%;max-height:100%;overflow:auto;
+  scrollbar-width:none;display:flex;flex-direction:column;gap:var(--s-3);text-align:center}
+.panel::-webkit-scrollbar{display:none}
+.panel h2{font-size:var(--t-title);font-weight:var(--w-bold);line-height:1.1}
+.panel h2 b{color:var(--mint)}
+.panel p{font-size:var(--t-body);color:var(--txt-2);line-height:1.4}
+.sumgrid{display:flex;gap:var(--s-2)}
+.sumgrid>div{flex:1 1 0;background:var(--surface-2);border:.125rem solid var(--line);
+  border-radius:var(--r-2);padding:var(--s-2)}
+.sumk{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--dim)}
+.sumv{font-family:var(--font-num);font-variant-numeric:tabular-nums;
+  font-size:var(--t-hero);font-weight:var(--w-bold);line-height:1.05;color:var(--txt)}
+.prow{display:flex;gap:var(--s-2);justify-content:center;flex-wrap:nowrap}
+
+/* ── achievement toast ────────────────────────────────────────────────────
+   Never a dialog. A modal blocks the page, and on a TV it is a system dialog
+   you have to dismiss with the remote in the middle of a workout. */
+.toast{position:fixed;left:50%;bottom:var(--safe-y);transform:translateX(-50%);z-index:90;
+  display:flex;flex-direction:column;gap:.25rem;padding:var(--s-2) var(--s-4);
+  border-radius:var(--r-2);max-width:74rem;text-align:center;
+  background:var(--surface-2);border:.125rem solid rgba(255,201,74,.45);
+  opacity:0;pointer-events:none;transition:opacity 200ms linear}
+.toast.on{opacity:1}
+.toast b{font-size:var(--t-body);font-weight:var(--w-bold);color:var(--gold)}
+.toast span{font-size:var(--t-min);color:var(--txt-2)}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <div class="top" data-nav-row="top">
+    <div class="brand">X3<b>F</b> ROUTINE</div>
+    <div class="x3f-spacer"></div>
+    <a class="topbtn" href="X3F_Library.html" data-nav data-nav-id="nav-library">Library</a>
+    <a class="topbtn" href="X3F_Progress.html" data-nav data-nav-id="nav-progress">Progress</a>
+    <a class="topbtn" href="app.html" data-nav data-nav-back data-nav-id="nav-home">Home</a>
+  </div>
+
+  <!-- #pstrip is the whole hero. The functional suite reads its text for the
+       programme day, the streak and today's challenge. -->
+  <div class="hero" id="pstrip">
+    <div class="kick" id="pKick">The 12-week program</div>
+    <div class="htitle" id="pDay">Push Day</div>
+    <div class="hsub" id="pWeek">0 day streak</div>
+    <div class="hwhy" id="pTeach"></div>
+    <div class="chal" id="pChal"></div>
+    <div class="msg" id="msg" hidden></div>
+  </div>
+
+  <div class="days" id="days" data-nav-row="days"></div>
+
+  <div class="actions" data-nav-row="actions">
+    <button class="big" id="startSession" data-nav data-nav-first data-nav-id="start">▶ Start guided session</button>
+    <select id="restSel" title="Rest between sets" data-nav data-nav-id="restsel"></select>
+    <button class="act" id="editBtn" data-nav data-nav-id="edit">Edit day</button>
+    <button class="act" id="resetDay" data-nav data-nav-id="reset">Reset day</button>
+    <div class="tally" id="prog">0 / 0 sets done</div>
+  </div>
+
+  <div class="adder" id="adder" data-nav-row="adder" hidden>
+    <select id="addSel" data-nav data-nav-id="addsel"></select>
+    <button class="act pri" id="addBtn" data-nav data-nav-id="add">+ Add movement</button>
+  </div>
+
+  <div class="warn" id="warn" hidden></div>
+
+  <div id="list"></div>
+
+  <div class="foot" id="foot"></div>
+  <div class="endcap"></div>
+  <div class="pad"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ guided coach ═════ -->
+<div class="ovl coach" id="coach">
+  <div class="chead" data-nav-row="chead">
+    <div class="cstep" id="cStep">—</div>
+    <button class="act" id="cPrev" data-nav data-nav-id="cprev">◀ Previous</button>
+    <button class="act" id="cNext" data-nav data-nav-id="cnext">Next ▶</button>
+    <button class="act" id="cClose" data-nav data-nav-id="cclose">✕ End session</button>
+  </div>
+  <div class="ctrack"><i id="cFill"></i></div>
+
+  <div class="pend" id="cPending" data-nav-row="cpend">
+    <span class="pendtxt" id="cPendingTxt">Finished that set?</span>
+    <button class="act pri" id="cPendYes" data-nav data-nav-id="cpendyes">Yes — log it</button>
+    <button class="act" id="cPendNo" data-nav data-nav-id="cpendno">Not yet</button>
+  </div>
+
+  <div class="cbody">
+    <div class="cdemo">
+      <div class="demobox"><canvas id="demoCv"></canvas><img class="art" id="demoArt" alt=""></div>
+      <div class="demotag" id="demoTag">Live form guide</div>
+    </div>
+    <div class="cinfo">
+      <div class="cnm" id="cName">—</div>
+      <div class="cmu" id="cMuscle"></div>
+      <div class="cband"><span class="x3f-band" id="cBand" data-band="White"><span class="pip"></span>White</span>
+        <span class="exlb" id="cForce"></span></div>
+      <div class="crange" id="cRange"></div>
+      <div class="cline"><span class="lbl">Setup</span><span id="cSetup"></span></div>
+      <div class="cline cue"><span class="lbl">Cue</span><span id="cCue"></span></div>
+      <div class="cchips" id="cChips"></div>
+    </div>
+  </div>
+
+  <div class="cfoot" data-nav-row="cfoot">
+    <button class="act pri grow" id="cPlay" data-nav data-nav-first data-nav-id="cplay">Play</button>
+    <button class="act" id="cLog" data-nav data-nav-id="clog">Log set ✓</button>
+    <button class="act" id="cSkip" data-nav data-nav-id="cskip">Skip lift</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ rest ═════════ -->
+<div class="ovl rest" id="rest">
+  <div class="rlbl">Rest</div>
+  <div class="rdial">
+    <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+      <circle class="bg" cx="60" cy="60" r="52"></circle>
+      <circle class="fg x3f-meter" id="ringFg" cx="60" cy="60" r="52"></circle>
+    </svg>
+    <div class="rcount" id="restCd">90</div>
+  </div>
+  <div class="rnext" id="restNext"></div>
+  <div class="restrow" data-nav-row="restrow">
+    <button class="act pri" id="restSkip" data-nav data-nav-back data-nav-id="restskip">Skip rest ▶</button>
+    <button class="act" id="restMore" data-nav data-nav-id="restmore">+ 30 seconds</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ summary ═══════ -->
+<div class="ovl scrim" id="done">
+  <div class="panel">
+    <div class="sumk">Session complete</div>
+    <h2>X3 <b>DAY DONE</b></h2>
+    <div class="sumgrid">
+      <div><div class="sumk">Sets</div><div class="sumv" id="dSets">0</div></div>
+      <div><div class="sumk">Lifts</div><div class="sumv" id="dLifts">0</div></div>
+      <div><div class="sumk">Minutes</div><div class="sumv" id="dMin">0</div></div>
+    </div>
+    <p id="dNote"></p>
+    <div class="prow" data-nav-row="donerow">
+      <button class="big" id="dClose" data-nav data-nav-first data-nav-back data-nav-id="dclose">Back to the day</button>
+      <button class="act" id="dUndo" data-nav data-nav-id="dundo">Undo last set</button>
+      <a class="act" href="X3F_Progress.html" data-nav data-nav-id="dprog">See progress →</a>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ "end the session?" ══════
+     The answer to menus audit D2/D5: on the TV, BACK used to abandon a guided
+     session with no confirmation and no summary, and a confirm() would have
+     auto-answered "yes" anyway. -->
+<div class="ovl scrim" id="ask">
+  <div class="panel">
+    <h2 id="askT">End this session?</h2>
+    <p id="askB"></p>
+    <div class="prow" data-nav-row="askrow">
+      <button class="big" id="askNo" data-nav data-nav-first data-nav-back data-nav-id="askno">Keep going</button>
+      <button class="act" id="askYes" data-nav data-nav-id="askyes">End session</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* Claim the focus class BEFORE x3f-nav.js loads. Otherwise it installs its own
+   ring — a green box-shadow inherited from the old palette — and the screen ends
+   up with two focus vocabularies. x3f-ui.css owns .foc, so there is exactly one
+   ring in the app and it is the one the design system defines. */
+window.X3FNAV_CLASS = 'foc';
+</script>
+<script src="x3f-exercises.js"></script>
+<script src="x3f-band.js"></script>
+<script src="x3f-progress.js"></script>
+<script src="x3f-form.js"></script>
+<script src="x3f-nav.js"></script>
+<script src="x3f-fx.js"></script>
+<script src="x3f-music.js"></script>
+<script>
+"use strict";
+/* ────────────────────────────────────────────────────────────────────────
+   Every module above is optional at RUNTIME. If one fails to load, this page
+   must still render and still be navigable: a decorative or analytical module
+   is never allowed to blank the screen. That is not hypothetical — the ambient
+   layer could leave the whole app at opacity:0 if its mount threw, and the
+   Progress page had no guard on its engine at all (menus audit D6, D13).
+   ──────────────────────────────────────────────────────────────────────── */
+function $(id) { return document.getElementById(id); }
+function mod(n) { try { return window[n] || null; } catch (e) { return null; } }
+function xget(k, d) { try { var v = JSON.parse(localStorage.getItem('x3f_' + k)); return v == null ? d : v; } catch (e) { return d; } }
+function xset(k, v) { try { localStorage.setItem('x3f_' + k, JSON.stringify(v)); } catch (e) {} }
+
+var EXD = mod('X3FEX');
+var BANDS = (EXD && EXD.bands) || ['White', 'Light Gray', 'Dark Gray', 'Black', 'Elite Black'];
+
+/* Ascent is deliberately absent. It is in X3FEX.games but NOT in the TV
+   bundle — sync-from-web.py warns that its launch target is a dead link on the
+   television — and this is the page whose entire audience is on a television.
+   The order is the one app.html uses: the games that model a real X3 set first,
+   the ones that measure something the program asks for next, arcade last. */
+var GAMEKEYS = ['bloom', 'flow', 'max', 'zone', 'boss', 'splash', 'nova', 'duel', 'rhythm'];
+var GAMES = GAMEKEYS.filter(function (k) { return EXD && EXD.games[k]; })
+                    .map(function (k) { return [k, EXD.games[k].name]; });
+
+var TEMPOS = [['4000', 'Tempo 4s'], ['3000', 'Tempo 3s'], ['2000', 'Tempo 2s']];
+
+/* The X3 protocol is ONE all-out set per movement, taken to failure with
+   diminishing range — not a multi-set scheme. Extra sets stay available for
+   anyone who wants them, but 1 is the default and the program's own answer. */
+var SETS = [['1', '1 set'], ['2', '2 sets'], ['3', '3 sets'], ['4', '4 sets'], ['5', '5 sets']];
+
+/* The rest lengths the two official programs actually use, so a timed step list
+   can express either of them rather than only the 12-week shape. 20 s is the
+   gap inside a Hypertrophy superset, 30 s between wrist-curl sets, 60 s between
+   volume sets, 120 s between PR attempts (docs/x3-knowledge/official/
+   hypertrophy-program.md §"Rest periods (exact)"). 45/90/150 are the 12-week
+   program's own working range. */
+var RESTS = [['20', 'Rest 20s'], ['30', 'Rest 30s'], ['45', 'Rest 45s'], ['60', 'Rest 60s'],
+             ['90', 'Rest 90s'], ['120', 'Rest 120s'], ['150', 'Rest 150s']];
+
+/* ═══════════════════════════════════════════════════ persisted config ═══ */
+
+var DAYNAMES = ((EXD && EXD.days) || [['Push Day', []], ['Pull Day', []]])
+                 .map(function (d) { return d[0]; }).concat(['Custom Day']);
+
+function programWeek() {
+  var P = mod('X3FProg');
+  try { var w = (P && P.program) ? P.program().week : 0; return w > 0 ? w : 1; }
+  catch (e) { return 1; }
+}
+
+/* Seeded from X3FEX.forDay, which is the real program: there is no leg day, the
+   front squat and split squat are PUSH, the calf raise is PULL, and the pec
+   crossover and split squat only exist from week 5. Falling back to X3FEX.days
+   keeps a fresh install working if forDay ever goes missing. */
+function freshCfg() {
+  var o = {}, w = programWeek();
+  ((EXD && EXD.days) || []).forEach(function (d) {
+    var tag = (d[0] === 'Pull Day') ? 'pull' : 'push', l = [];
+    try { if (EXD.forDay) l = EXD.forDay(tag, w).map(function (m) { return m.slug; }); } catch (e) {}
+    o[d[0]] = { list: l.length ? l : (d[1] || []).slice(), per: {} };
+  });
+  o['Custom Day'] = { list: [], per: {} };
+  return o;
+}
+
+var cfg = xget('routine2', null); if (!cfg) { cfg = freshCfg(); xset('routine2', cfg); }
+DAYNAMES.forEach(function (n) { if (!cfg[n]) cfg[n] = { list: [], per: {} }; });
+var prog = xget('routineProg2', {});
+var day = xget('routineDay', 'Push Day'); if (!cfg[day]) day = DAYNAMES[0];
+var restSec = +xget('restSec', 90) || 90;
+var editing = false;
+var S = xget('session', null);          // the active guided session
+
+/* ONE definition of "how many sets does this movement want", used by the list,
+   the coach AND the day tabs. The tabs used to compute `+(c.sets||3)` while
+   everything else used `c.sets||'1'`, so a fresh install could finish an entire
+   day and watch the tab sit at 0/4 forever (menus audit D8). */
+function cfgSets(dn, slug) {
+  var d = cfg[dn] || {}, c = (d.per || {})[slug] || {};
+  var n = +(c.sets || 1);
+  return n > 0 ? n : 1;
+}
+function doneIn(dn, slug) { return (prog[dn] && prog[dn][slug]) || 0; }
+
+function per(slug) {
+  var d = cfg[day]; d.per = d.per || {};
+  var ex = (EXD && EXD.get(slug)) || {};
+  var c = d.per[slug] || {};
+  /* The band defaults to the one this movement is actually trained on — which
+     is x3f-band.js's job, not a global read. Falling back to the single global
+     x3f_band was how a guided day could hand a game a band the movement had
+     never been calibrated on. The library's recommendation is advice, shown on
+     the card, and it never decides the value: defaulting to it is what silently
+     moved a user who started on White up to Dark Gray in v1.4. */
+  var defBand = (window.X3FBand ? X3FBand.forMovement(slug) : xget('band', 'White'));
+  var g = c.game;
+  /* A stored game that this page no longer offers (Ascent, which is not in the
+     TV bundle) would leave the picker showing one thing and the Play button
+     launching another. Resolve it here, once. */
+  if (GAMEKEYS.indexOf(g) < 0) g = null;
+  var suggested = (ex.games && GAMEKEYS.indexOf(ex.games[0]) >= 0) ? ex.games[0] : 'bloom';
+  return {
+    game: g || suggested,
+    band: c.band || defBand,
+    tempo: c.tempo || '3000',
+    sets: String(cfgSets(day, slug))
+  };
+}
+function setPer(slug, patch) {
+  var d = cfg[day]; d.per = d.per || {};
+  var next = per(slug);
+  Object.keys(patch).forEach(function (k) { next[k] = patch[k]; });
+  d.per[slug] = next;
+  xset('routine2', cfg);
+}
+function doneSets(slug) { return doneIn(day, slug); }
+function setDoneSets(slug, v) { prog[day] = prog[day] || {}; prog[day][slug] = v; xset('routineProg2', prog); }
+function isDone(slug) { return doneSets(slug) >= +per(slug).sets; }
+function listFor() { return cfg[day].list; }
+function gameOf(key) { return (EXD && (EXD.games[key] || EXD.games.bloom)) || { name: 'Bloom' }; }
+function launchUrl(slug) {
+  var c = per(slug);
+  return EXD.gameUrl(c.game, { from: 'routine', band: c.band, tempo: c.tempo, ex: slug });
+}
+function opts(list, sel) {
+  return list.map(function (o) {
+    return '<option value="' + o[0] + '"' + (String(o[0]) === String(sel) ? ' selected' : '') + '>' + o[1] + '</option>';
+  }).join('');
+}
+function forceLabel(band, slug) {
+  try { return (EXD && EXD.forceLabel) ? (EXD.forceLabel(band, slug) || '') : ''; } catch (e) { return ''; }
+}
+function bandChip(band) {
+  return '<span class="x3f-band" data-band="' + band + '"><span class="pip"></span>' + band + '</span>';
+}
+
+/* ═══════════════════════════════════════════════════════════ feedback ═══ */
+
+/* An in-page line instead of alert(). On the TV MainActivity answers every
+   onJsAlert with r.confirm(), so an alert is never drawn at all — pressing
+   "Start guided session" on an empty day did literally nothing visible. */
+var msgT = null;
+function say(text) {
+  var el = $('msg');
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(msgT);
+  msgT = setTimeout(function () { el.hidden = true; }, 7000);
+  beep(360, .12);
+}
+
+/* Never a dialog for an unlock: a modal blocks the page, and on a TV it is a
+   system dialog you have to dismiss with the remote in the middle of a set. */
+function toastAch(list) {
+  var host = $('achToast');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'achToast'; host.className = 'toast';
+    document.body.appendChild(host);
+  }
+  var i = 0;
+  function show() {
+    if (i >= list.length || i >= 3) { host.classList.remove('on'); return; }
+    var a = list[i++];
+    host.innerHTML = '<b>🏅 ' + a.name + '</b><span>' + a.desc + '</span>';
+    host.classList.add('on');
+    beep(880, .12); setTimeout(function () { beep(1170, .14); }, 120);
+    setTimeout(show, 2600);
+  }
+  show();
+}
+
+var ac = null;
+function beep(f, d, type) {
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    var o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || 'sine'; o.frequency.value = f;
+    o.connect(g); g.connect(ac.destination);
+    g.gain.setValueAtTime(0.001, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.28, ac.currentTime + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + d);
+    o.start(); o.stop(ac.currentTime + d + 0.03);
+  } catch (e) {}
+}
+function buzz(ms) { if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
+
+/* ═════════════════════════════════════════════════════════════ render ═══ */
+
+function renderHero() {
+  var P = mod('X3FProg');
+  $('pDay').textContent = day;
+  /* A page that renders nothing when a module is missing looks broken. A page
+     that renders the honest thing looks like a page. */
+  if (!P) {
+    $('pKick').textContent = 'The 12-week program';
+    $('pWeek').innerHTML = '0 day streak';
+    $('pTeach').textContent = 'One all-out set per movement, taken to failure with diminishing range.';
+    $('pChal').innerHTML = '🎯 <b>Challenge</b> — unavailable until your training log loads.';
+    return;
+  }
+  try {
+    var pr = P.program(), st = P.streak(), c = P.challenge();
+    var phase = null;
+    try { if (EXD && EXD.phaseForWeek) phase = EXD.phaseForWeek(pr.week || 1); } catch (e) {}
+
+    $('pKick').textContent = pr.active
+      ? ('Week ' + pr.week + ' · ' + (phase ? phase.name : pr.phase))
+      : 'The 12-week program · not started';
+
+    var bits = [];
+    bits.push(pr.active
+      ? ('<b>' + pr.thisWeek + '</b> of <b>' + pr.perWeek + '</b> this week')
+      : 'Start the program');
+    bits.push('<b>' + st.current + '</b> day streak');
+    bits.push(pr.doneToday ? 'Done today' : (pr.nextType + ' day next'));
+    $('pWeek').innerHTML = bits.join(' · ');
+
+    /* Each phase teaches a different principle, so a second cycle through the
+       program says something new instead of repeating the same three tips. */
+    var teach = phase ? phase.teaches : (pr.teaches || '');
+    if (pr.active && pr.thisWeek >= pr.perWeek && !pr.doneToday) {
+      teach = 'Rest day earned — the streak stays safe. ' + teach;
+      $('pTeach').className = 'hwhy earned';
+    } else {
+      $('pTeach').className = 'hwhy';
+    }
+    $('pTeach').textContent = teach;
+
+    $('pChal').className = 'chal' + (c.done ? ' done' : '');
+    $('pChal').innerHTML = (c.done ? '✅ <b>Challenge complete</b>' : '🎯 <b>' + c.title + '</b>') +
+                           ' — ' + c.detail;
+  } catch (e) {}
+}
+
+/* The tabs are built ONCE and only repainted afterwards. Replacing their markup
+   on every render is the other half of how a re-render used to throw the cursor
+   to the top of the page. */
+function buildDays() {
+  if ($('days').children.length) return;
+  /* <button>, not <div>. A div with data-nav cannot take DOM focus at all until
+     x3f-nav.js quietly stamps a tabindex on it, so the ring and
+     document.activeElement disagree — routine.html's day tabs shipped exactly
+     like that. A real button is also what the nav audit counts as a control, so
+     the tabs are inside its coverage rather than beside it. */
+  $('days').innerHTML = DAYNAMES.map(function (dn) {
+    return '<button class="dtab" type="button" data-d="' + dn + '" data-nav data-nav-id="day-' +
+           dn.replace(/\s+/g, '-') + '">' + dn.replace(' Day', '') + '<span class="n"></span></button>';
+  }).join('');
+}
+function paintDays() {
+  var tabs = $('days').querySelectorAll('.dtab');
+  for (var i = 0; i < tabs.length; i++) {
+    var dn = tabs[i].getAttribute('data-d');
+    var l = (cfg[dn] && cfg[dn].list) || [], n = 0;
+    for (var k = 0; k < l.length; k++) if (doneIn(dn, l[k]) >= cfgSets(dn, l[k])) n++;
+    tabs[i].classList.toggle('on', dn === day);
+    tabs[i].querySelector('.n').textContent = l.length ? (n + ' / ' + l.length) : 'empty';
+  }
+}
+
+/* Set pips, but only when there is more than one set to track. At the X3
+   default of one set the pip is a lone grey dash that says nothing the ✓ and
+   the "Set 1 / 1" button have not already said. */
+function dotsHtml(tot, sd) {
+  if (tot < 2) return '';
+  var out = '';
+  for (var k = 0; k < tot; k++) out += '<i class="sdot' + (k < sd ? ' f' : '') + '"></i>';
+  return out;
+}
+
+function liftHtml(slug, i) {
+  var ex = EXD.get(slug); if (!ex) return '';
+  var c = per(slug), tot = +c.sets, sd = doneSets(slug), done = sd >= tot;
+  var g = gameOf(c.game), lbl = forceLabel(c.band, slug);
+  var dots = dotsHtml(tot, sd);
+  var suggest = (ex.band && ex.band !== c.band) ? ' · <i>X3 suggests ' + ex.band + '</i>' : '';
+  return '<div class="ex' + (done ? ' done' : '') + '" data-n="' + slug + '" id="ex-' + slug + '">' +
+    '<div class="exhead">' +
+      '<div class="exn" data-role="n">' + (done ? '✓' : (i + 1)) + '</div>' +
+      '<div class="exnm">' + ex.name + '</div>' +
+      '<span data-role="band">' + bandChip(c.band) + '</span>' +
+      '<span class="exlb" data-role="lbl">' + lbl + '</span>' +
+      '<span class="x3f-spacer"></span>' +
+      '<span class="sdots" data-role="dots">' + dots + '</span>' +
+    '</div>' +
+    '<div class="exmu" data-role="mu">' + ex.muscle + suggest + '</div>' +
+    '<div class="exrow" data-nav-row="lift-' + slug + '">' +
+      '<button class="act pri launch" data-go="' + slug + '" data-nav data-nav-id="go-' + slug + '">▶ Play in ' + g.name + '</button>' +
+      '<button class="act log" data-set="' + slug + '" data-nav data-nav-id="set-' + slug + '">' +
+        (done ? 'Done ✓' : 'Set ' + (sd + 1) + ' / ' + tot) + '</button>' +
+      '<select class="band" title="Band" data-k="band" data-n="' + slug + '" data-nav data-nav-id="band-' + slug + '">' +
+        opts(BANDS.map(function (b) { return [b, b]; }), c.band) + '</select>' +
+      '<select class="game" title="Game" data-k="game" data-n="' + slug + '" data-nav data-nav-id="game-' + slug + '">' +
+        opts(GAMES, c.game) + '</select>' +
+      '<select class="sets" title="Sets" data-k="sets" data-n="' + slug + '" data-nav data-nav-id="sets-' + slug + '">' +
+        opts(SETS, c.sets) + '</select>' +
+      '<select class="tempo" title="Tempo" data-k="tempo" data-n="' + slug + '" data-nav data-nav-id="tempo-' + slug + '"' +
+        (g.tempo ? '' : ' hidden') + '>' + opts(TEMPOS, c.tempo) + '</select>' +
+    '</div>' +
+    (editing
+      ? '<div class="exrow edit" data-nav-row="edit-' + slug + '">' +
+          '<button class="act" data-mv="-1" data-n="' + slug + '" data-nav data-nav-id="up-' + slug + '">↑ Earlier</button>' +
+          '<button class="act" data-mv="1" data-n="' + slug + '" data-nav data-nav-id="dn-' + slug + '">↓ Later</button>' +
+          '<button class="act" data-rm="' + slug + '" data-nav data-nav-id="rm-' + slug + '">✕ Remove</button>' +
+        '</div>'
+      : '') +
+  '</div>';
+}
+
+/* Surgical repaint of ONE movement. This is the real answer to menus audit D1:
+   changing a <select> used to rebuild #list wholesale, which detached the very
+   node the D-pad cursor was sitting on and threw the ring to the top of the
+   page — four times over, if you wanted to walk White to Elite Black. Nothing
+   here replaces a focusable node, so the cursor cannot move. */
+function paintLift(slug) {
+  var root = $('ex-' + slug); if (!root) return;
+  var ex = EXD.get(slug); if (!ex) return;
+  var c = per(slug), tot = +c.sets, raw = doneSets(slug), sd = Math.min(raw, tot), done = raw >= tot;
+  var g = gameOf(c.game), i = listFor().indexOf(slug);
+  function q(sel) { return root.querySelector(sel); }
+
+  root.classList.toggle('done', done);
+  q('[data-role=n]').textContent = done ? '✓' : String(i + 1);
+  q('[data-role=band]').innerHTML = bandChip(c.band);
+  q('[data-role=lbl]').textContent = forceLabel(c.band, slug);
+  q('[data-role=mu]').innerHTML = ex.muscle +
+    ((ex.band && ex.band !== c.band) ? ' · <i>X3 suggests ' + ex.band + '</i>' : '');
+  q('[data-role=dots]').innerHTML = dotsHtml(tot, sd);
+  q('[data-go]').textContent = '▶ Play in ' + g.name;
+  q('[data-set]').textContent = done ? 'Done ✓' : 'Set ' + (sd + 1) + ' / ' + tot;
+  var tempo = q('select.tempo');
+  if (g.tempo) tempo.removeAttribute('hidden'); else tempo.setAttribute('hidden', '');
+}
+
+/* Which movement is "up next" — the first one that is not finished. */
+function paintCur() {
+  var l = listFor(), seen = false;
+  for (var i = 0; i < l.length; i++) {
+    var el = $('ex-' + l[i]); if (!el) continue;
+    var cur = !isDone(l[i]) && !seen;
+    if (cur) seen = true;
+    el.classList.toggle('cur', cur);
+  }
+}
+
+function paintTally() {
+  var l = listFor(), done = 0, total = 0;
+  for (var i = 0; i < l.length; i++) {
+    var tot = +per(l[i]).sets;
+    done += Math.min(doneSets(l[i]), tot);
+    total += tot;
+  }
+  $('prog').innerHTML = '<b>' + done + '</b> / ' + total + ' sets · <b>' +
+    l.filter(isDone).length + '</b> / ' + l.length + ' lifts';
+}
+
+/* Advice, never a block. The source says the order "doesn't matter" and then
+   says not to wear the triceps out before the chest press, so this warns.
+
+   Only while EDITING, deliberately. The official Push Day is chest press ->
+   tricep press -> overhead press, which trips the check on its own, so showing
+   this permanently would mean warning the user about the program every time
+   they open the page — and a warning that is always on is a warning nobody
+   reads. It belongs where it is actionable: while you are arranging the day. */
+function paintWarn() {
+  var el = $('warn'), w = null;
+  try { if (editing && EXD && EXD.orderWarning) w = EXD.orderWarning(listFor()); } catch (e) {}
+  if (w) { el.textContent = '⚠ ' + w; el.hidden = false; }
+  else { el.textContent = ''; el.hidden = true; }
+}
+
+function renderList() {
+  var l = listFor();
+  $('list').innerHTML = l.map(liftHtml).join('') ||
+    '<div class="foot">This day is empty. Press <b>Edit day</b> and add movements.</div>';
+  paintCur();
+}
+
+function renderFoot() {
+  $('foot').innerHTML =
+    '<b>One set per movement</b> is the X3 prescription — 15 to 40 full reps taken to ' +
+    'failure, then diminishing range until the last rep is an inch, not three sets of ten. ' +
+    'Two to three seconds up, two to three seconds down; speed is never the point. ' +
+    'Each movement remembers its band, game, tempo and sets, and bands are shared with the ' +
+    'rest of the app. <b>Start guided session</b> walks the whole day: setup, cue and a live ' +
+    'form guide for every lift, then the game, then the rest timer.';
+}
+
+/* The full rebuild. tools/func-test calls this by name to re-render after
+   seeding, so it must stay a global function declaration. */
+function render() {
+  if (!EXD) return;
+  buildDays();
+  paintDays();
+  if (!$('restSel').options.length) $('restSel').innerHTML = opts(RESTS, String(restSec));
+  renderList();
+  paintTally();
+  paintWarn();
+  renderHero();
+  $('startSession').textContent = (S && S.active && S.day === day)
+    ? '▶ Resume guided session' : '▶ Start guided session';
+  var used = listFor();
+  $('addSel').innerHTML = EXD.list.filter(function (e) { return used.indexOf(e.slug) < 0; })
+    .map(function (e) {
+      var wk = (e.optional && e.unlockWeek) ? ' · from week ' + e.unlockWeek : '';
+      return '<option value="' + e.slug + '">' + e.name + ' — ' + e.muscle + wk + '</option>';
+    }).join('') || '<option value="">every movement is already in this day</option>';
+  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+}
+
+/* ═══════════════════════════════════════════════ delegated interaction ═══
+   Bound ONCE, to containers that outlive every re-render. The old page
+   re-attached ~30 onclick handlers inside render(), which meant every handler
+   was a reason to rebuild the DOM and every rebuild was a reason to lose the
+   cursor. */
+$('days').addEventListener('click', function (e) {
+  var t = e.target.closest ? e.target.closest('.dtab') : null;
+  if (!t) return;
+  day = t.getAttribute('data-d');
+  xset('routineDay', day);
+  render();
+});
+
+$('list').addEventListener('change', function (e) {
+  var s = e.target;
+  if (!s || s.tagName !== 'SELECT' || !s.getAttribute('data-k')) return;
+  var slug = s.getAttribute('data-n'), patch = {};
+  patch[s.getAttribute('data-k')] = s.value;
+  setPer(slug, patch);
+  /* Surgical, so the cursor stays exactly where the user left it. */
+  paintLift(slug); paintCur(); paintTally(); paintDays();
+  if ($('coach').classList.contains('show')) paintCoach();
+});
+
+$('list').addEventListener('click', function (e) {
+  var t = e.target.closest ? e.target.closest('[data-go],[data-set],[data-rm],[data-mv]') : null;
+  if (!t) return;
+  if (t.hasAttribute('data-go')) { play(t.getAttribute('data-go')); return; }
+  if (t.hasAttribute('data-set')) {
+    var slug = t.getAttribute('data-set');
+    if (isDone(slug)) setDoneSets(slug, 0);
+    else { setDoneSets(slug, Math.min(+per(slug).sets, doneSets(slug) + 1)); beep(680, .09); }
+    paintLift(slug); paintCur(); paintTally(); paintDays();
+    return;
+  }
+  if (t.hasAttribute('data-rm')) {
+    var l = cfg[day].list, i = l.indexOf(t.getAttribute('data-rm'));
+    if (i >= 0) l.splice(i, 1);
+    xset('routine2', cfg); render();
+    return;
+  }
+  if (t.hasAttribute('data-mv')) {
+    var list = cfg[day].list, from = list.indexOf(t.getAttribute('data-n'));
+    var to = from + (+t.getAttribute('data-mv'));
+    if (from < 0 || to < 0 || to >= list.length) return;
+    var swap = list[from]; list[from] = list[to]; list[to] = swap;
+    xset('routine2', cfg); render();
+  }
+});
+
+$('restSel').onchange = function () { restSec = +$('restSel').value; xset('restSec', restSec); };
+$('resetDay').onclick = function () {
+  prog[day] = {}; xset('routineProg2', prog);
+  render();
+  say('Progress cleared for ' + day + '.');
+};
+$('editBtn').onclick = function () {
+  editing = !editing;
+  $('editBtn').classList.toggle('on', editing);
+  $('editBtn').textContent = editing ? 'Done editing' : 'Edit day';
+  $('adder').hidden = !editing;
+  render();
+};
+$('addBtn').onclick = function () {
+  var v = $('addSel').value;
+  if (!v) return;
+  cfg[day].list.push(v); xset('routine2', cfg); render();
+};
+
+/* ═══════════════════════════════════════════════ the form demonstrator ═══ */
+
+var demo = null;
+function demoFor(slug, tempo) {
+  if (!window.X3FForm) return;
+  try {
+    if (!demo) {
+      demo = X3FForm.create($('demoCv'), {
+        exercise: slug, mode: 'tempo', tempo: +tempo,
+        theme: { accent: '#7C6CFF', band: '#FFC94A', dim: '#8B93A5' }
+      });
+    } else { demo.setExercise(slug); demo.setTempo(+tempo); }
+    if (demo && demo.pause) demo.pause(false);
+    if (demo) demo.resize();
+  } catch (e) { demo = null; }
+  /* An illustrated plate if one has been generated; the procedural rig
+     underneath is what shows when it has not. A missing asset degrades to
+     something, never to nothing. */
+  var art = $('demoArt');
+  art.style.opacity = 0;
+  art.onload = function () { art.style.opacity = .9; };
+  art.onerror = function () { art.style.opacity = 0; };
+  art.src = 'assets/form/' + slug + '.png';
+  $('demoTag').textContent = X3FForm.has(slug)
+    ? ('Live form guide · ' + (+tempo / 1000) + 's tempo') : 'Form guide';
+}
+
+/* ══════════════════════════════════════════════════ overlay bookkeeping ═══
+   The native shell decides what BACK means by asking a flag the PAGE pushes to
+   it, because evaluateJavascript is asynchronous and a query would lose the
+   race with the key event. Without this, BACK mid-session loaded the launcher:
+   the session stayed `active` in storage, the summary never appeared, and the
+   session row was never written (menus audit D2). */
+var coachOn = false, restOn = false, doneOn = false, askOn = false;
+function syncOverlay() {
+  var any = coachOn || restOn || doneOn || askOn;
+  try { if (window.X3F && window.X3F.setOverlay) window.X3F.setOverlay(any); } catch (e) {}
+}
+/* The shell calls this on BACK, having already cleared its own flag. Topmost
+   first, and the coach is never closed silently — it asks. */
+window.__x3fCloseOverlay = function () {
+  if (askOn) { closeAsk(); return; }
+  if (doneOn) { hideDone(); return; }
+  if (restOn) { stopRest(); return; }
+  if (coachOn) { askEnd(); return; }
+};
+
+/* Escape / Backspace / BrowserBack are x3f-nav.js's, not this page's. The page
+   used to install its own keydown listener that stopped the rest timer WITHOUT
+   calling preventDefault, so the nav's handler then ran too and clicked the
+   "All games" link behind the overlay — one Escape closed the timer and left
+   the workout (menus audit D3). Inside the rest overlay BACK now finds
+   #restSkip, which carries data-nav-back; inside the coach there is deliberately
+   no data-nav-back, so the nav's x3f-nav-back event arrives here instead. */
+$('coach').addEventListener('x3f-nav-back', function (e) { e.preventDefault(); askEnd(); });
+
+/* ══════════════════════════════════════════════════════ guided session ═══ */
+
+function saveS() { xset('session', S); }
+function curSlug() {
+  var l = (cfg[S && S.day] && cfg[S.day].list) || [];
+  if (!l.length) return null;
+  return l[Math.min(S.i, l.length - 1)];
+}
+function nextIncomplete(from) {
+  var l = listFor();
+  for (var k = 0; k < l.length; k++) {
+    var i = ((from + k) % l.length + l.length) % l.length;
+    if (!isDone(l[i])) return i;
+  }
+  return -1;
+}
+
+function startSession() {
+  var l = listFor();
+  if (!l.length) { say('This day is empty. Press Edit day and add a movement first.'); return; }
+  if (!(S && S.active && S.day === day)) {
+    S = { active: true, day: day, i: Math.max(0, nextIncomplete(0)), started: Date.now(), sets: 0, pending: null };
+    saveS();
+  }
+  openCoach();
+}
+function openCoach() {
+  if (!S || !S.active) return;
+  if (S.day !== day) { day = S.day; xset('routineDay', day); render(); }
+  $('coach').classList.add('show');
+  coachOn = true; syncOverlay();
+  paintCoach();
+  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+}
+function closeCoach() {
+  $('coach').classList.remove('show');
+  coachOn = false; syncOverlay();
+  /* D10: the rig used to keep a 60 fps rAF loop repainting a canvas inside an
+     opacity:0 overlay for the life of the page, next to the ambient layer's
+     loop and the music scheduler — three loops on a menu screen, on a SoC with
+     a ~10 ms frame budget. */
+  try {
+    if (demo) {
+      if (demo.pause) demo.pause(true);
+      else if (demo.destroy) { demo.destroy(); demo = null; }
+    }
+  } catch (e) {}
+}
+
+function paintCoach() {
+  if (!S || !S.active) return;
+  var l = listFor(), slug = curSlug(), ex = slug ? EXD.get(slug) : null;
+  if (!ex) { endSession(); return; }
+  var c = per(slug), sd = doneSets(slug), tot = +c.sets, g = gameOf(c.game);
+
+  $('cStep').innerHTML = 'Lift <b>' + (S.i + 1) + '</b> of <b>' + l.length +
+                         '</b> · Set <b>' + Math.min(sd + 1, tot) + '</b> of <b>' + tot + '</b>';
+
+  var totalSets = 0, doneAll = 0;
+  for (var i = 0; i < l.length; i++) {
+    var t = +per(l[i]).sets;
+    totalSets += t; doneAll += Math.min(doneSets(l[i]), t);
+  }
+  $('cFill').style.transform = 'scaleX(' + (totalSets ? (doneAll / totalSets) : 0) + ')';
+
+  $('cName').textContent = ex.name;
+  $('cMuscle').textContent = ex.muscle;
+  /* Name, shape, then pounds. A band swatch on its own is the one thing this
+     project has decided it will never ship (OVERHAUL-PLAN AD-4). */
+  $('cBand').setAttribute('data-band', c.band);
+  $('cBand').innerHTML = '<span class="pip"></span>' + c.band;
+  $('cForce').textContent = forceLabel(c.band, slug);
+  $('cRange').textContent = ex.range || '';
+  $('cRange').className = 'crange' + (ex.mid ? ' mid' : '');
+  $('cRange').hidden = !ex.range;   /* an empty pill is a bordered box saying nothing */
+  $('cSetup').innerHTML = ex.setup || '';
+  $('cCue').innerHTML = ex.cue || '';
+  $('cChips').innerHTML = '<span class="tag">' + g.name + '</span>' +
+    (g.tempo ? '<span class="tag">' + (+c.tempo / 1000) + 's up, ' + (+c.tempo / 1000) + 's down</span>' : '') +
+    '<span class="tag">' + tot + ' set' + (tot > 1 ? 's' : '') + '</span>' +
+    (ex.regression && ex.regression.name ? '<span class="tag">Too hard? ' + ex.regression.name + '</span>' : '');
+  $('cPlay').textContent = '▶ Play in ' + g.name;
+  $('cLog').textContent = (sd + 1 >= tot) ? 'Log final set ✓' : 'Log set ✓';
+
+  demoFor(slug, c.tempo);
+
+  var pending = !!(S.pending && S.pending.slug === slug);
+  $('cPending').classList.toggle('show', pending);
+  if (S.pending) {
+    $('cPendingTxt').textContent = 'Back from ' + gameOf(S.pending.game).name +
+      ' — did you finish that set of ' + ex.name + '?';
+  }
+}
+
+function play(slug) {
+  if (S && S.active) {
+    S.i = Math.max(0, listFor().indexOf(slug));
+    S.pending = { slug: slug, game: per(slug).game, at: Date.now() };
+    saveS();
+  }
+  location.href = launchUrl(slug);
+}
+
+function logSet() {
+  if (!S || !S.active) return;
+  var slug = curSlug(); if (!slug) { endSession(); return; }
+  var tot = +per(slug).sets;
+  var sd = Math.min(tot, doneSets(slug) + 1);
+  setDoneSets(slug, sd);
+
+  /* Recorded against the MOVEMENT, so the dashboard, the challenges and the
+     achievements all see guided work even when no game was launched. */
+  var P = mod('X3FProg');
+  if (P) {
+    try {
+      P.logSet({ g: 'routine', ex: slug, band: per(slug).band });
+      var fresh = P.checkAchievements();
+      if (fresh && fresh.length) toastAch(fresh);
+    } catch (e) {}
+  }
+
+  S.sets = (S.sets || 0) + 1; S.pending = null; saveS();
+  beep(760, .1); buzz(35);
+  paintLift(slug); paintCur(); paintTally(); paintDays();
+  $('cPending').classList.remove('show');
+
+  var lastOfLift = sd >= tot;
+  var nx = nextIncomplete(lastOfLift ? S.i + 1 : S.i);
+  if (nx < 0) { endSession(); return; }
+  if (lastOfLift) { S.i = nx; saveS(); }
+  paintCoach();
+  startRest(lastOfLift);
+}
+
+function skipLift() {
+  if (!S || !S.active) return;
+  var nx = nextIncomplete(S.i + 1);
+  if (nx < 0 || nx === S.i) { endSession(); return; }
+  S.i = nx; S.pending = null; saveS(); paintCoach();
+}
+function stepLift(d) {
+  if (!S || !S.active) return;
+  var l = listFor(); if (!l.length) return;
+  S.i = (S.i + d + l.length) % l.length;
+  S.pending = null; saveS(); paintCoach();
+}
+
+/* A session summary row, written the way the engine writes everything else.
+   This used to be a raw localStorage push followed by `while(h.length>250)
+   h.shift()` — a hard truncation the engine was explicitly fixed to remove,
+   because "a hard cap of 600 quietly ate real history after two cycles". Ten
+   weeks in, finishing a session deleted the week 1-3 rollups: the 12-week grid
+   lost its early squares, the program anchor moved forward and lifetime rep
+   badges could un-earn their basis (menus audit D4). compact() folds old
+   entries into per-day rollups instead of dropping them. */
+function logSession(sets, mins) {
+  var P = mod('X3FProg'); if (!P) return;
+  try {
+    var h = P.history().slice();
+    h.push({ t: Date.now(), k: 'session', g: 'routine', day: day, sets: sets, mins: mins });
+    if (P.compact) h = P.compact(h);
+    localStorage.setItem('x3f_history', JSON.stringify(h));
+    if (P.bust) P.bust();
+  } catch (e) {}
+}
+
+function endSession() {
+  var mins = Math.max(1, Math.round((Date.now() - ((S && S.started) || Date.now())) / 60000));
+  var sets = (S && S.sets) || 0, l = listFor();
+  $('dSets').textContent = sets;
+  $('dLifts').textContent = l.filter(isDone).length;
+  $('dMin').textContent = mins;
+  $('dNote').textContent = sets
+    ? (day + ' logged. Bands, personal bests and history are shared with the rest of the app.')
+    : 'Nothing logged this time. Your day is exactly where you left it.';
+  if (sets) logSession(sets, mins);
+
+  S = { active: false }; saveS();
+  closeAsk(); stopRest(); closeCoach();
+  showDone();
+  beep(880, .2); setTimeout(function () { beep(1170, .22); }, 150);
+  render();
+}
+
+function showDone() { $('done').classList.add('show'); doneOn = true; syncOverlay(); if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} } }
+function hideDone() { $('done').classList.remove('show'); doneOn = false; syncOverlay(); if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} } }
+
+function askEnd() {
+  var sets = (S && S.sets) || 0;
+  $('askB').textContent = sets
+    ? (sets + (sets === 1 ? ' set' : ' sets') + ' logged so far. Ending now writes the session to your history; nothing is lost either way.')
+    : 'Nothing has been logged yet. You can pick this day up again whenever you want.';
+  $('ask').classList.add('show');
+  askOn = true; syncOverlay();
+  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+}
+function closeAsk() {
+  $('ask').classList.remove('show');
+  askOn = false; syncOverlay();
+  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+}
+
+$('startSession').onclick = startSession;
+$('cPlay').onclick = function () { var s = curSlug(); if (s) play(s); };
+$('cLog').onclick = logSet;
+$('cSkip').onclick = skipLift;
+$('cPrev').onclick = function () { stepLift(-1); };
+$('cNext').onclick = function () { stepLift(1); };
+$('cPendYes').onclick = logSet;
+$('cPendNo').onclick = function () {
+  if (S) { S.pending = null; saveS(); }
+  $('cPending').classList.remove('show');
+  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+};
+/* "End session" is an explicit press, so it ends: the summary that follows is
+   itself the confirmation, and it carries Undo. BACK is the ambiguous gesture,
+   and that is the one that asks. */
+$('cClose').onclick = function () {
+  if (S && S.sets > 0) { endSession(); return; }
+  S = { active: false }; saveS(); closeCoach(); render();
+};
+$('askYes').onclick = endSession;
+$('askNo').onclick = closeAsk;
+$('dClose').onclick = hideDone;
+
+/* A mis-tapped "Log set" used to be permanent, and it quietly poisons personal
+   bests. Undo removes the most recent logged set and the progress mark with it. */
+$('dUndo').onclick = function () {
+  var P = mod('X3FProg'); if (!P) return;
+  var last = P.lastSet();
+  if (!last) { toastAch([{ name: 'Nothing to undo', desc: 'no sets logged yet' }]); return; }
+  P.removeSet(last.t);
+  if (last.ex) { var d = doneSets(last.ex); if (d > 0) setDoneSets(last.ex, d - 1); }
+  if (S && S.sets > 0) S.sets--;
+  var nm = ((EXD && EXD.get(last.ex)) || {}).name || 'that set';
+  toastAch([{ name: 'Set removed', desc: nm + ' is no longer counted' }]);
+  render();
+};
+
+/* ═════════════════════════════════════════════════════════ rest timer ═══
+   A scoreboard, not a UI. The countdown is the only thing that changes, it
+   changes once a second, and it lives in a fixed-width tabular slot so 90 -> 9
+   does not shove the ring sideways. The arc is an SVG stroke-dashoffset with
+   x3f-ui.css's 90 ms .x3f-meter transition — one short repaint per second on
+   one small element, which is what a progress arc is allowed to cost. Never a
+   per-frame canvas redraw. */
+var restT = null;
+var RC = 2 * Math.PI * 52;
+var restLeft = 0, restTotal = 0;
+$('ringFg').style.strokeDasharray = RC;
+
+function paintRest() {
+  $('restCd').textContent = restLeft;
+  $('restCd').classList.toggle('low', restLeft <= 5);
+  $('ringFg').style.strokeDashoffset = RC * (1 - (restTotal ? restLeft / restTotal : 0));
+}
+function startRest(betweenLifts) {
+  restTotal = restSec; restLeft = restSec;
+  var nx = curSlug(), ex = nx ? EXD.get(nx) : null;
+  $('restNext').innerHTML = betweenLifts
+    ? ('Next up <b>' + (ex ? ex.name : '—') + '</b> · ' + (nx ? per(nx).band : '') + ' band')
+    : ('Same lift · set <b>' + (nx ? Math.min(doneSets(nx) + 1, +per(nx).sets) : 1) +
+       '</b> of ' + (nx ? per(nx).sets : 1));
+  paintRest();
+  $('rest').classList.add('show');
+  restOn = true; syncOverlay();
+  beep(620, .1);
+  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+  clearInterval(restT);
+  restT = setInterval(function () {
+    restLeft--;
+    if (restLeft <= 0) { stopRest(); beep(940, .25); buzz(140); return; }
+    paintRest();
+    /* The last three seconds are audible, because you are not looking. */
+    if (restLeft <= 3) beep(520, .07);
+  }, 1000);
+}
+function stopRest() {
+  clearInterval(restT); restT = null;
+  $('rest').classList.remove('show');
+  restOn = false; syncOverlay();
+  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+}
+$('restSkip').onclick = stopRest;
+$('restMore').onclick = function () {
+  restLeft += 30; restTotal = Math.max(restTotal, restLeft);
+  paintRest(); beep(520, .08);
+};
+
+/* ═══════════════════════════════════════════════════════════════ boot ═══ */
+
+(function boot() {
+  if (!EXD) {
+    /* The movement database is the page. Say so rather than showing an empty
+       screen with a working header, which is what "no guard" looks like. */
+    $('list').innerHTML = '<div class="foot">Movement data did not load, so this day ' +
+      'cannot be built. Everything you have already logged is safe.</div>';
+    return;
+  }
+  render();
+  renderFoot();
+
+  /* Resuming a session the user walked out of — usually because they launched a
+     game from it and the game navigated back here. */
+  if (S && S.active && cfg[S.day]) {
+    day = S.day; xset('routineDay', day); render();
+    openCoach();
+  }
+
+  /* Ambience is the first thing sacrificed if anything goes wrong with it. */
+  try { if (window.X3FFX && X3FFX.mount) X3FFX.mount({ image: 'assets/ui/aurora.jpg' }); } catch (e) {}
+  try {
+    if (window.X3FMusic && X3FMusic.attach) {
+      X3FMusic.attach({ mood: 'menu', buttonHost: document.querySelector('.top'), buttonClass: 'topbtn' });
+    }
+  } catch (e) {}
+
+  /* The remote has nothing focused until the first D-pad press. Seat the cursor
+     on the single most likely action so it costs zero presses — unless the
+     coach already claimed the screen, in which case its own data-nav-first has
+     it. */
+  try {
+    if (window.X3FNav) {
+      X3FNav.refresh();
+      if (!X3FNav.current()) X3FNav.set(coachOn ? $('cPlay') : $('startSession'));
+    }
+  } catch (e) {}
+
+  /* MainActivity clears its own overlayOpen flag in onPageFinished — "a fresh
+     page has nothing open" — which is right for a normal load and wrong for the
+     one case that matters: returning from a game mid-session, where the coach is
+     already open before the page has finished loading. Without this, the very
+     first BACK after coming back from a lift would leave the session (D2 again,
+     by a different route). Re-asserted on load and once more a beat later,
+     because the ordering of onPageFinished against the JS load event is not
+     something this page gets to know. */
+  addEventListener('load', function () { syncOverlay(); setTimeout(syncOverlay, 500); });
+
+  /* Report the real coordinate system once, so the 10-foot type scale can be
+     confirmed on the actual panel rather than assumed. */
+  try {
+    console.log('[x3f] viewport', {
+      innerWidth: window.innerWidth,
+      dpr: window.devicePixelRatio,
+      physical: Math.round(window.innerWidth * (window.devicePixelRatio || 1)),
+      rootFontPx: parseFloat(getComputedStyle(document.documentElement).fontSize)
+    });
+  } catch (e) {}
+})();
+</script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
+</body></html>

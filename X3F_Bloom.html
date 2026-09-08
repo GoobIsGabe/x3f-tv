@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<!-- X3F BLOOM - the reference implementation of an X3 set, as a twilight dream garden.
+
+ WHAT THIS GAME SCORES, AND WHY IT CHANGED
+ -----------------------------------------
+ Bloom used to count a rep every time its TEMPO CLOCK wrapped, crediting the wrap if the
+ highest force inside that window cleared a threshold. Three things followed from that, all
+ of them wrong, and all of them shipped:
+
+   * an ISOMETRIC HOLD farmed unlimited "full reps" - pull to 62% of your range, stand
+     perfectly still, and the clock handed you a flawless set forever. Nothing ever read the
+     bottom of a rep, so there was no eccentric, no concentric and no range in the model at
+     all (audit games-a D-03).
+   * the "diminishing range" that the whole game is built to show was a FIXED -15% decay per
+     partial. The one term that would have tracked the athlete was mathematically unreachable,
+     so the burnout was scripted rather than measured (D-02).
+   * failure needed two consecutive dead cycles inside a 0.16%-wide window, so no set ever
+     ended by failing (D-04) - and the manual stop that every set therefore used was logged
+     and announced as a failure anyway (D-05).
+
+ So the rep is no longer a clock tick. x3f-set.js watches the force signal, detects each rep
+ from the MOVEMENT (up past a real amplitude, back down through half of it), and grades it
+ against the top you established TODAY:
+
+     FULL RANGE   >= 0.85 of your session top      the reps the program asks for
+     MID RANGE    0.45 - 0.85                      partials, once full range is gone
+     WEAK RANGE   < 0.45                           "very short weak range repetitions"
+     FAILURE      the bar will not move at all
+
+ A hold now scores exactly what a hold is worth: nothing. It produces no excursion, so it
+ produces no reps, and after ten seconds of no rep the set is called at failure - which is
+ what "continue until you can no longer move the bar even an inch" actually means.
+
+ The vine is the other half of the fix. Its blooms are drawn at the range YOU are still
+ reaching - a rolling measure of your last two rep peaks - so the diminishing range on screen
+ is a measurement rather than a geometric sequence, and the guide lines that split full from
+ mid from weak move with your session top. As you empty out, the vine flattens toward the bud
+ line. That picture is the set.
+
+ The clock survives as a PACER, not a scorer: 2-3 seconds up, 2-3 seconds down, the program's
+ own tempo. Missing it costs you nothing but honesty in the tempo readout, because
+ "increase the repetition speed so they can break a personal record. Don't do that" is the one
+ instruction a rep-counting game must never contradict.
+
+ Shares band setting + history with the rest of the app via localStorage (x3f_*).
+ LOAD-BEARING: x3f-set.js owns rep detection, the three tiers, peak, time under tension and
+ the form faults. x3f-hud.js is the shared in-set scoreboard and is optional - without it the
+ game still plays, it just loses the enormous rep counter.
+ ART SLOTS: drops illustrated PNGs from assets/bloom/ over the procedural scene if present
+ (bg, critter, critter_strain, flower, bud, petal). Missing files fall back to procedural art,
+ so it stays fully playable + offline with zero assets. -->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>X3F Bloom</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#120a26"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+:root{
+  --bg:#120a26;--bg2:#1b1038;--panel:rgba(255,255,255,.06);--brd:rgba(255,255,255,.12);--brd2:rgba(255,255,255,.2);
+  --txt:#f4ecff;--dim:#b6a6d6;--accent:#59f5c4;--accentD:#17b98c;--gold:#ffd86b;--hot:#ff7aa8;--petal:#ff9ecf;--cyan:#7fe9ff;
+  --d:'Fredoka',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
+  /* The shared scoreboard (x3f-hud.js) reads these token names, so naming them
+     here is what makes the enormous rep counter wear Bloom's type and Bloom's
+     palette instead of the browser's default sans and a generic violet. --amber
+     and --mint are the two tier colours it needs and the garden did not have. */
+  --font-display:var(--d);--font-num:var(--n);--amber:#ffb054;--mint:#59f5c4;
+  --sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{font-family:var(--d);color:var(--txt);user-select:none;-webkit-user-select:none;background:var(--bg)}
+.app{position:relative;height:100dvh;max-width:900px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;padding-top:var(--sat)}
+.topbar{display:flex;align-items:center;gap:8px;padding:12px 14px 6px;flex-wrap:wrap;position:relative;z-index:5;transition:opacity .3s}
+/* During a set the top of the screen belongs to the scoreboard. The chrome is
+   dimmed rather than hidden: you are not going to press any of it while holding
+   a bar, but it must not vanish either - the remote can still reach it, and a
+   control that disappears mid-set is a control the cursor was standing on. */
+.app.inset .topbar{opacity:.22}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid var(--brd);color:var(--txt);font-size:22px;font-weight:700;line-height:1;flex:0 0 auto;cursor:pointer;font-family:inherit}
+.tvbtn{width:auto;padding:0 12px;height:38px;font-size:12px;font-weight:700;letter-spacing:1px}
+.brand{font-weight:700;font-size:18px;letter-spacing:1px;margin-left:2px}.brand b{color:var(--accent)}
+.spacer{flex:1}
+.status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);font-size:12px;color:var(--dim);font-family:var(--n);font-weight:500}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--hot)}.dot.on{background:var(--accent);box-shadow:0 0 12px var(--accent)}.dot.wait{background:var(--gold);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);color:var(--txt);border:1px solid var(--brd2);border-radius:11px;padding:9px 11px;cursor:pointer}
+.stage{flex:1;min-height:0;position:relative;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.hud{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
+/* During a set the shared scoreboard owns the top of the screen: a 170px rep
+   count at top-left and the tier at top-right. These chips are the secondary
+   numbers, so they move under the tier label on the right, clear of the giant
+   number, of the hype layer's approach counter and burnout meter at the bottom,
+   and of the form panel in the bottom-left corner. */
+.hud.aside{top:13vh;left:auto;right:10px;justify-content:flex-end}
+.chip{background:rgba(18,10,38,.62);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);border:1px solid var(--brd);border-radius:15px;padding:8px 13px;min-width:82px}
+.chip .k{font-family:var(--n);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
+.chip .v{font-family:var(--n);font-weight:700;font-size:21px;font-variant-numeric:tabular-nums}
+.v.accent{color:var(--accent)}.v.gold{color:var(--gold)}.v.petal{color:var(--petal)}.v.hot{color:var(--hot)}
+.toast{position:absolute;left:0;right:0;top:34%;text-align:center;font-family:var(--d);font-weight:700;font-size:clamp(1.7rem,7vw,2.8rem);opacity:0;transition:opacity .3s;pointer-events:none;text-shadow:0 4px 34px #000,0 0 22px rgba(89,245,196,.5)}
+.toast.show{opacity:1}
+.ctrl{display:flex;gap:8px;align-items:center;padding:8px 12px calc(8px + var(--sab));border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(10,5,24,.55));position:relative;z-index:5}
+.cta{font-family:var(--d);font-weight:700;font-size:16px;border:none;border-radius:14px;padding:14px 18px;cursor:pointer;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04140e;transition:transform .07s,filter .15s;box-shadow:0 6px 22px rgba(89,245,196,.28)}
+.cta:active{transform:translateY(1px)}.cta.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--brd2);box-shadow:none}
+.grow{flex:1}
+.scrim{position:fixed;inset:0;background:rgba(10,5,24,.72);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);display:flex;align-items:center;justify-content:center;z-index:30;opacity:0;pointer-events:none;transition:opacity .25s;padding:24px}
+.scrim.show{opacity:1;pointer-events:auto}
+.card{width:100%;max-width:430px;text-align:center;display:flex;flex-direction:column;gap:14px}
+.card h1{font-size:30px;font-weight:700;letter-spacing:.5px}.card h1 b{color:var(--accent)}
+.card .tag{font-family:var(--n);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--gold)}
+.card p{color:var(--dim);font-size:14px;line-height:1.6}
+</style><script src="x3f-cal.js"></script>
+</head>
+<body>
+<div class="app">
+<div class="topbar">
+<button class="iconbtn" onclick="history.length>1?history.back():location.href='index.html'" aria-label="Back">&lsaquo;</button>
+<button class="iconbtn tvbtn" onclick="x3tv()" aria-label="TV mode">TV</button>
+<div class="brand">X3F <b>BLOOM</b></div><div class="spacer"></div>
+<div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
+<select id="bandSel" title="Band"></select>
+<button class="mini" id="cueBtn">Cues on</button>
+<button class="mini" id="formBtn" style="display:none" title="Live form guide">Form on</button>
+<button class="mini" id="musicBtn" title="Soundtrack">Music</button>
+</div>
+<div class="stage" id="stage">
+<canvas id="cv"></canvas>
+<!-- No Reps chip: the rep count is the shared scoreboard's job now, at ten times
+     this size, because you read it side-on from four feet away between reps.
+     Tempo is here instead - seconds for the last rep, against the program's
+     4-6s window - because it is the number that talks you out of speeding up. -->
+<div class="hud" id="hud">
+<div class="chip"><div class="k">Tempo</div><div class="v" id="hTempo">-</div></div>
+<div class="chip"><div class="k">Best Set</div><div class="v gold" id="hBest">0</div></div>
+<div class="chip"><div class="k">Force</div><div class="v petal" id="hForce">0</div></div>
+</div>
+<div class="toast" id="toast"></div>
+</div>
+<div class="ctrl">
+<button class="cta ghost" id="zeroBtn">Re-Zero</button>
+<!-- Seconds per PHASE, not per cycle. The old menu offered 4s / 3s / 2s for a
+     complete up-and-down, defaulted to 3s, and so trained a 1.5s eccentric -
+     twice as fast as the program's own minimum, in the game that is supposed to
+     be the reference implementation. "A controlled 2-3 second tempo up and down"
+     is 4-6s a rep, so those are the only three settings on offer and the
+     default is the middle of the window. -->
+<select id="tempoSel" title="Tempo"><option value="4000">2s up · 2s down</option><option value="5000" selected>2.5s up · 2.5s down</option><option value="6000">3s up · 3s down</option></select>
+<div class="grow"></div>
+<button class="cta" id="startBtn">Start Set</button>
+</div>
+</div>
+<div class="scrim show" id="firstrun"><div class="card">
+<div class="tag">Dream Garden · controlled reps</div>
+<h1>X3F <b>BLOOM</b></h1>
+<p>Ride the glowing vine. Pull up into every <b>bloom</b>, ease down into every <b>bud</b> - never all the way to rest, keep the tension on. Two seconds up, two seconds down; speed is worth nothing here.</p>
+<p>Every rep is measured and graded: <b>full range</b>, then <b>mid range</b> partials as the blooms drop, then <b>weak range</b> - as far as you can still move it. The vine follows you down. When the bar will not move at all, that is the set.</p>
+<button class="cta" id="frConnect">Connect Bar</button>
+<button class="cta ghost" id="frDemo">Try Demo (hold to pull)</button>
+</div></div>
+<!-- x3f-band.js answers "which band is this movement on?" for the whole app.
+     Bloom used to read the x3f_band key by hand, which is one of the three
+     disagreeing answers that made a calibration land under one key and get
+     looked up under another. It must load before the inline script, which asks
+     the question on its first line. -->
+<script src="x3f-band.js"></script>
+<script src="x3f-exercises.js"></script>
+<script src="x3f-form.js"></script>
+<script src="x3f-progress.js"></script>
+<script src="x3f-set.js"></script>
+<script src="x3f-hype.js"></script>
+<!-- The shared in-set scoreboard. Optional on purpose: if it 404s the game is
+     unchanged apart from losing the enormous rep counter. -->
+<script src="x3f-hud.js"></script>
+<script src="x3f-music.js"></script>
+<script>
+"use strict";
+const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_BATT='e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6';
+const $=id=>document.getElementById(id);
+function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
+function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
+const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
+const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
+// per-band flower hue so each band feels like its own garden
+const BAND_HUE={'White':320,'Light Gray':285,'Dark Gray':200,'Black':45,'Elite Black':160};
+const EXSLUG=window.X3FCal?X3FCal.slug():null;
+/* WHICH BAND. One owner, asked the same way by Calibrate, the Library and every
+   game: explicit ?band= for this run, then the movement's own choice, then a
+   real calibration for it, then the band you are physically on. Reading the
+   x3f_band key directly - which is what this line used to do - is what let the
+   app calibrate one band and train another. */
+let band=window.X3FBand?X3FBand.forMovement(EXSLUG):xget('band','White');
+let bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
+/* The band this run is actually using. A ?band= override no longer writes the
+   global setting, so the set log has to ask the game, not localStorage. */
+window.__x3fBand=function(){return band};
+/* The span of THIS movement's calibrated range, not the raw band max: a chest
+   press and an overhead press on one band are nowhere near the same scale. */
+function ref(){return window.X3FCal?X3FCal.span(EXSLUG,band):Math.max(60,bandMax[band]||130)}
+/* The movement's own start position already carries load (an overhead press
+   starts at chin height with the band loaded). That load is the zero. */
+function calLo(){return window.X3FCal?X3FCal.floor(EXSLUG,band):0}
+/* PERSONAL BEST, per movement AND per band.
+   x3f_bloomBest pools every movement and every band into one number, so a
+   40-rep White calf raise sets a "best" a Black deadlift can never approach -
+   and the NEW BEST callout, the loudest moment the hype layer has, becomes
+   unreachable for every heavy movement. The engine already keeps a correct
+   per-movement, per-band record; use it when we know the movement, and fall
+   back to the pooled number when we do not. */
+function pbFor(field){
+  try{ if(window.X3FProg&&EXSLUG){const b=X3FProg.pb(EXSLUG,band);return +b[field]||0;} }catch(e){}
+  return field==='reps'?xget('bloomBest',0):0;
+}
+let bestSet=pbFor('reps'), bestPeak=pbFor('peak');
+$('hBest').textContent=bestSet;
+const bandSel=$('bandSel');
+BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSel.appendChild(o)});
+/* Changing the band here is a statement about THIS movement when we know which
+   movement it is (X3FBand.set), and about the bar in general when we do not
+   (setCurrent). Writing the global from a per-movement choice is the bug that
+   silently moved every other lift to Dark Gray, so the two are kept apart. */
+bandSel.onchange=()=>{band=bandSel.value;
+  if(window.X3FBand){if(EXSLUG)X3FBand.set(EXSLUG,band);else X3FBand.setCurrent(band);}
+  else xset('band',band);
+  bestSet=pbFor('reps');bestPeak=pbFor('peak');$('hBest').textContent=bestSet;
+  buildBG()};
+function logSession(o){try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push(Object.assign({t:Date.now(),b:band},o));while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}}
+let cues=xget('cues',true);const cueBtn=$('cueBtn');function syncCue(){cueBtn.textContent=cues?'Cues on':'Cues off'}syncCue();
+cueBtn.onclick=()=>{cues=!cues;xset('cues',cues);syncCue()};
+let actx=null;function beep(f,d,type){if(!cues)return;try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),g=actx.createGain();o.type=type||'sine';o.frequency.value=f;o.connect(g);g.connect(actx.destination);g.gain.setValueAtTime(0.0008,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.2,actx.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.0008,actx.currentTime+d);o.start();o.stop(actx.currentTime+d+0.03)}catch(e){}}
+function cue(peak){if(!cues)return;if(navigator.vibrate)navigator.vibrate(peak?35:14);if(peak){beep(720,0.09);setTimeout(()=>beep(1080,0.12),70)}else beep(500,0.06)}
+
+// ---------- optional illustrated assets (drop-in over procedural art) ----------
+const ASSET_BASE='assets/bloom/';
+const IMG={};
+[['bg','bg.jpg'],['critter','critter.png'],['critterStrain','critter_strain.png'],['critterCheer','critter_cheer.png'],['flower','flower.png'],['bud','bud.png'],['petal','petal.png']].forEach(([k,f])=>{
+  IMG[k]={ok:false};const im=new Image();im.onload=()=>{IMG[k].img=im;IMG[k].ok=true;if(k==='bg')buildBG()};im.onerror=()=>{IMG[k].ok=false};im.src=ASSET_BASE+f;
+});
+
+// ---------- BLE / force pipeline (identical protocol to the rest of the app) ----------
+let device=null,connected=false,demo=false;
+let raw=0,baseline=null,taring=false,tSamp=[],tStart=0,tEnd=0,force=0;
+function setStatus(t,c){$('statusTxt').textContent=t;$('dot').className='dot'+(c?' '+c:'')}
+async function connect(){
+  if(!navigator.bluetooth){setStatus('No Web Bluetooth','');alert('Bluetooth needs Chrome on Android, or the free Bluefy browser on iPhone (App Store). Or press Demo to play without the bar.');return;}
+  if(!window.isSecureContext){setStatus('Not secure','');alert('Serve over https or localhost (use the Start Games launcher).');return;}
+  try{
+    setStatus('Scanning...','wait');
+    device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE]});
+    device.addEventListener('gattserverdisconnected',()=>{connected=false;setStatus('Disconnected','')});
+    setStatus('Connecting...','wait');
+    const srv=await(await device.gatt.connect()).getPrimaryService(SERVICE);
+    const fc=await srv.getCharacteristic(CH_FORCE);await fc.startNotifications();
+    fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);onSample()});
+    demo=false;connected=true;$('firstrun').classList.remove('show');startTare();
+  }catch(e){console.error(e);if(e.name==='NotFoundError'){setStatus('No bar found','');alert('No device selected, or nothing advertising. Make sure the bar is awake and free from your phone.')}else{setStatus(e.name,'');alert('Bluetooth error: '+e.name)}}
+}
+function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
+function onSample(){
+  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
+  if(baseline==null)baseline=raw;
+  /* NOTHING ELSE MAY LIVE IN HERE. The TV shell replaces this function outright
+     with its own 16ms interval (MainActivity BOOTSTRAP), so any conditioning of
+     the signal written here and not there simply does not exist on the couch.
+     Peak force used to be tracked on this line, which is why every Bloom set
+     ever trained on the television logged peak:0 - and peak is what the PB
+     table, five achievements and the calibration ceiling are all read from. It
+     now comes from x3f-set.js's own sampler, which watches `force` and is
+     therefore identical on both paths. */
+  force=Math.max(0,raw-baseline-calLo());
+}
+let demoF=0,pull=false;
+function startDemo(){demo=true;connected=false;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
+  if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(ref()*1.05,demoF+ref()*0.06+2);else demoF=Math.max(0,demoF*0.9-2);raw=demoF;onSample()},27)}
+$('stage').addEventListener('pointerdown',()=>{if(demo)pull=true});
+addEventListener('pointerup',()=>pull=false);
+addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});
+addEventListener('keyup',e=>{if(e.code==='Space')pull=false});
+$('frConnect').onclick=connect;$('frDemo').onclick=startDemo;
+$('zeroBtn').onclick=()=>{if(demo){baseline=0}else startTare()};
+
+// ---------- canvas + scene ----------
+const cv=$('cv'),ctx=cv.getContext('2d');let W=0,H=0,DPR=1;
+let bgC=document.createElement('canvas'),bgX=bgC.getContext('2d');
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);buildBG()}
+addEventListener('resize',resize);
+
+// static parallax garden painted once per resize/band into an offscreen buffer
+let islands=[];
+function buildBG(){
+  if(!W||!H)return;
+  bgC.width=W*DPR;bgC.height=H*DPR;bgX.setTransform(DPR,0,0,DPR,0,0);
+  const g=bgX;g.clearRect(0,0,W,H);
+  if(IMG.bg&&IMG.bg.ok){ // illustrated background, cover-fit
+    const im=IMG.bg.img,ir=im.width/im.height,cr=W/H;let dw,dh;
+    if(ir>cr){dh=H;dw=H*ir}else{dw=W;dh=W/ir}
+    g.drawImage(im,(W-dw)/2,(H-dh)/2,dw,dh);
+    g.fillStyle='rgba(18,10,38,.28)';g.fillRect(0,0,W,H); // unify tone for HUD legibility
+    return;
+  }
+  // ---- procedural twilight sky ----
+  const sky=g.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,'#160b30');sky.addColorStop(.42,'#2a1550');sky.addColorStop(.72,'#4a1f5e');sky.addColorStop(1,'#7a2f5a');
+  g.fillStyle=sky;g.fillRect(0,0,W,H);
+  // moon + warm glow near horizon
+  const mx=W*0.76,my=H*0.26,mr=Math.min(W,H)*0.11;
+  let hg=g.createRadialGradient(mx,my,0,mx,my,mr*5);
+  hg.addColorStop(0,'rgba(255,225,180,.5)');hg.addColorStop(.25,'rgba(255,190,150,.18)');hg.addColorStop(1,'rgba(255,190,150,0)');
+  g.fillStyle=hg;g.fillRect(0,0,W,H);
+  g.fillStyle='#fff3d8';g.beginPath();g.arc(mx,my,mr,0,7);g.fill();
+  g.fillStyle='rgba(120,80,120,.18)';g.beginPath();g.arc(mx+mr*.32,my-mr*.2,mr*.28,0,7);g.arc(mx-mr*.3,my+mr*.25,mr*.18,0,7);g.fill();
+  // stars
+  for(let i=0;i<70;i++){const sx=(i*97.13)%W,sy=(i*57.31)%(H*0.6),tw=0.3+((i*13)%10)/14;g.fillStyle='rgba(255,255,255,'+tw*0.7+')';g.beginPath();g.arc(sx,sy,tw*1.1,0,7);g.fill();}
+  // hue tint from current band
+  const hue=BAND_HUE[band]||320;
+  // distant rounded hills (2 layers)
+  function ridge(baseY,amp,col,step){g.fillStyle=col;g.beginPath();g.moveTo(0,H);g.lineTo(0,baseY);
+    for(let x=0;x<=W;x+=step){const y=baseY+Math.sin(x*0.006+baseY)*amp+Math.sin(x*0.021)*amp*0.4;g.lineTo(x,y)}g.lineTo(W,H);g.closePath();g.fill();}
+  ridge(H*0.66,20,'hsla('+hue+',34%,26%,.85)',18);
+  ridge(H*0.75,26,'hsla('+((hue+30)%360)+',40%,20%,.92)',16);
+  // floating islands (mid layer) - placed deterministically
+  islands=[{x:W*0.2,y:H*0.5,s:Math.min(W,H)*0.14},{x:W*0.62,y:H*0.42,s:Math.min(W,H)*0.1}];
+  islands.forEach(o=>{
+    g.save();g.translate(o.x,o.y);
+    // rock underside
+    g.fillStyle='hsla('+hue+',30%,15%,.95)';g.beginPath();g.moveTo(-o.s,0);g.quadraticCurveTo(0,o.s*1.5,o.s,0);g.quadraticCurveTo(o.s*0.6,-o.s*0.2,0,-o.s*0.2);g.quadraticCurveTo(-o.s*0.6,-o.s*0.2,-o.s,0);g.closePath();g.fill();
+    // grass cap
+    g.fillStyle='hsla('+((hue+120)%360)+',45%,32%,.95)';g.beginPath();g.ellipse(0,-o.s*0.14,o.s,o.s*0.34,0,0,7);g.fill();
+    g.restore();
+  });
+  // foreground silhouette foliage sweeping up from bottom corners
+  g.fillStyle='hsla('+((hue+130)%360)+',50%,10%,.96)';
+  g.beginPath();g.moveTo(0,H);g.lineTo(0,H*0.7);
+  for(let x=0;x<=W;x+=10){const y=H*0.9-Math.max(0,Math.sin(x*0.03+2)*40)-Math.max(0,Math.sin(x*0.008)*30);g.lineTo(x,Math.min(H,y+H*0.06))}
+  g.lineTo(W,H);g.closePath();g.fill();
+}
+
+// ---------- the program's own numbers ----------
+/* Never restate a figure the protocol already owns. fullRangeFrac/midRangeFrac
+   are the two lines that split a set into its three tiers; the tempo is "2-3
+   seconds up and down". The fallbacks exist only for a page that somehow loads
+   without x3f-exercises.js. */
+const PROTO=(window.X3FEX&&X3FEX.protocol)||{fullRangeFrac:0.85,midRangeFrac:0.45,
+  repMinMs:4000,repIdealMs:5000,tempoUpMs:2500,tempoDownMs:2500,repsMin:15,repsMax:40};
+/* THE END OF A SET, MEASURED. "Continue until you can no longer move the bar
+   even an inch" - so the set ends when an inch stops happening. Twice the ideal
+   rep is long enough that a deliberately slow rep, or a grind that takes two
+   attempts to break loose, can never trigger it, and short enough that failure
+   is called within about two reps of arriving. The old rule needed the athlete
+   to let go completely for two consecutive tempo cycles AND land inside a
+   0.16%-wide window, so in practice no Bloom set ever ended by failing. */
+const STALL_MS=Math.max(8000,(PROTO.repIdealMs||5000)*2);
+/* The trough of the vine. Not zero: zero is the movement's start position, and
+   x3f-set.js calls a rep slack when it parks within 4% of it. Asking for three
+   times that keeps you honestly loaded at the bottom with room to spare. */
+const BUD=0.12;
+
+// ---------- game state ----------
+let running=false,setStart=0,period=(PROTO.tempoUpMs+PROTO.tempoDownMs)||5000;
+let reps=0,fullReps=0,midReps=0,weakReps=0,burnoutReps=0;
+let hitF=0,totF=0,acc=0;
+let setPeak=0;                 // peak force this set, ABSOLUTE (unfloored), for PBs,
+                               // challenges and the calibration ceiling
+let sessTop=0;                 // the top established this set, 0..1 of the calibrated span
+let curHi=PROTO.fullRangeFrac; // the range being ASKED for, 0..1 - see reAim()
+let repHigh=0,recent=[];       // this rep's peak so far, and the last two closed peaks
+let tier='full',lastRepAt=0,lastRepMs=0,failed=false;
+/* The pacer runs on the wall clock with an offset, not on accumulated frame
+   deltas, so it keeps time when the frame loop is throttled and a resync is one
+   subtraction. */
+let vineOff=0;
+function vineNow(){return performance.now()-vineOff;}
+let prevForce=0,critVel=0,wobStart=-9999,wobDur=380,wobStr=1,lastOnT=null,cheerUntil=0,popT=0;
+let frameR=1,frameLo=0;        // ref()/calLo(), read once a tick - see stepSet()
+let hud=null;
+function triggerWobble(str){wobStart=performance.now();wobStr=str;}
+$('tempoSel').onchange=()=>{period=+$('tempoSel').value};
+period=+$('tempoSel').value||period;
+
+// which X3 movement this set belongs to is declared up with the calibration
+// helpers - one resolution, shared by the scale, the form panel and the set log
+// ---------- milestone moments + soundtrack ----------
+/* The hype layer already knows the three tiers, the partials ladder and the two
+   band-rule rep counts; it was only ever being told the total. It now hears the
+   moments the program actually values: entering mid range, entering weak range,
+   failure, partials split by tier, seconds held in the strong range, and peak
+   force - which is the one number you cannot inflate by going faster. */
+const hype=window.X3FHype?X3FHype.create({host:$('stage'),unit:'reps',
+  theme:{hot:'#ffd35c',cool:'#59f5c4',text:'#eaf0fa'},
+  best:()=>bestSet,bestPeak:()=>bestPeak}):null;
+const music=window.X3FMusic?X3FMusic.create({mood:'bloom',
+  getIntensity:()=>Math.min(1,(force/ref())*1.1)}):null;
+(function(){const b=$('musicBtn');if(!b)return;
+  const sync=()=>{b.textContent=(music&&music.isOn())?'Music on':'Music off';};
+  sync();b.onclick=()=>{if(music)music.toggle();sync();};})();
+/* ?band= is resolved by X3FBand.forMovement() above, so all this does is show
+   it in the picker. ?tempo= only moves the picker when it names a tempo the
+   picker actually offers - otherwise the select goes blank and the menu lies
+   about what the vine is doing. Either way the pacer honours the request. */
+(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');
+  if(bd&&BAND_DEF[bd]){band=bd;bandSel.value=band;}
+  const tp=p.get('tempo');if(tp&&+tp>0){period=+tp;
+    if([].some.call($('tempoSel').options,o=>o.value===String(+tp)))$('tempoSel').value=String(+tp);}})();
+// ---------- live form demonstrator ----------
+// If we were launched for a specific X3 movement (Library / guided Routine), mirror
+// it in the corner: the figure rises, strains and eases with your actual force.
+(function(){
+  const p=new URLSearchParams(location.search);let slug=p.get('ex');
+  if(!slug){try{const s=JSON.parse(localStorage.getItem('x3f_session')||'null');if(s&&s.active&&s.pending)slug=s.pending.slug}catch(e){}}
+  if(!slug||!window.X3FForm||!X3FForm.has(slug))return;
+  X3FForm.mount({exercise:slug,host:$('stage'),toggleBtn:$('formBtn'),
+    getN:()=>force/ref(),theme:{accent:'#59f5c4',band:'#ffd35c',dim:'#9aa8c4',skin:'#eaf0fa',deep:'#6f6a9c'}});
+})();
+$('startBtn').onclick=()=>{ if(running){endSet(false);return;}
+  running=true;setStart=performance.now();lastRepAt=performance.now();
+  reps=0;fullReps=0;midReps=0;weakReps=0;burnoutReps=0;
+  hitF=0;totF=0;acc=0;setPeak=0;sessTop=0;repHigh=0;recent=[];lastRepMs=0;
+  tier='full';failed=false;curHi=PROTO.fullRangeFrac;
+  if(hype)hype.reset();
+  /* The watcher is the rep detector, the peak, the time under tension and the
+     form faults. Resetting it here is what makes a set a set. */
+  if(window.X3FSet)X3FSet.reset();
+  /* The shared scoreboard: one enormous, still, identical rep counter over all
+     eight games, because during a set you read the screen side-on, from four to
+     eight feet, in peripheral vision, for a fraction of a second. */
+  if(window.X3FHUD){
+    if(hud)hud.destroy();
+    const e=window.X3FEX&&EXSLUG?X3FEX.get(EXSLUG):null;
+    hud=X3FHUD.create({host:document.body,name:(e&&e.name)||'Bloom'});
+    $('hud').classList.add('aside');
+  }
+  $('hTempo').textContent='-';$('hTempo').className='v';shownTempo='-';
+  document.querySelector('.app').classList.add('inset');
+  clearInterval(stepT);stepT=setInterval(stepSet,STEP_MS);
+  $('startBtn').textContent='Stop Set';toast('Grow!');beep(660,0.12); };
+
+/* `fail` is now read. It used to be declared and ignored, so stopping a set to
+   answer the door was logged and announced as failure - and then counted toward
+   the burnout badges and the partials challenge as though the athlete had
+   emptied the muscle. A set that ends because the bar will not move is the point
+   of the program; a set that ends because you pressed the button is not, and the
+   two must not read the same. */
+function endSet(fail){ running=false;$('startBtn').textContent='Start Set';
+  failed=!!fail;clearInterval(stepT);stepT=0;
+  document.querySelector('.app').classList.remove('inset');
+  const secs=Math.round((performance.now()-setStart)/1000);
+  acc=totF?Math.round(hitF/totF*100):0;
+  /* Take the engine's final word before reporting. The counters are mirrored on
+     a 100ms tick and the engine samples at 40ms, so the last rep of a set can
+     close between the two - and it is always the last rep that the athlete cares
+     about most. The guard is deliberate: only ever accept a count that is at
+     least what we already had, so a caller that drove the counts itself keeps
+     them. */
+  if(window.X3FSet){const L=X3FSet.live();
+    if(L&&L.reps>=reps){reps=L.reps;fullReps=L.full;midReps=L.mid;weakReps=L.weak;
+      burnoutReps=L.mid+L.weak;if(L.tier)tier=L.tier;}}
+  /* The pooled all-time number stays for a run with no movement attached; the
+     displayed best is this movement on this band. */
+  xset('bloomBest',Math.max(xget('bloomBest',0),reps));
+  if(reps>bestSet){bestSet=reps;$('hBest').textContent=bestSet;}
+  if(setPeak>bestPeak)bestPeak=Math.round(setPeak);
+  if(hud){hud.set({reps:reps,full:fullReps,mid:midReps,weak:weakReps,tier:tier,frac:0});hud.done();
+    clearTimeout(endSet.hudT);
+    /* The last number is the one you want to read, so it stays up - but not
+       forever, or it sits over the topbar until the page is reloaded. */
+    endSet.hudT=setTimeout(function(){if(hud&&!running){hud.destroy();hud=null;$('hud').classList.remove('aside');}},14000);}
+  if(fail&&hype&&hype.range)hype.range('failure');
+  /* ONE entry per set, through the one reporter. It logs, and on the way it
+     works out the three tiers from the force trace, the real eccentric seconds,
+     the time in the strong range, the form faults, the personal best and what
+     improved since last time - in that order, because `improvement` compared the
+     set against itself when Bloom did this by hand. Anything that also called
+     X3FProg.logSet here would double-count every rep in the dashboard. */
+  let res=null;
+  if(window.X3FSet){
+    const payload={g:'bloom',ex:EXSLUG,band:band,reps:reps,full:fullReps,part:burnoutReps,
+      acc:acc,secs:secs,hype:hype};
+    if(setPeak>0)payload.peak=Math.round(setPeak);
+    try{res=X3FSet.report(payload);}catch(e){}
+  }
+  else if(window.X3FProg){try{X3FProg.logSet({g:'bloom',ex:EXSLUG,band:band,reps:reps,
+    full:fullReps,part:burnoutReps,acc:acc,secs:secs,peak:Math.round(setPeak)});}catch(e){}}
+  else { logSession({g:'bloom',reps:reps,full:fullReps,burnout:burnoutReps,acc:acc}); }
+  cue(false);beep(360,0.2);
+  /* The headline is what happened after full-range failure, because that is what
+     the source says the set is for. */
+  const past=burnoutReps?burnoutReps+' partials past it  ('+fullReps+' full)':fullReps+' full reps';
+  toast((fail?'Failure · ':'Stopped · ')+past);
+  /* The band rule is two-sided - 40 full reps means go heavier, under 15 means
+     go lighter - and it is the one piece of coaching that changes what you do
+     next. Delayed so it hands over from the reporter's own line instead of
+     replacing it mid-read. */
+  if(res&&res.advice&&res.advice.message&&window.X3FSet){
+    setTimeout(function(){X3FSet.toast('Band',res.advice.message)},3400);} }
+let toastT=0;
+function toast(t){$('toast').textContent=t;$('toast').classList.add('show');toastT=performance.now()+1400;}
+
+/* ---------- the pacer, and where things sit on screen ----------
+
+   Everything below works in two spaces and never mixes them:
+
+     u   the LINEAR fraction of the calibrated range, force/ref(). Every
+         threshold, every tier line and every rep the engine counts is this
+         number, because it is the honest proportion of the measured range.
+     y   pixels, through X3FCal.frac(), which is the EASED DISPLAY curve. The
+         strength curve is "not linear in the middle", steeply so, and drawing
+         it linearly squashes the strong range - where the program lives - into
+         a strip at the top of the screen. It must never reach a threshold: 0.85
+         eased is 0.90 linear, so a classifier drawn through it drifts with a
+         drawing decision.
+
+   The curve is evaluated at two points a frame (the bud and the bloom) and the
+   whole vine is then interpolated between those two HEIGHTS. That is not just
+   cheaper than easing all 153 path steps - it keeps the vine a clean wave for a
+   movement like the bent-over row, whose eased curve peaks mid-range and comes
+   back down. */
+const NOWX=()=>W*0.32;
+const Y_TOP=64;
+function yOfFrac(fr){const b=H-58;return b-(b-Y_TOP)*Math.max(0,Math.min(1.02,fr));}
+function easeY(u){return yOfFrac(window.X3FCal?X3FCal.frac(EXSLUG,band,frameLo+u*frameR):u);}
+function phaseAt(t){const p=(t/period)%1;return p<0?p+1:p;}
+function riseAt(ph){return 0.5-0.5*Math.cos(2*Math.PI*ph);}
+
+/* THE DIMINISHING RANGE, MEASURED.
+
+   This is the line the whole game exists to draw, and it used to be a fixed
+   -15% per partial: the term that would have tracked the athlete could never
+   win its own Math.max, so two people who reached 77% and 20% of the target got
+   an identical new target. The bloom now sits at the mean of your last two rep
+   peaks, so it falls exactly as fast as you do and comes back up if you find
+   another good rep - it is a measurement, not a geometric sequence, and it is
+   not a one-way ratchet. It never asks for more than you have reached today and
+   never collapses to nothing, because there is always one more inch. */
+function reAim(){
+  if(!recent.length){curHi=PROTO.fullRangeFrac;return;}
+  let s=0;for(let i=0;i<recent.length;i++)s+=recent[i];
+  curHi=Math.max(BUD+0.10,Math.min(1,s/recent.length));
+}
+
+// ---------- particles (petals + fireflies + bloom bursts) ----------
+const parts=[];
+function spawnPetal(x,y,hue){parts.push({x,y,vx:(Math.random()-0.5)*70,vy:-40-Math.random()*70,life:0,max:1.4+Math.random(),rot:Math.random()*7,spin:(Math.random()-0.5)*6,size:5+Math.random()*6,hue,type:'petal'});}
+function spawnBurst(x,y,hue){for(let i=0;i<14;i++){const a=Math.random()*7,sp=60+Math.random()*130;parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-30,life:0,max:0.9+Math.random()*0.8,rot:a,spin:(Math.random()-0.5)*8,size:5+Math.random()*7,hue:hue+(Math.random()*40-20),type:'petal'});}}
+const fireflies=[];for(let i=0;i<16;i++)fireflies.push({x:Math.random(),y:Math.random(),ph:Math.random()*7,sp:0.2+Math.random()*0.5});
+function drawParts(dt){
+  for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.life+=dt;if(p.life>=p.max){parts.splice(i,1);continue;}
+    p.vy+=140*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.rot+=p.spin*dt;const a=1-p.life/p.max;
+    if(IMG.petal&&IMG.petal.ok){ctx.save();ctx.globalAlpha=a;ctx.translate(p.x,p.y);ctx.rotate(p.rot);const s=p.size*1.6;ctx.drawImage(IMG.petal.img,-s/2,-s/2,s,s);ctx.restore();}
+    else{ctx.save();ctx.globalAlpha=a;ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.fillStyle='hsl('+p.hue+',85%,72%)';
+      ctx.beginPath();ctx.ellipse(0,0,p.size,p.size*0.6,0,0,7);ctx.fill();ctx.restore();}
+  }
+}
+
+// ---------- vine + blooms/buds along the target curve ----------
+/* TIER_ART is the one place the three tiers get their look. Luminance and text
+   carry the state first, hue third - the same rule the shared scoreboard works
+   by - so the stage still reads at an angle, in a bright room, on a panel that
+   renders near-white and near-black badly. */
+const TIER_ART={
+  full:{line:'rgba(120,255,200,.9)', glow:'rgba(89,245,196,.8)',  halo:'rgba(89,245,196,.14)', hue:0,   banner:null},
+  mid: {line:'rgba(255,185,95,.95)', glow:'rgba(255,140,50,.85)', halo:'rgba(255,176,84,.13)', hue:35,  banner:'MID RANGE · partials past full failure'},
+  weak:{line:'rgba(255,140,170,.95)',glow:'rgba(255,93,120,.85)', halo:'rgba(255,122,168,.13)',hue:330, banner:'WEAK RANGE · as far as it will move'}
+};
+function drawVine(tNow,yBud,yHi){
+  const hue=BAND_HUE[band]||320,pps=(W-NOWX())/(period/1000*1.7),art=TIER_ART[tier]||TIER_ART.full;
+  /* The guide lines mean something now. The tension floor is always there; the
+     two tier lines appear once you have established a top today, and they sit at
+     the protocol's own 0.85 and 0.45 of it - so you can watch the range you are
+     being graded against collapse as the set goes on. The old 0.78 line never
+     moved and the old 0.45 line had no meaning in the model at all. */
+  ctx.lineWidth=1;
+  ctx.strokeStyle='rgba(255,255,255,.05)';
+  const line=y=>{ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();};
+  line(yBud);
+  if(sessTop>0){
+    ctx.strokeStyle='rgba(255,255,255,.09)';line(easeY(sessTop*PROTO.fullRangeFrac));
+    ctx.strokeStyle='rgba(255,255,255,.05)';line(easeY(sessTop*PROTO.midRangeFrac));
+  }
+  // vine path, interpolated between the two heights
+  ctx.beginPath();for(let x=-8;x<=W+8;x+=6){const t=tNow+(x-NOWX())/pps*1000;
+    const y=yBud+(yHi-yBud)*riseAt(phaseAt(t));if(x<=-8)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+  ctx.lineCap='round';
+  ctx.strokeStyle=art.halo;ctx.lineWidth=Math.max(20,Math.min(64,(yOfFrac(0)-easeY(0.14))*2));ctx.stroke();
+  ctx.strokeStyle=art.line;ctx.lineWidth=3.5;ctx.shadowColor=art.glow;ctx.shadowBlur=12;ctx.stroke();ctx.shadowBlur=0;
+  // leaves + blooms(peaks, ph=.5) + buds(troughs, ph=0)
+  const t0=tNow+(-8-NOWX())/pps*1000, t1=tNow+(W+8-NOWX())/pps*1000;
+  const xOf=t=>NOWX()+(t-tNow)/1000*pps;
+  // buds at troughs
+  for(let n=Math.floor(t0/period);n<=Math.ceil(t1/period)+1;n++){const t=n*period;const x=xOf(t);if(x<-20||x>W+20)continue;drawBud(x,yBud,hue);}
+  // blooms at peaks
+  for(let n=Math.floor(t0/period);n<=Math.ceil(t1/period)+1;n++){const t=(n+0.5)*period;const x=xOf(t);if(x<-30||x>W+30)continue;
+    const near=1-Math.min(1,Math.abs(x-NOWX())/(W*0.5));drawBloom(x,yHi,hue,0.7+near*0.6);}
+}
+function drawBud(x,y,hue){
+  if(IMG.bud&&IMG.bud.ok){const s=Math.min(W,H)*0.05;ctx.drawImage(IMG.bud.img,x-s/2,y-s/2,s,s);return;}
+  ctx.save();ctx.translate(x,y);ctx.fillStyle='hsl('+((hue+120)%360)+',45%,40%)';
+  ctx.beginPath();ctx.ellipse(0,0,6,10,0,0,7);ctx.fill();
+  ctx.fillStyle='hsl('+hue+',70%,60%)';ctx.beginPath();ctx.arc(0,-6,4,0,7);ctx.fill();ctx.restore();
+}
+function drawBloom(x,y,hue,sc){
+  if(IMG.flower&&IMG.flower.ok){const s=Math.min(W,H)*0.09*sc;ctx.drawImage(IMG.flower.img,x-s/2,y-s/2,s,s);return;}
+  ctx.save();ctx.translate(x,y);ctx.scale(sc,sc);
+  const petals=6,pr=13;
+  for(let i=0;i<petals;i++){ctx.rotate(Math.PI*2/petals);ctx.fillStyle='hsl('+hue+',85%,'+(66)+'%)';
+    ctx.beginPath();ctx.ellipse(0,-pr,7,12,0,0,7);ctx.fill();}
+  ctx.fillStyle='hsl('+((hue+40)%360)+',90%,70%)';ctx.beginPath();ctx.arc(0,0,7,0,7);ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.7)';ctx.beginPath();ctx.arc(-2,-2,2.4,0,7);ctx.fill();
+  ctx.restore();
+}
+
+// ---------- the critter (player marker): squash/stretch + expression wobble ----------
+function drawCritter(x,y,onT,dt,now){
+  const R=frameR, SZ=Math.min(W,H);
+  // velocity-driven squash & stretch: pulling up stretches tall, releasing squashes wide
+  const vel=(force-prevForce)/Math.max(dt,0.001); prevForce=force;
+  critVel += (vel-critVel)*Math.min(1,dt*10);
+  const stq=Math.max(-0.22,Math.min(0.34, critVel/(R*7)));
+  let sx=1-stq*0.6, sy=1+stq;
+  // state-change wobble: rapid decaying up/down jiggle when the expression flips
+  if(lastOnT!==null && onT!==lastOnT) triggerWobble(1);
+  lastOnT=onT;
+  let wob=0, wsc=1;
+  const wt=(now-wobStart)/wobDur;
+  if(wt>=0 && wt<1){ const e=Math.exp(-wt*4.5); wob=Math.sin(wt*38)*13*e*wobStr; wsc=1+Math.sin(wt*46)*0.05*e*wobStr; }
+  // rep-success pop
+  if(popT>now){ const p=1-(popT-now)/280; const k=1+Math.sin(p*Math.PI)*0.2; sx*=k; sy*=k; }
+  sx*=wsc; sy*=wsc;
+  const cheer = now<cheerUntil;
+  const glowC = cheer ? 'rgba(255,216,107,' : (onT ? 'rgba(89,245,196,' : 'rgba(255,122,168,');
+  ctx.save();
+  ctx.translate(x, y - wob);
+  ctx.scale(sx, sy);
+  // glow halo (the game supplies its own aura behind the sprite)
+  const gr=SZ*0.22;
+  const rg=ctx.createRadialGradient(0,0,0,0,0,gr); rg.addColorStop(0,glowC+(cheer?0.62:0.5)+')'); rg.addColorStop(1,glowC+'0)');
+  ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(0,0,gr,0,7); ctx.fill();
+  /* Expression-aware (cheer -> strain -> happy -> procedural). Straining is
+     gated on `running`: off-target is true for the whole idle screen, so the
+     character used to sit there grimacing at nobody before the set began. */
+  const pick = (cheer && IMG.critterCheer&&IMG.critterCheer.ok) ? IMG.critterCheer
+             : (!onT && running && IMG.critterStrain&&IMG.critterStrain.ok) ? IMG.critterStrain
+             : (IMG.critter&&IMG.critter.ok) ? IMG.critter : null;
+  if(pick){ const im=pick.img, ih=SZ*0.28, iw=ih*(im.width/im.height); ctx.drawImage(im,-iw/2,-ih/2,iw,ih); ctx.restore(); return; }
+  // ---- procedural fallback ----
+  const s=SZ*0.11;
+  ctx.fillStyle='#fff0d6';ctx.strokeStyle='rgba(120,70,120,.25)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(0,0,s,0,7);ctx.fill();ctx.stroke();
+  ctx.fillStyle='rgba(255,150,190,.55)';ctx.beginPath();ctx.arc(-s*0.5,s*0.28,s*0.16,0,7);ctx.arc(s*0.5,s*0.28,s*0.16,0,7);ctx.fill();
+  ctx.save();ctx.translate(0,-s*0.95);ctx.rotate(-0.3);ctx.fillStyle='#59f5c4';ctx.beginPath();ctx.ellipse(0,-s*0.18,s*0.16,s*0.3,0,0,7);ctx.fill();ctx.restore();
+  const ex=s*0.34,ey=-s*0.08,er=s*0.17;
+  ctx.fillStyle='#2a1740';
+  if(onT||cheer||!running){          // idle is not a struggle - see the note above
+    ctx.beginPath();ctx.arc(-ex,ey,er,0,7);ctx.arc(ex,ey,er,0,7);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-ex+er*0.3,ey-er*0.3,er*0.35,0,7);ctx.arc(ex+er*0.3,ey-er*0.3,er*0.35,0,7);ctx.fill();
+    ctx.strokeStyle='#2a1740';ctx.lineWidth=s*0.09;ctx.lineCap='round';ctx.beginPath();ctx.arc(0,s*0.28,s*0.34,0.15*Math.PI,0.85*Math.PI);ctx.stroke();
+  }else{
+    ctx.strokeStyle='#2a1740';ctx.lineWidth=s*0.11;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(-ex-er,ey+er*0.4);ctx.lineTo(-ex,ey-er*0.5);ctx.lineTo(-ex+er,ey+er*0.4);
+    ctx.moveTo(ex-er,ey+er*0.4);ctx.lineTo(ex,ey-er*0.5);ctx.lineTo(ex+er,ey+er*0.4);ctx.stroke();
+    ctx.fillStyle='#2a1740';ctx.beginPath();ctx.arc(0,s*0.36,s*0.12,0,7);ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* ---------- a rep closed ----------
+   Called when x3f-set.js's detector says an excursion completed. Everything
+   about WHICH rep it was comes from the engine; this function only celebrates,
+   re-aims the vine and puts the pacer back in step with the athlete. */
+function onRep(now,peakU,newTier){
+  recent.push(peakU); if(recent.length>2)recent.shift();
+  reAim();
+  /* Rep to rep is the rep's own duration in a continuous set, which is exactly
+     the number the program legislates: "a controlled 2-3 second tempo up and
+     down". The first one is skipped because it also contains getting set. */
+  if(lastRepAt&&reps>0)lastRepMs=now-lastRepAt;
+  lastRepAt=now;
+  /* Put the pacer back in phase with the athlete rather than leaving them to
+     drift apart. A rep closes on the way down, through the middle, which is
+     phase 0.75 - so nudge the vine a third of the way there. It follows you;
+     you follow it. Without this the tempo readout measures phase luck instead of
+     tempo, and a set can be perfectly paced and read as 0% on target. */
+  const err=0.75-phaseAt(vineNow()),wrap=err>0.5?err-1:(err<-0.5?err+1:err);
+  vineOff-=wrap*period*0.33;
+  cue(true);popT=now+(newTier==='full'?280:220);triggerWobble(newTier==='full'?1.3:1);
+  if(newTier==='full')cheerUntil=now+650;
+  if(music)music.duck(newTier==='full'?.5:.4);
+  spawnBurst(NOWX(),easeY(peakU),newTier==='full'?(BAND_HUE[band]||320):TIER_ART[newTier].hue);
+  if(reps%5===0&&reps)toast(reps+' reps');
+}
+
+/* ---------- the set's own clock ----------
+
+   THE SET IS NOT DRIVEN BY THE FRAME LOOP, and that is deliberate.
+
+   requestAnimationFrame stops when the tab is hidden and is throttled whenever
+   the compositor is busy. A set whose rep counter, tier, failure detector and
+   scoreboard all live inside the frame callback therefore FREEZES when the
+   screen sleeps or the user glances at another app, and then reports whatever it
+   happened to be holding - which is exactly the "backgrounding the tab is free"
+   hole the audit found in the old model. Drawing can afford to stop. A set that
+   is being measured cannot.
+
+   So the state machine runs on a plain 100ms timer, started with the set and
+   cleared with it. Ten times a second is far more than a scoreboard needs (the
+   number is supposed to be still) and far less than a frame loop costs, and it
+   makes the model testable without a compositor. */
+const STEP_MS=100;
+let stepT=0;
+function stepSet(){
+  if(!running)return;
+  /* A HIDDEN TAB IS A PAUSED SET, NOT A FAILED ONE. Browsers throttle timers in
+     a background tab to about one tick a minute, so without this the first tick
+     after you glance at another app finds ten seconds since the last rep and
+     calls the set at failure - with the athlete still standing on the plate.
+     Holding the stall clock at "now" while hidden makes the pause free and the
+     failure honest. */
+  if(document.hidden){lastRepAt=performance.now();return;}
+  const now=performance.now();
+  frameR=ref();frameLo=calLo();
+  const u=Math.max(0,Math.min(1,force/frameR));      // LINEAR position in the range
+  if(u>repHigh)repHigh=u;
+  /* Time on the pacer, sampled on a clock rather than per frame, so the
+     percentage means the same thing on a 30fps television and a 120Hz phone. */
+  const yBudS=easeY(BUD),yHiS=easeY(curHi);
+  totF++;
+  if(Math.abs(easeY(u)-(yBudS+(yHiS-yBudS)*riseAt(phaseAt(vineNow()))))<(yOfFrac(0)-yOfFrac(1))*0.12)hitF++;
+
+  const seen=window.X3FSet?X3FSet.seen():null;
+  if(seen){
+    /* Peak, from the sampler that watches `force` - so it is identical in the
+       browser and under the TV shell, which never calls onSample(). */
+    if(seen.peak>setPeak){setPeak=seen.peak;if(hype)hype.peak(setPeak);}
+    if(hype&&seen.strong>0)hype.hold(seen.strong);
+  }
+  /* ---------- the set, as the engine sees it ----------
+     Not one number here is decided in this file. x3f-set.js detects the rep from
+     the force trace, grades it against the top established today, and hands back
+     the three tier counts; Bloom reads them. That is the whole of the fix for
+     "an isometric hold farms unlimited full reps": a hold produces no excursion,
+     so it produces no rep, and there is no second classifier here to disagree. */
+  const L=window.X3FSet?X3FSet.live():null;
+  if(L){
+    if(L.top>sessTop)sessTop=L.top;
+    const grew=L.reps>reps,peakU=repHigh;
+    reps=L.reps;fullReps=L.full;midReps=L.mid;weakReps=L.weak;burnoutReps=L.mid+L.weak;
+    if(grew){
+      repHigh=u;
+      /* The tier is the engine's, and entering one is the loudest moment the
+         hype layer has: full range is gone, then halfway is gone. */
+      const t2=L.tier||'full';
+      if(t2!==tier){tier=t2;if(hype&&hype.range)hype.range(t2);
+        if(t2!=='full')toast(t2==='mid'?'MID RANGE':'WEAK RANGE');}
+      onRep(now,peakU,t2);
+      if(hype){hype.set(reps);
+        if(midReps)hype.partials('mid',midReps);
+        if(weakReps)hype.partials('weak',weakReps);}
+    }
+  }
+  /* FAILURE, and it is now reachable. "Continue until you can no longer move
+     the bar even an inch" - so when an inch stops happening, the set is over.
+     Armed only once a rep has been counted, so standing on the plate getting
+     set is never mistaken for failing. */
+  if(reps>0&&now-lastRepAt>STALL_MS){endSet(true);return;}
+  if(hud)hud.set({reps:reps,full:fullReps,mid:midReps,weak:weakReps,tier:tier,
+                  frac:window.X3FCal?X3FCal.frac(EXSLUG,band,frameLo+u*frameR):u});
+  /* Slower is never wrong until it is a rest; faster always is. Written only
+     when it changes - a number that repaints ten times a second is unreadable,
+     and a DOM write per tick is a cost the television cannot afford. */
+  const tmp=lastRepMs?(lastRepMs/1000).toFixed(1)+'s':'-';
+  if(tmp!==shownTempo){shownTempo=tmp;const el=$('hTempo');el.textContent=tmp;
+    el.className='v'+(!lastRepMs?'':(lastRepMs<PROTO.repMinMs?' hot':' accent'));}
+}
+
+// ---------- main loop: drawing only ----------
+let lastT=performance.now();
+let shownForce=null,shownTempo=null;   // last values written to the DOM
+/* ONE CLOCK. The frame time is read here rather than taken from the argument
+   requestAnimationFrame supplies, because everything it is compared against -
+   when the last rep closed, when a wobble was triggered - is performance.now().
+   They agree in a browser and they are not guaranteed to: a frame timestamp is
+   the time the frame BEGAN, and under a virtual clock or a headless compositor
+   it can be a different origin entirely. */
+function loop(){
+  const now=performance.now();
+  if(!W)resize();
+  const dt=Math.min(0.05,(now-lastT)/1000);lastT=now;
+  /* ref() and calLo() are the whole frame's scale, and both allocate. This loop
+     used to ask for them about 330 times a frame - twenty thousand throwaway
+     objects a second to read two numbers that change at most once a set. */
+  frameR=ref();frameLo=calLo();
+  const u=Math.max(0,Math.min(1,force/frameR));      // LINEAR position in the range
+  const vt=vineNow();                                // the pacer runs on the wall clock
+  // draw cached background
+  ctx.clearRect(0,0,W,H);
+  if(bgC.width)ctx.drawImage(bgC,0,0,W,H);
+  // drifting fireflies (over bg, behind vine)
+  fireflies.forEach(f=>{f.ph+=dt*f.sp;const fx=(f.x*W+Math.sin(f.ph)*30)%W,fy=f.y*H*0.8+Math.cos(f.ph*1.3)*22;const a=0.35+0.35*Math.sin(f.ph*3);
+    ctx.fillStyle='rgba(255,224,150,'+a+')';ctx.beginPath();ctx.arc(fx,fy,2.2,0,7);ctx.fill();
+    ctx.fillStyle='rgba(255,224,150,'+a*0.25+')';ctx.beginPath();ctx.arc(fx,fy,7,0,7);ctx.fill();});
+  const yBud=easeY(BUD),yHi=easeY(curHi),yMe=easeY(u);
+  drawVine(vt,yBud,yHi);
+  // now-line light beam
+  const grd=ctx.createLinearGradient(NOWX()-16,0,NOWX()+16,0);grd.addColorStop(0,'rgba(255,255,255,0)');grd.addColorStop(.5,'rgba(255,255,255,.1)');grd.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=grd;ctx.fillRect(NOWX()-16,0,32,H);
+  /* On target is measured in SCREEN space against the pacer, and it decides
+     nothing except a face. It is not allowed anywhere near a rep: the tempo is a
+     coach, and a coach that hands out reps is how a game ends up rewarding a
+     hold. */
+  const yT=yBud+(yHi-yBud)*riseAt(phaseAt(vt)),tol=(yOfFrac(0)-yOfFrac(1))*0.12;
+  const onT=running&&Math.abs(yMe-yT)<tol;
+  drawParts(dt);
+  drawCritter(NOWX(),yMe,onT,dt,now);
+  // ambient petals occasionally
+  if(Math.random()<dt*1.2)spawnPetal(Math.random()*W,H*0.2+Math.random()*H*0.3,(BAND_HUE[band]||320)+(Math.random()*40-20));
+  /* The tier banner. Static, not pulsing: motion in peripheral vision reads as
+     an alert and pulls your eye off the bar. */
+  const banner=running&&TIER_ART[tier]?TIER_ART[tier].banner:null;
+  if(banner){ctx.save();ctx.textAlign='center';ctx.font='700 '+Math.round(Math.min(W,H)*0.032)+"px 'Space Grotesk',sans-serif";
+    ctx.fillStyle=tier==='mid'?'rgba(255,176,84,.92)':'rgba(255,140,170,.92)';
+    ctx.shadowColor='rgba(0,0,0,.9)';ctx.shadowBlur=14;
+    ctx.fillText(banner,W/2,Math.max(116,Math.min(W,H)*0.17));ctx.shadowBlur=0;ctx.textAlign='left';ctx.restore();}
+  const fShown=Math.round(force);
+  if(fShown!==shownForce){shownForce=fShown;$('hForce').textContent=fShown;}
+  if(toastT&&now>toastT){$('toast').classList.remove('show');toastT=0;}
+  requestAnimationFrame(loop);
+}
+/* Coming back from a hidden tab, the frame delta would otherwise be however long
+   you were away - which sends every velocity-driven term in the scene through
+   the roof on the first frame back. (The set itself pauses; see stepSet.) */
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible')lastT=performance.now();});
+resize();requestAnimationFrame(loop);
+</script>
+<script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
+<script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+<script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script><script>/* let the reporter measure peak force and time under tension itself */
+addEventListener('load',function(){try{X3FSet.watch(function(){return force},function(){return ref()});}catch(e){}});</script>
+</body></html>
