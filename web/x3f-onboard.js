@@ -116,6 +116,11 @@
     var chosenBands = (read(K_OWNED, null) || []).slice();
     var flow = null;
 
+    /* The band the last OK was aimed at, or null before any press. Only
+       stepBands() reads it; see the data-nav-first comment there for why a
+       re-rendering step has to carry its own idea of where the ring belongs. */
+    var focusBand = null;
+
     function done() {
       write(K_DONE, true);
       cleanup();
@@ -131,6 +136,37 @@
     function frame(title, body, actions) {
       host.innerHTML = '';
       var card = el('div', 'ob-card');
+
+      /* THE CARD NEEDS A PANEL, NOT JUST A SCRIM.
+
+         .ob-card is appended straight onto #obScrim and declares no background
+         of its own, so the home screen underneath - fully laid out and painted
+         by the time onboarding mounts on top of it - read straight THROUGH the
+         onboarding copy. Measured: 139,308 px2 of overlapping text, the rails'
+         movement names crossing the step's prose, at three metres, on the one
+         screen every install sees exactly once.
+
+         The scrim's own rgba(8,10,14,.88) knocks the home screen back but does
+         not hide it; every other dialog on this page sits inside .modal, which
+         paints an opaque one. These are .modal's four declarations, token for
+         token, from x3f-ui.css.
+
+         They are set here rather than by borrowing the class: .modal also
+         restyles descendant h2 and p, and `.modal p` outranks `.ob-note` on
+         specificity, so `class="ob-card modal"` would silently blow the small
+         dimmed treatment off every note in the flow.
+
+         max-height/overflow come along for the reason .modal carries them:
+         var(--s-5) of padding makes the card taller, the scrim centres it with
+         no scrolling of its own, and a card taller than the screen would push
+         its own buttons - including the only way out - off the bottom. */
+      card.style.background = 'var(--surface)';
+      card.style.border = '.125rem solid var(--line-2)';
+      card.style.borderRadius = 'var(--r-3)';
+      card.style.padding = 'var(--s-5)';
+      card.style.maxHeight = '100%';
+      card.style.overflow = 'auto';
+
       card.appendChild(el('div', 'ob-step', 'Step ' + (step + 1) + ' of 4'));
       card.appendChild(el('h2', 'ob-title', title));
       var b = el('div', 'ob-body');
@@ -150,6 +186,28 @@
       try { if (window.X3FNav) { window.X3FNav.refresh(); window.X3FNav.focusFirst(); } } catch (e) {}
     }
 
+    /* THE WAY OUT, ON EVERY STEP.
+
+       This module's own header promises "Skip is always available and always
+       visible", and two of the four steps did not have it. Step 2 offered
+       "Rather not say" and step 3 offered "Next" - both of which walk you
+       FORWARD. Once you were past the intro the only exit left was the hardware
+       Back key, and back() deliberately refuses to leave on the first step, so a
+       user who opened setup by accident and pressed Back three times ended up
+       staring at step 1 with no visible way off it. On a television there is no
+       Escape, no window chrome, and no tap-outside-to-dismiss.
+
+       One control, one wording, last in the row on all three steps, so it is the
+       same button in the same place every time. "Skip setup" rather than plain
+       "Skip" because on the height step it sits beside "Rather not say", and two
+       buttons that both read as skipping leave the user guessing which one
+       skips the QUESTION and which one skips the FLOW.
+
+       It is last so the ring never starts on it: first() takes items[0], which
+       on every step is a choice or the primary action. A dialog must not open
+       with the cursor already sitting on the way out. */
+    function exitAction() { return { label: 'Skip setup', go: done }; }
+
     /* 1 — what this actually is */
     function stepIntro() {
       step = 0;
@@ -160,7 +218,7 @@
         '<p>Four or five movements. About twenty minutes. That is the whole thing.</p>');
       frame('This is not three sets of ten', b, [
         { label: 'Set me up', primary: true, go: stepHeight },
-        { label: 'Skip', go: done }
+        exitAction()
       ]);
     }
 
@@ -183,7 +241,8 @@
         'This only shifts what we <i>suggest</i> — it never changes a band you pick.');
       var box = el('div', null); box.appendChild(wrap); box.appendChild(note);
       frame('How tall are you?', box, [
-        { label: 'Rather not say', go: stepBands }
+        { label: 'Rather not say', go: stepBands },
+        exitAction()
       ]);
     }
 
@@ -195,16 +254,55 @@
         var on = chosenBands.indexOf(b) >= 0;
         var btn = el('button', 'ob-choice' + (on ? ' on' : ''), '');
         btn.setAttribute('data-nav', '');
+
+        /* KEEP THE RING ON THE BAND THAT WAS JUST TOGGLED.
+
+           This is the one step where OK does not advance, so it is the one step
+           where the re-render is visible. Toggling rewrites the whole card,
+           which destroys the button the cursor was standing on; frame() then
+           calls X3FNav.focusFirst(), and first() with nothing to go on hands
+           back items[0] - White, the top of the list. So every OK here
+           teleported the ring back to the first band, and a user with three
+           bands had to walk down from White again after each one.
+
+           data-nav-first is how first() is told otherwise, and it is the cheap
+           answer because the ring is placed by the same call that was throwing
+           it away. Exactly one button per render carries it, and only once a
+           press has happened, so arriving on this step for the first time still
+           starts at the first band. Backing into the step from step 4 lands on
+           the band last touched, which is also where the user left off. */
+        if (focusBand === b) btn.setAttribute('data-nav-first', '');
+
         var chip = el('span', 'x3f-band', '<span class="pip"></span>');
         chip.setAttribute('data-band', b);
         chip.appendChild(document.createTextNode(b));
         btn.appendChild(chip);
-        var lbl = (window.X3FEX && window.X3FEX.forceLabel) ? window.X3FEX.forceLabel(b, 'deadlift') : '';
-        if (lbl) btn.appendChild(el('span', 'ob-sub', lbl + ' doubled'));
+
+        /* PRINT WHAT forceLabel() RETURNS. DO NOT ADD A WORD TO IT.
+
+           This line used to append ' doubled', because it asked about a doubled
+           movement and four of the five bands do publish a separate doubled
+           figure. Elite Black does not. Its entry is
+           { singled: [110, 600], doubled: [null, null] }, and forceLabel() falls
+           back to the singled pair rather than printing a blank - so the label
+           came out "110–600 lb doubled", taking X3's ONE published range for
+           that band and hanging a claim on it that X3 never made. The app does
+           not get to assert more than the source does.
+
+           Asking about a SINGLED movement removes the need for the word at all:
+           every band then shows the stand-alone range it is sold by, Elite
+           Black's 110–600 lb included, as one ascending series a person can
+           check against the bands actually in the room - which is the entire job
+           of this step. The slug picks that column and nothing else; no claim is
+           being made here about the overhead press. */
+        var lbl = (window.X3FEX && window.X3FEX.forceLabel) ? window.X3FEX.forceLabel(b, 'overhead-press') : '';
+        if (lbl) btn.appendChild(el('span', 'ob-sub', lbl));
+
         btn.onclick = function () {
           var i = chosenBands.indexOf(b);
           if (i >= 0) chosenBands.splice(i, 1); else chosenBands.push(b);
           write(K_OWNED, chosenBands);
+          focusBand = b;
           stepBands();
         };
         wrap.appendChild(btn);
@@ -214,7 +312,8 @@
         'Choose nothing and we will show all five.');
       var box = el('div', null); box.appendChild(wrap); box.appendChild(note);
       frame('Which bands do you have?', box, [
-        { label: 'Next', primary: true, go: stepCal }
+        { label: 'Next', primary: true, go: stepCal },
+        exitAction()
       ]);
     }
 

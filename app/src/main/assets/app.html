@@ -135,16 +135,34 @@
    card's and anchored to the top: a short 16:9 crop of a standing figure keeps
    the legs and throws the head away, which is the half that identifies the
    movement. */
-.card.move .art{height:11rem;background-position:center 18%;background-size:cover}
+.card.move .art{height:11rem;background-position:center;background-size:contain;background-repeat:no-repeat}
 .card.move.done{opacity:.55}
 .card.move.done .art::after{content:'';position:absolute;inset:0;background:rgba(51,226,174,.14)}
 .cardband{position:absolute;left:var(--s-2);bottom:var(--s-2)}
 
 /* ── the week strip ──────────────────────────────────────────────────── */
 .week{display:flex;gap:.4rem;align-items:flex-end;margin-top:var(--s-1)}
-.wd{width:1.6rem;height:1.6rem;border-radius:.35rem;background:rgba(236,238,242,.08)}
-.wd.done{background:var(--mint)}
-.wd.rest{background:rgba(236,238,242,.18)}
+/* THE WEEK STRIP HAS TO READ FROM A SOFA, AND IT DID NOT.
+
+   Three states — trained, rest day, not trained yet — were three fills of the same
+   grey at .08, .18 and mint. Rest against untrained measured 1.36:1, which is
+   invisible at three metres and invisible to anyone with a colour deficiency, and
+   the only other cue was a title attribute a television cannot hover.
+
+   So give each state a SHAPE as well as a value: a filled block for a day you
+   trained, a hollow ring for a rest day the program planned, a faint bar for a day
+   still to come. Distinguishable in a photocopy, which is the usual test. */
+.wd{width:1.6rem;height:1.6rem;border-radius:.35rem;
+    background:transparent;border:.15rem solid rgba(236,238,242,.22);
+    position:relative}
+/* trained: solid, and the only saturated thing in the row */
+.wd.done{background:var(--mint);border-color:var(--mint)}
+/* rest: a ring with a dot in it - clearly deliberate, clearly not a workout */
+.wd.rest{background:transparent;border-color:rgba(236,238,242,.55)}
+.wd.rest::after{content:'';position:absolute;inset:.42rem;border-radius:50%;
+    background:rgba(236,238,242,.55)}
+/* still to come: the faintest thing in the row, and flat rather than outlined */
+.wd.future{background:rgba(236,238,242,.10);border-color:transparent}
 .wd.today{outline:.2rem solid var(--accent);outline-offset:.15rem}
 
 /* ── modal ───────────────────────────────────────────────────────────── */
@@ -388,11 +406,29 @@ function renderWeek(t) {
   try { if (t.phase && t.phase.pattern) pattern = t.phase.pattern; } catch (e) {}
   let doneSet = null;
   try { if (PROG && PROG.recentDays) doneSet = PROG.recentDays(7); } catch (e) {}
+  /* WHICH SQUARE IS TODAY. .wd.today has been in the stylesheet all along and
+     nothing ever applied it, so the one mark that answers "where am I in the
+     week" has never appeared. Today is the first day not yet done - which is the
+     same rule the rest of this page runs on: the program is derived from what you
+     have DONE, not from the calendar, so a missed Tuesday shifts the plan instead
+     of desyncing it. */
+  let todayIdx = pattern.findIndex((k, i) => !(doneSet && doneSet[i]));
+  if (todayIdx < 0) todayIdx = pattern.length - 1;
+
   pattern.forEach((k, i) => {
     const d = document.createElement('div');
-    d.className = 'wd' + (k === 'rest' ? ' rest' : '');
-    if (doneSet && doneSet[i]) d.className += ' done';
-    d.title = k === 'rest' ? 'Rest' : (k === 'push' ? 'Push' : 'Pull');
+    const done = !!(doneSet && doneSet[i]);
+    /* Three states, three shapes - see the .wd rules. `future` is explicit rather
+       than implied by the absence of the other two, so the CSS can style it
+       rather than relying on the base rule doing double duty. */
+    d.className = 'wd' + (done ? ' done' : (k === 'rest' ? ' rest' : ' future'))
+                       + (i === todayIdx ? ' today' : '');
+    const what = k === 'rest' ? 'Rest' : (k === 'push' ? 'Push' : 'Pull');
+    const state = done ? 'done' : (i === todayIdx ? 'today' : 'to come');
+    d.title = what + ' — ' + state;
+    /* A title attribute is unhoverable on a television, so the state has to be
+       carried by shape above and by a label for anything reading the tree. */
+    d.setAttribute('aria-label', what + ', ' + state);
     el.appendChild(d);
   });
 }
@@ -637,13 +673,28 @@ function gradModal(p) {
     : p.confidence === 'mixed'
       ? '<p class="x3f-small" style="color:var(--dim)">X3’s own statements pull different ways here, so this is a choice rather than an instruction.</p>'
       : '<p class="x3f-small" style="color:var(--dim)">This is X3’s own printed rule.</p>';
-  const btns = (p.actions || []).map(function (a, i) {
-    return '<button class="big sec" data-nav id="gr' + i + '">' + a.label + '</button>';
+  /* THE CURSOR STARTS ON THE CHOICE YOU CAN TAKE BACK.
+
+     This prompt is not opened by the user - it appears when the app decides you
+     have earned a band change, on a home screen somebody may already be pressing
+     OK on. The actions arrive with the committing one first, and with no
+     data-nav-first the cursor takes items[0], so a stray press changed the band
+     the whole program is calibrated against.
+
+     Same rule the pairing dialog and the reset-achievements confirm follow: when
+     a dialog appears under the cursor, the default is the reversible option and
+     reaching the other one costs a deliberate press. */
+  const actions = p.actions || [];
+  let safeIdx = actions.findIndex(function (a) { return a.id !== 'accept'; });
+  if (safeIdx < 0) safeIdx = actions.length - 1;
+  const btns = actions.map(function (a, i) {
+    return '<button class="big sec" data-nav' + (i === safeIdx ? ' data-nav-first' : '') +
+           ' id="gr' + i + '">' + a.label + '</button>';
   }).join('');
   openModal('<h2>' + p.title + '</h2><p>' + p.message + '</p>' + conf +
             '<div class="row">' + btns + '</div>',
     function () {
-      (p.actions || []).forEach(function (a, i) {
+      actions.forEach(function (a, i) {
         const b = $('gr' + i);
         if (!b) return;
         b.onclick = function () {
@@ -878,6 +929,12 @@ function settings(keep) {
         ? '<span class="x3f-small">Not configured — see docs/FIREBASE-SETUP.md</span>'
         : `<button class="big sec" data-nav id="pairBtn">Pair a phone</button>
            ${s.household ? '<button class="big sec" data-nav id="syncNow">Sync now</button>' : ''}`}
+    </div>
+
+    <p style="margin-top:2rem">This app <b id="verHint">${esc(installedVer)}</b>
+       <span class="x3f-small" id="updMsg" style="color:var(--dim)">${esc(updateMsg)}</span></p>
+    <div class="row">
+      <button class="big sec" data-nav id="updBtn">Check for updates</button>
       <button class="big sec" data-nav id="closeBtn">Close</button>
     </div>`, () => {
     const gsSet = (d, id) => {
@@ -890,6 +947,20 @@ function settings(keep) {
     if (b('gsUp')) b('gsUp').onclick = () => gsSet(2000, 'gsUp');
     if (b('closeBtn')) b('closeBtn').onclick = closeModal;
     if (b('pairBtn')) b('pairBtn').onclick = pair;
+    if (b('updBtn')) b('updBtn').onclick = () => {
+      /* The shell answers asynchronously through __x3fUpdate, which writes
+         straight into #updMsg - so the dialog is NOT re-rendered here. Rebuilding
+         it would move the cursor off the button the user is still holding, which
+         is the same defect the get-set delay controls had. */
+      try {
+        if (window.X3F && window.X3F.checkUpdate) {
+          window.__x3fUpdate('Checking…');
+          window.X3F.checkUpdate();
+        } else {
+          window.__x3fUpdate('Updates are only available in the TV app.');
+        }
+      } catch (e) { window.__x3fUpdate('Could not start the update check.'); }
+    };
     if (b('syncNow')) b('syncNow').onclick = () => {
       /* NOT sync(). That is the AUTOMATIC path and it throttles itself to one run
          per 20 seconds, which is right for something triggered by logging a set
@@ -1006,10 +1077,86 @@ function pair() {
   }).catch(pairFailed);
 }
 
+/* ── the bar picker ────────────────────────────────────────────────────
+
+   THE THREE THINGS THIS HOME WAS WAITING ON. launcher.html carries the bar
+   picker, the device list and the updater, and its own comment says this page
+   "becomes the launcher once it carries those three things". They are here now.
+
+   Scanning cannot see a bar that is already connected to something else, or one
+   whose advertisement carries no name and no service UUID. The raw list is the
+   escape hatch, and it has to be reachable from the couch or a bar that will not
+   auto-connect is simply a dead app.
+
+   Built on openModal() rather than a bespoke panel: that already tells the shell
+   an overlay is open, routes Back through closeTopOverlay(), traps the cursor and
+   seats it. The launcher had to hand-roll every one of those. */
+let devices = [];
+
+function deviceRows() {
+  if (!devices.length) {
+    return '<p>Nothing seen yet. Wake the bar by pulling on it, then scan again.</p>';
+  }
+  return devices.map((d, i) =>
+    `<button class="big sec" data-nav ${i === 0 ? 'data-nav-first' : ''} data-addr="${esc(d.a)}"
+       style="display:block;width:100%;text-align:left;margin-bottom:var(--s-2)">
+       ${esc(d.n || '(unnamed)')}<br><span class="x3f-small" style="opacity:.6">${esc(d.a)}</span>
+     </button>`).join('');
+}
+
+function barPicker() {
+  const s = ($('barTxt') && $('barTxt').textContent) || '';
+  openModal(`
+    <h2>Your bar</h2>
+    <p>Status: <b>${esc(s)}</b>${devices.length ? ` · ${devices.length} seen` : ''}</p>
+    <div id="devList">${deviceRows()}</div>
+    <div class="row">
+      <button class="big sec" data-nav id="rescanBtn">Scan again</button>
+      <button class="big sec" data-nav id="closeBtn">Close</button>
+    </div>`, () => {
+    $('closeBtn').onclick = closeModal;
+    $('rescanBtn').onclick = () => {
+      try { if (window.X3F && window.X3F.rescan) { window.X3F.rescan(); setBar('Scanning…', 'warn'); } } catch (e) {}
+      barPicker();
+    };
+    [].forEach.call($('devList').querySelectorAll('[data-addr]'), b => {
+      b.onclick = () => {
+        setBar('Connecting…', 'warn');
+        try { if (window.X3F && window.X3F.pickDevice) window.X3F.pickDevice(b.getAttribute('data-addr')); } catch (e) {}
+        closeModal();
+      };
+    });
+  });
+}
+
+/* The shell pushes the scan results here. Re-render only while the picker is
+   actually on screen - a list that rebuilds under a closed dialog is work for
+   nobody, and rebuilding it moves the cursor. */
+window.__x3fDevices = function (list) {
+  try {
+    devices = list || [];
+    if (overlayOpen && $('devList')) barPicker();
+  } catch (e) {}
+};
+
+/* ── the updater ───────────────────────────────────────────────────────
+
+   The shell drives this: X3F.checkUpdate() starts it and calls back through
+   __x3fUpdate with a line of prose. __x3fVersion reports what is installed.
+   Both names are the shell's, not ours - see the two name-mismatch bugs that
+   made BACK and the bar chip dead on this page. */
+let updateMsg = '', installedVer = '';
+window.__x3fUpdate = function (msg) {
+  updateMsg = msg || '';
+  try { const el = $('updMsg'); if (el) el.textContent = updateMsg; } catch (e) {}
+};
+window.__x3fVersion = function (v) {
+  installedVer = v ? ('v' + v) : '';
+  try { const el = $('verHint'); if (el) el.textContent = installedVer; } catch (e) {}
+};
+
 $('settingsChip').addEventListener('click', settings);
-$('barChip').addEventListener('click', () => {
-  if (window.X3F && window.X3F.rescan) { try { window.X3F.rescan(); setBar('Scanning…', 'warn'); } catch (e) {} }
-});
+$('barChip').addEventListener('click', barPicker);
 
 document.addEventListener('keydown', e => {
   if ((e.key === 'Escape' || e.key === 'Backspace') && overlayOpen) { e.preventDefault(); closeModal(); }

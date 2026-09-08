@@ -68,12 +68,29 @@
      palette instead of the browser's default sans and a generic violet. --amber
      and --mint are the two tier colours it needs and the garden did not have. */
   --font-display:var(--d);--font-num:var(--n);--amber:#ffb054;--mint:#59f5c4;
-  --sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+  --sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);
+  /* ── THE OVERSCAN SAFE AREA ──────────────────────────────────────────────
+     A television crops the outer edge of the picture. 5% a side is the minimum
+     that survives it, which is exactly what --safe-x / --safe-y mean in
+     x3f-ui.css; the menus have padded by them since the design system landed
+     and the games never did. Every control bar here sat 8-14px from the panel
+     edge and every HUD chip 10px, so on a set with real overscan Start Set,
+     Re-Zero, the band select and the live force number were simply not on the
+     screen - and on a television there is no scrollbar and no mouse to go and
+     find them with. Same two numbers in all seven games and in x3f-hud.js, so
+     the scoreboard and the game it is laid over agree about where the edge is.
+     5vw is wider than the 10-14px it replaces on any viewport above 280px, so
+     there is no max() here: the safe area is always the bigger of the two.
+     --safe-b is the bottom edge specifically. It clears a phone's home
+     indicator AND the 0.7vh force meter x3f-hud.js parks on the safe line
+     during a set, so a live bar never paints across the bottom of a button. */
+  --safe-x:5vw;--safe-y:5vh;
+  --safe-b:calc(max(var(--safe-y),var(--sab)) + 1vh)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 body{font-family:var(--d);color:var(--txt);user-select:none;-webkit-user-select:none;background:var(--bg)}
 .app{position:relative;height:100dvh;max-width:900px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;padding-top:var(--sat)}
-.topbar{display:flex;align-items:center;gap:8px;padding:12px 14px 6px;flex-wrap:wrap;position:relative;z-index:5;transition:opacity .3s}
+.topbar{display:flex;align-items:center;gap:8px;padding:var(--safe-y) var(--safe-x) 6px;flex-wrap:wrap;position:relative;z-index:5;transition:opacity .3s}
 /* During a set the top of the screen belongs to the scoreboard. The chrome is
    dimmed rather than hidden: you are not going to press any of it while holding
    a bar, but it must not vanish either - the remote can still reach it, and a
@@ -89,20 +106,20 @@ body{font-family:var(--d);color:var(--txt);user-select:none;-webkit-user-select:
 select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);color:var(--txt);border:1px solid var(--brd2);border-radius:11px;padding:9px 11px;cursor:pointer}
 .stage{flex:1;min-height:0;position:relative;overflow:hidden}
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
-.hud{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
+.hud{position:absolute;top:10px;left:var(--safe-x);right:var(--safe-x);display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
 /* During a set the shared scoreboard owns the top of the screen: a 170px rep
    count at top-left and the tier at top-right. These chips are the secondary
    numbers, so they move under the tier label on the right, clear of the giant
    number, of the hype layer's approach counter and burnout meter at the bottom,
    and of the form panel in the bottom-left corner. */
-.hud.aside{top:13vh;left:auto;right:10px;justify-content:flex-end}
+.hud.aside{top:13vh;left:auto;right:var(--safe-x);justify-content:flex-end}
 .chip{background:rgba(18,10,38,.82);border:1px solid var(--brd);border-radius:15px;padding:8px 13px;min-width:82px}
 .chip .k{font-family:var(--n);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
 .chip .v{font-family:var(--n);font-weight:700;font-size:21px;font-variant-numeric:tabular-nums}
 .v.accent{color:var(--accent)}.v.gold{color:var(--gold)}.v.petal{color:var(--petal)}.v.hot{color:var(--hot)}
 .toast{position:absolute;left:0;right:0;top:34%;text-align:center;font-family:var(--d);font-weight:700;font-size:clamp(1.7rem,7vw,2.8rem);opacity:0;transition:opacity .3s;pointer-events:none;text-shadow:0 4px 34px #000,0 0 22px rgba(89,245,196,.5)}
 .toast.show{opacity:1}
-.ctrl{display:flex;gap:8px;align-items:center;padding:8px 12px calc(8px + var(--sab));border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(10,5,24,.55));position:relative;z-index:5}
+.ctrl{display:flex;gap:8px;align-items:center;padding:8px var(--safe-x) var(--safe-b);border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(10,5,24,.55));position:relative;z-index:5}
 .cta{font-family:var(--d);font-weight:700;font-size:16px;border:none;border-radius:14px;padding:14px 18px;cursor:pointer;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04140e;transition:transform .07s,filter .15s;box-shadow:0 6px 22px rgba(89,245,196,.28)}
 .cta:active{transform:translateY(1px)}.cta.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--brd2);box-shadow:none}
 .grow{flex:1}
@@ -149,7 +166,18 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
      default is the middle of the window. -->
 <select id="tempoSel" title="Tempo"><option value="4000">2s up · 2s down</option><option value="5000" selected>2.5s up · 2.5s down</option><option value="6000">3s up · 3s down</option></select>
 <div class="grow"></div>
-<button class="cta" id="startBtn">Start Set</button>
+<!-- data-nav-first: WHERE THE VERY FIRST D-PAD PRESS LANDS.
+     Both cursors honour this attribute - x3f-nav.js's first() and the shell's
+     own firstOf() in MainActivity's BOOTSTRAP - and without it the shell seats
+     on the first control in document order that is not an exit. In this game
+     that was the BAND SELECT, and the shell's OK cycles a select's options.
+     So two presses of the remote on a page nobody had touched changed the
+     athlete's resistance band mid-set and wrote it to x3f_band for every other
+     screen in the app to read. Arrows move the cursor and OK activates; a band
+     is never allowed to change by accident, which is the invariant this one
+     attribute restores. It belongs on the primary action, so the first press
+     lands where the player was already going. -->
+<button class="cta" id="startBtn" data-nav-first>Start Set</button>
 </div>
 </div>
 <div class="scrim show" id="firstrun"><div class="card">

@@ -127,12 +127,17 @@ def process(item):
     outdir = WEB / g["dest"]
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # WebP is the one the app loads; the JPEG stays as a fallback for any path
-    # that predates it and costs little at this size.
+    # WEBP ONLY. A JPEG twin of every asset used to be written here "as a fallback
+    # for any path that predates it" - and no such path was ever found: artFor()
+    # in app.html returns `assets/<dir>/<key>.webp` and nothing anywhere asks for
+    # a .jpg. Twenty-seven of them, 536 KB, were sitting in web/ and deploying to
+    # Firebase Hosting on every publish - 22% of the served site, for a format
+    # nothing requests. WebP has been safe everywhere that matters for years:
+    # Android WebView since API 14 (this app is minSdk 24) and every current
+    # browser. If a fallback is ever genuinely needed, add it where it is USED,
+    # with a <picture> element, rather than doubling every asset on spec.
     webp = outdir / (item["slug"] + ".webp")
     im.save(webp, "WEBP", quality=g["quality"], method=6)
-    jpg = outdir / (item["slug"] + ".jpg")
-    im.save(jpg, "JPEG", quality=g["quality"], optimize=True, progressive=True)
     return webp
 
 

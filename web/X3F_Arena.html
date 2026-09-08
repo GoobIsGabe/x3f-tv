@@ -56,12 +56,29 @@
 /* The shared in-set HUD (x3f-hud.js) reads these four names. Without them it
    falls back to system-ui and monospace and the one number the user actually
    reads during a set is in a different typeface from the rest of the game. */
---font-display:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--font-num:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--amber:#ffb15c;--mint:#2ff0b0}
+--font-display:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--font-num:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--amber:#ffb15c;--mint:#2ff0b0;
+/* ── THE OVERSCAN SAFE AREA ──────────────────────────────────────────────
+   A television crops the outer edge of the picture. 5% a side is the minimum
+   that survives it, which is exactly what --safe-x / --safe-y mean in
+   x3f-ui.css; the menus have padded by them since the design system landed and
+   the games never did. The topbar, the mode tabs and every view's Start button
+   sat 8-20px from the panel edge, so on a set with real overscan Fight, Start
+   Max Effort and the Back chevron were simply not on the screen - and a
+   television has no scrollbar and no mouse to go and find them with. The same
+   two numbers in all seven games and in x3f-hud.js, so the shared scoreboard
+   and the game it is laid over agree about where the edge is. 5vw is wider
+   than the 12-20px it replaces on any viewport above 280px, so there is no
+   max(): the safe area is always the bigger of the two. --safe-b is the bottom
+   edge specifically - it clears a phone's home indicator AND the 0.7vh force
+   meter x3f-hud.js parks on the safe line during a set, so a live bar never
+   paints across the bottom of the tab bar. */
+--safe-x:5vw;--safe-y:5vh;
+--safe-b:calc(max(var(--safe-y),var(--sab)) + 1vh)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-select:none;background:radial-gradient(120vw 60vh at 78% -8%,rgba(47,240,176,.10),transparent 60%),radial-gradient(90vw 50vh at 12% 110%,rgba(143,125,255,.12),transparent 60%),var(--bg)}
 .app{position:relative;height:100dvh;max-width:600px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;padding-top:var(--sat)}
-.topbar{display:flex;align-items:center;gap:10px;padding:14px 16px 8px}
+.topbar{display:flex;align-items:center;gap:10px;padding:var(--safe-y) var(--safe-x) 8px}
 .brand{font-weight:800;font-size:18px;letter-spacing:2.5px}.brand b{color:var(--accent)}
 .spacer{flex:1}
 .status{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);font-size:12.5px;color:var(--dim);font-family:var(--num);font-weight:500}
@@ -76,7 +93,7 @@ body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-s
    box. The TV shell's vis() walks ancestors checking exactly those two things,
    which is what stops the D-pad pressing "Fight" on a tab nobody can see. Any
    other hiding technique has to trip one of its four checks. */
-.view{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:8px 20px 12px;opacity:0;pointer-events:none;transform:translateY(8px) scale(.99);transition:opacity .28s,transform .28s}
+.view{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:8px var(--safe-x) 12px;opacity:0;pointer-events:none;transform:translateY(8px) scale(.99);transition:opacity .28s,transform .28s}
 .view.active{opacity:1;pointer-events:auto;transform:none}
 .eyebrow{font-family:var(--num);font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--dim);font-weight:500;text-align:center}
 .huge{font-family:var(--num);font-weight:700;font-variant-numeric:tabular-nums;line-height:.95;font-size:clamp(3.4rem,17vw,6rem);letter-spacing:-1px}
@@ -122,8 +139,26 @@ body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-s
 .hp{height:100%;width:100%;background:linear-gradient(90deg,var(--hot),#ff9a6a);transition:width .1s linear}
 .hint{font-size:13px;color:var(--dim);text-align:center;line-height:1.5;max-width:360px}
 .colgap{display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;flex:1;justify-content:center}
-.tabbar{display:flex;gap:6px;padding:8px 12px calc(8px + var(--sab));background:linear-gradient(180deg,transparent,rgba(0,0,0,.35));border-top:1px solid var(--brd)}
-.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 4px;border-radius:14px;background:transparent;border:1px solid transparent;color:var(--dim);cursor:pointer;font-family:var(--display);font-weight:700;font-size:11.5px}
+/* THE TABS ARE CENTRED AND CAPPED, AND THAT IS WHAT MAKES "FIGHT" REACHABLE.
+   The tabs were flex:1 across the full panel width. On a television the shell
+   forces .app to 100% (max-width:none), so each tab became a quarter of the
+   screen and the Boss tab's centre sat out in the bottom-right corner - roughly
+   under the settings gear in the TOP-right corner, and a long way from the
+   centred Fight button above it. The D-pad scores a vertical move as
+   distance + 2.5 x sideways-offset, with a large penalty only when the
+   candidate shares no part of your column. The gear shared the corner tab's
+   column, so it took no penalty, and 2.5 x 700px of sideways offset to Fight
+   beat a full screen height straight up to the gear: pressing Up from the Boss
+   tab landed on the gear, and from the gear Down came back to the tabs. Fight,
+   the entire point of the mode, could not be reached by the remote at all.
+   Capping each tab at a quarter of Arena's designed 600px column and centring
+   the row fixes both halves of that: the tabs sit under the content they
+   belong to, so the sideways offset to the centred CTA collapses, and the
+   corner tab no longer overlaps the gear's column, so the gear takes the
+   penalty it always should have. It costs nothing on a phone, where four tabs
+   never reach 150px each anyway. */
+.tabbar{display:flex;justify-content:center;gap:6px;padding:8px var(--safe-x) var(--safe-b);background:linear-gradient(180deg,transparent,rgba(0,0,0,.35));border-top:1px solid var(--brd)}
+.tab{flex:1 1 0;max-width:150px;display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 4px;border-radius:14px;background:transparent;border:1px solid transparent;color:var(--dim);cursor:pointer;font-family:var(--display);font-weight:700;font-size:11.5px}
 .tab svg{width:22px;height:22px}
 .tab.active{color:#04120c;background:linear-gradient(180deg,var(--accent),var(--accentD))}
 .tab:not(.active):active{background:var(--panel)}
@@ -142,7 +177,10 @@ body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-s
    dimmed, never hidden: the shell's vis() treats anything under 0.05 opacity as
    unreachable, and the remote still needs Back and the gear. */
 body.inset .topbar{opacity:.28}
-body.hudroom .view{padding-top:calc(4vh + min(13rem,17vh) + 2.8rem)}
+/* Mirrors x3f-hud.js's own top padding, which is now the safe area rather
+   than a 4vh that did not match anything. If these two drift, a 200px rep
+   counter lands on top of the game's own readouts. */
+body.hudroom .view{padding-top:calc(var(--safe-y) + min(13rem,17vh) + 2.8rem)}
 body.hudroom .orb{--d:min(46vw,190px,24vh)}
 /* A television in landscape is a SHORT screen - 540 CSS px on a 1080p panel at
    the usual devicePixelRatio of 2 - and the HUD is entitled to its share of it
@@ -150,7 +188,7 @@ body.hudroom .orb{--d:min(46vw,190px,24vh)}
    coaching line rather than pushing the button that ends the set off the
    bottom. The HUD's own sub-line still names the movement. */
 @media(max-height:620px){
-  body.hudroom .view{padding-top:calc(3vh + min(13rem,17vh) + 1.4rem)}
+  body.hudroom .view{padding-top:calc(var(--safe-y) + min(13rem,17vh) + 1.4rem)}
   body.hudroom .hint{display:none}
   body.hudroom .colgap{gap:10px}
   body.hudroom .orb{--d:min(46vw,190px,19vh)}
@@ -163,7 +201,7 @@ body.hudroom .orb{--d:min(46vw,190px,24vh)}
 .frcard{width:100%;max-width:440px;margin:auto;padding:34px 26px;text-align:center;display:flex;flex-direction:column;gap:14px}
 .frcard h1{font-size:30px;font-weight:800;letter-spacing:1px}.frcard h1 b{color:var(--accent)}
 .frcard p{color:var(--dim);font-size:14.5px;line-height:1.55}
-.sheet{width:100%;max-width:600px;background:var(--bg2);border:1px solid var(--brd);border-radius:24px 24px 0 0;padding:10px 20px calc(24px + var(--sab));transform:translateY(102%);transition:transform .3s cubic-bezier(.2,.8,.2,1);max-height:88dvh;overflow-y:auto}
+.sheet{width:100%;max-width:600px;background:var(--bg2);border:1px solid var(--brd);border-radius:24px 24px 0 0;padding:10px 20px calc(max(24px,var(--safe-y)) + var(--sab));transform:translateY(102%);transition:transform .3s cubic-bezier(.2,.8,.2,1);max-height:88dvh;overflow-y:auto}
 .scrim.show .sheet{transform:translateY(0)}
 .grip{width:44px;height:5px;border-radius:100px;background:var(--brd2);margin:2px auto 16px}
 .sheet h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin:18px 2px 10px;font-weight:700}
@@ -175,7 +213,12 @@ body.hudroom .orb{--d:min(46vw,190px,24vh)}
 .note b{color:var(--txt);font-weight:700}
 select{font-family:var(--num);background:rgba(0,0,0,.25);color:var(--txt);border:1px solid var(--brd2);border-radius:10px;padding:9px 10px;font-size:15px;width:auto;min-width:120px}
 @media(min-width:620px){.huge{font-size:6.4rem}.app{border-left:1px solid var(--brd);border-right:1px solid var(--brd)}}
-@media(orientation:landscape) and (max-height:560px){.huge{font-size:clamp(2.4rem,11vh,4rem)}.ring{max-height:56vh;width:min(40vh,220px);height:min(40vh,220px)}.chip{padding:8px 12px}.view{padding:6px 16px 8px}}</style>
+/* THIS QUERY IS THE TELEVISION, not just a phone on its side: a 1080p panel
+   at the usual devicePixelRatio of 2 hands the page a 960x540 viewport and
+   matches it. So the safe area has to survive here too - written as 16px it
+   quietly put every Start button back in the cropped band on the one device
+   the padding exists for. */
+@media(orientation:landscape) and (max-height:560px){.huge{font-size:clamp(2.4rem,11vh,4rem)}.ring{max-height:56vh;width:min(40vh,220px);height:min(40vh,220px)}.chip{padding:8px 12px}.view{padding:6px var(--safe-x) 8px}}</style>
 <!-- INV-15: these load in <head>, before the inline game script, because it
      evaluates X3FCal.slug() and X3FBand.forMovement() at parse time. Deferring
      or module-ifying any of them makes EXSLUG null, which silently drops the

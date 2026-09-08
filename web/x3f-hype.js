@@ -39,9 +39,11 @@
                        progress axis, so this is the one number where beating
                        yourself is unambiguously the point.
 
-   Two rep counts still matter, because the program names them: 15 full reps
-   (the floor that makes a band honest) and 40 (the ceiling that means go
-   heavier). They stay rungs, but they carry the band-coaching line.
+   Two rep counts still matter, because the program names them: 15 FULL-RANGE
+   reps (the floor that makes a band honest) and 40 (the ceiling that means go
+   heavier). They stay rungs and carry the band-coaching line - but only while
+   every rep this channel has counted was full range, because the headline
+   number here is the TOTAL and the program's 40 is not. See repSub().
 
    ─────────────────────────────────────────────────────────────────────────
    MILESTONES ARE DETECTED BY CROSSING, NOT BY EQUALITY
@@ -602,15 +604,63 @@
        go up a band" - and both sides are rep counts the program names outright.
        They stay nods; they just say something useful instead of "reps". Said
        once each: repeating "this band is light" at 40, 50, 60 and 75 is the
-       nagging this file exists to avoid. */
+       nagging this file exists to avoid.
+
+       ─────────────────────────────────────────────────────────────────────
+       BUT THE PROGRAM'S 40 IS FULL-RANGE REPS, AND THIS CHANNEL COUNTS ALL OF
+       THEM
+       ─────────────────────────────────────────────────────────────────────
+
+       Bloom feeds set() its TOTAL rep count - full range plus the mid-range
+       and weak-range partials that come after full-range failure. So a set
+       that failed at 22 full reps and then ground out 18 partials arrives here
+       as 40, and this line used to answer it with "this band is getting light
+       - try the next one up". That is the app telling you to add load off a
+       number its own source explicitly excludes:
+
+           "40 slow and controlled reps with a band, NOT COUNTING PARTIAL REPS"
+           - docs/x3-knowledge/official/band-progression.md Q5, marked SOURCED
+
+       and it inverts the app's own safety rule, because the set it fires on is
+       exactly the set where the band was too heavy to reach 40 full reps.
+       x3f-graduate.js reads `full` and never `reps` for this reason; this line
+       was the last place in the app that did not.
+
+       There is no full-rep input on this channel, and adding one would change a
+       call signature three games share, so the fix is to speak only while the
+       two numbers are still the same number. Before the first partial exists
+       every rep counted here WAS full range, so the total IS the full count.
+       The moment the caller reports a tier change or a partial, this channel's
+       number stops being the one the band rule is about and both lines go quiet
+       for the rest of the set - permanently, because a set does not un-fail.
+       The rung still fires; its subtitle just goes back to "reps".
+
+       The same guard protects the FLOOR line, where it matters more: 15 total
+       reps of which 9 were full range is a band that is too HEAVY, and "past
+       the floor - this band is honest" is the opposite of what the program
+       says to do about it.
+
+       Known limit: a caller with unit:'reps' that never reports tiers or
+       partials is indistinguishable from one that simply has not failed yet,
+       and would still get both lines off a total. Today there is no such
+       caller - Bloom is the only 'reps' instance and it reports both - and a
+       new one should report its tiers rather than have this file guess. */
     function firstRungAtLeast(n) {
       for (var i = 0; i < rungs.length; i++) if (rungs[i] >= n) return rungs[i];
       return null;
     }
     var floorRung  = isReps ? firstRungAtLeast(P.repsMin) : null;
     var bandUpRung = isReps ? firstRungAtLeast(P.repsMax) : null;
+    /* tierSplit, burnTotal and rangeDone are initialised further down in
+       create(); this only ever runs from set(), which cannot be called until
+       create() has returned. */
+    function allFullRange() {
+      return !tierSplit && burnTotal === 0 &&
+             !rangeDone.mid && !rangeDone.weak && !rangeDone.failure;
+    }
     function repSub(v) {
       if (!isReps) return unit;
+      if (!allFullRange()) return unit;
       if (v === bandUpRung) return 'this band is getting light - try the next one up';
       if (v === floorRung)  return 'past the floor - this band is honest';
       return unit;

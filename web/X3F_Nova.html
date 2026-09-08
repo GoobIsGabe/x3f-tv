@@ -33,12 +33,30 @@
   --bg:#05030f;--panel:rgba(20,14,44,.55);--brd:rgba(160,140,255,.22);--brd2:rgba(160,140,255,.4);
   --txt:#eee9ff;--dim:#a99fd6;--accent:#8f7dff;--accentD:#5f49d6;--cyan:#37e6ff;--gold:#ffd23f;--hot:#ff5d78;--mint:#39f5c4;
   --d:'Fredoka',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
-  --sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+  --sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);
+/* ── THE OVERSCAN SAFE AREA ──────────────────────────────────────────────
+   A television crops the outer edge of the picture. 5% a side is the minimum
+   that survives it, which is exactly what --safe-x / --safe-y mean in
+   x3f-ui.css; the menus have padded by them since the design system landed and
+   the games never did. The control bar here sat 8-14px from the panel edge and
+   the shared scoreboard 4vh from the top, so on a set with real overscan
+   Re-Zero, the band select and the top of the rep counter were simply not on
+   the screen - and a television has no scrollbar and no mouse to go and find
+   them with. The same
+   two numbers in all seven games and in x3f-hud.js, so the shared scoreboard
+   and the game it is laid over agree about where the edge is. 5vw is wider
+   than the 10-14px it replaces on any viewport above 280px, so there is no
+   max(): the safe area is always the bigger of the two. --safe-b is the bottom
+   edge specifically - it clears a phone's home indicator AND the 0.7vh force
+   meter x3f-hud.js parks on the safe line during a set, so a live bar never
+   paints across the bottom of a button. */
+--safe-x:5vw;--safe-y:5vh;
+--safe-b:calc(max(var(--safe-y),var(--sab)) + 1vh)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 body{font-family:var(--d);color:var(--txt);user-select:none;-webkit-user-select:none;background:var(--bg)}
 .app{position:relative;height:100dvh;max-width:900px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;padding-top:var(--sat)}
-.topbar{display:flex;align-items:center;gap:8px;padding:12px 14px 6px;flex-wrap:wrap;position:relative;z-index:5}
+.topbar{display:flex;align-items:center;gap:8px;padding:var(--safe-y) var(--safe-x) 6px;flex-wrap:wrap;position:relative;z-index:5}
 .iconbtn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:12px;background:rgba(255,255,255,.07);border:1px solid var(--brd);color:var(--txt);font-size:22px;font-weight:700;line-height:1;flex:0 0 auto;cursor:pointer;font-family:inherit}
 .tvbtn{width:auto;padding:0 12px;height:38px;font-size:12px;font-weight:700;letter-spacing:1px}
 .brand{font-weight:700;font-size:18px;letter-spacing:2px;margin-left:2px}.brand b{color:var(--accent)}
@@ -51,7 +69,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #flash{position:absolute;inset:0;pointer-events:none;opacity:0;mix-blend-mode:screen;transition:opacity .4s}
 #dmgvig{position:absolute;inset:0;pointer-events:none;opacity:0;box-shadow:inset 0 0 90px 20px rgba(255,60,90,.7);transition:opacity .3s}
-.ctrl{display:flex;gap:8px;align-items:center;padding:8px 12px calc(8px + var(--sab));border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(10,6,26,.6));position:relative;z-index:5}
+.ctrl{display:flex;gap:8px;align-items:center;padding:8px var(--safe-x) var(--safe-b);border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(10,6,26,.6));position:relative;z-index:5}
 .cta{font-family:var(--d);font-weight:700;font-size:16px;border:none;border-radius:14px;padding:14px 18px;cursor:pointer;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#0c0722;transition:transform .07s,filter .15s;box-shadow:0 6px 22px rgba(143,125,255,.32)}
 .cta:active{transform:translateY(1px)}.cta.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--brd2);box-shadow:none}
 .cta.gold{background:linear-gradient(180deg,var(--gold),#e0a91b);color:#2a1e00;box-shadow:0 6px 22px rgba(255,210,63,.3)}
@@ -67,13 +85,32 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 .shophead h2{font-size:20px;font-weight:700;letter-spacing:1px}
 .shophead .dust{font-family:var(--n);font-weight:700;color:var(--gold);font-size:16px}
 .shopsub{font-family:var(--n);font-size:12px;color:var(--dim);margin-bottom:12px}
-.up{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--brd);border-radius:14px;padding:11px 12px;margin-bottom:8px;text-align:left}
+/* ONE FULL-WIDTH TARGET PER UPGRADE, AND THAT IS THE FIX FOR ITS NAVIGATION.
+   The row used to be a <div> with a 64px "buy" pill parked at its right edge,
+   and that pill was the only focusable thing in it. So every focusable in the
+   Upgrade Bay except one sat in a narrow column on the right, while "Launch
+   Next Sector" spanned the whole panel - which put the launch button's centre
+   a long way to the LEFT of wherever the cursor was. Pressing Left in the
+   upgrade list therefore walked out of the list and onto Launch, one OK away
+   from ending the shop and starting the next sector, with the stardust you were
+   in the middle of spending unspent. Arrows are supposed to move the cursor
+   inside the thing you are in.
+   Making the whole row the button removes the geometry that allowed it: every
+   control in this overlay is now the same full-column width, so no two of them
+   differ in centre-x and Left and Right have nowhere to go by construction.
+   Up and Down still walk the list and reach Launch at the bottom. It is also
+   simply the right target size for a remote at three metres - a 64px pill was
+   never one. */
+.up{display:flex;align-items:center;gap:10px;width:100%;background:var(--panel);border:1px solid var(--brd);border-radius:14px;padding:11px 12px;margin-bottom:8px;text-align:left;font-family:var(--d);color:var(--txt);cursor:pointer}
+.up:not(:disabled):active{transform:translateY(1px)}
+.up:disabled{opacity:.42;filter:grayscale(.5);cursor:default}
 .up .ic{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:18px;background:rgba(143,125,255,.18);flex:0 0 auto}
-.up .info{flex:1;min-width:0}
-.up .nm{font-weight:700;font-size:14px}.up .ds{font-family:var(--n);font-size:11.5px;color:var(--dim)}
-.up .lv{font-family:var(--n);font-size:10px;color:var(--cyan);letter-spacing:1px}
-.buy{font-family:var(--d);font-weight:700;font-size:13px;border:none;border-radius:10px;padding:9px 12px;cursor:pointer;background:linear-gradient(180deg,var(--gold),#e0a91b);color:#2a1e00;flex:0 0 auto;min-width:64px}
-.buy:disabled{opacity:.4;filter:grayscale(.5)}
+.up .info{flex:1;min-width:0;display:block}
+.up .nm{display:block;font-weight:700;font-size:14px}.up .ds{display:block;font-family:var(--n);font-size:11.5px;color:var(--dim)}
+.up .lv{display:block;font-family:var(--n);font-size:10px;color:var(--cyan);letter-spacing:1px}
+/* Deliberately NOT called .buy any more: the shell's D-pad picks up `.buy` as a
+   focusable class by name, and this is a label inside a button, not a button. */
+.up .cost{font-family:var(--d);font-weight:700;font-size:13px;border-radius:10px;padding:9px 12px;background:linear-gradient(180deg,var(--gold),#e0a91b);color:#2a1e00;flex:0 0 auto;min-width:64px;text-align:center}
 </style><script src="x3f-cal.js"></script>
 </head>
 <body>
@@ -94,7 +131,24 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <div id="dmgvig"></div>
 </div>
 <div class="ctrl">
-<button class="cta ghost" id="zeroBtn">Re-Zero</button>
+<!-- data-nav-first: WHERE THE VERY FIRST D-PAD PRESS LANDS.
+     Both cursors honour this attribute - x3f-nav.js's first() and the shell's
+     own firstOf() in MainActivity's BOOTSTRAP - and without it the shell seats
+     on the first control in document order that is not an exit. Here that was
+     the BAND SELECT, and the shell's OK cycles a select's options: two presses
+     of the remote, on a page nobody had deliberately touched, changed the
+     athlete's resistance band mid-run and wrote it to x3f_band for every other
+     screen in the app to read. Arrows move the cursor, OK activates, and a band
+     never changes by accident.
+     It sits on Re-Zero and NOT on "New Run", which is the other button in this
+     bar. Nova has no start button: the shell calls startRun() at load, so the
+     run is always already going, and "New Run" ends the one in progress. The
+     bug this attribute exists to prevent - a player nudges the D-pad, a ring
+     appears on something they never chose, they press OK to make it go away and
+     lose the run - would simply have moved from the back chevron to here. The
+     safe control is the right seat when the "primary action" available is the
+     destructive one. -->
+<button class="cta ghost" id="zeroBtn" data-nav-first>Re-Zero</button>
 <div class="grow"></div>
 <button class="cta ghost" id="restartBtn">New Run</button>
 </div>
@@ -487,14 +541,55 @@ function openShop(){
   if(hype)hype.say('SECTOR '+(sectorIdx+1)+' CLEAR','core holding · upgrade up',true);
   if(music)music.duck(1.2);
   showHud(false);            // the shop is a full-screen overlay; the counter is not
-  renderShop();$('shop').classList.add('show');
+  buildShop();$('shop').classList.add('show');
 }
-function renderShop(){
+/* THE LIST IS BUILT ONCE PER VISIT AND UPDATED IN PLACE AFTERWARDS.
+   Buying used to re-run innerHTML over the whole list, which destroys the node
+   the D-pad cursor is standing on. The shell holds the cursor in a closure this
+   page cannot reach, so it noticed the element had gone, dropped the focus ring
+   and left the overlay with nothing lit until the next press - which then
+   re-seated at the top of the list. Two upgrades in a row meant pressing Down
+   four times to get back to where you already were, in an overlay whose whole
+   job is to be quick. Updating the level, the price and the affordability in
+   place keeps the element identity, so the ring stays on the row you just
+   bought. (A row you can no longer afford still disables itself and the cursor
+   does have to leave it - that one is correct: OK on it would do nothing.) */
+let shopRows=null;
+function buildShop(){
+  $('shopList').innerHTML=UPGRADES.map(u=>
+    '<button class="up" type="button" data-k="'+u.key+'">'+
+      '<span class="ic">'+u.ic+'</span>'+
+      '<span class="info"><span class="nm">'+u.nm+'</span><span class="ds">'+u.ds+'</span><span class="lv" data-lv></span></span>'+
+      '<span class="cost" data-cost></span>'+
+    '</button>').join('');
+  shopRows=[].slice.call($('shopList').querySelectorAll('.up')).map(el=>{
+    const u=UPGRADES.find(x=>x.key===el.dataset.k);
+    el.onclick=()=>buyUpgrade(u);
+    return {u:u,el:el,lv:el.querySelector('[data-lv]'),cost:el.querySelector('[data-cost]')};
+  });
+  syncShop();
+}
+function buyUpgrade(u){
+  const c=upCost(u);
+  /* Re-checked here and not only in syncShop's disabled flag: a click can still
+     arrive on a row that went unaffordable between paint and press. */
+  if(stardust<c)return;
+  stardust-=c;u.lvl++;applyStats();
+  if(u.key==='shield')player.shield=Math.min(player.maxShield,player.shield+25);
+  beep(660,0.08,'square',0.12);
+  syncShop();
+}
+function syncShop(){
   $('shopDust').textContent=Math.floor(stardust);
-  $('shopList').innerHTML=UPGRADES.map(u=>{const c=upCost(u);const aff=stardust>=c;
-    return '<div class="up"><div class="ic">'+u.ic+'</div><div class="info"><div class="nm">'+u.nm+'</div><div class="ds">'+u.ds+'</div><div class="lv">LV '+u.lvl+'</div></div><button class="buy" data-k="'+u.key+'"'+(aff?'':' disabled')+'>✦ '+c+'</button></div>';
-  }).join('');
-  $('shopList').querySelectorAll('.buy').forEach(b=>b.onclick=()=>{const u=UPGRADES.find(x=>x.key===b.dataset.k);const c=upCost(u);if(stardust>=c){stardust-=c;u.lvl++;applyStats();if(u.key==='shield')player.shield=Math.min(player.maxShield,player.shield+25);beep(660,0.08,'square',0.12);renderShop();}});
+  if(!shopRows)return;
+  shopRows.forEach(r=>{const c=upCost(r.u);
+    r.lv.textContent='LV '+r.u.lvl;
+    r.cost.textContent='✦ '+c;
+    /* disabled is load-bearing for the remote, not just for the mouse: the
+       shell's vis() skips a disabled control, which is how an upgrade you
+       cannot afford stays out of the D-pad's path instead of being focusable
+       and inert. */
+    r.el.disabled=stardust<c;});
 }
 $('launchBtn').onclick=()=>{$('shop').classList.remove('show');startSector(sectorIdx+1);scene='play';showHud(true);};
 

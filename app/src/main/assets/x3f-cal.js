@@ -72,8 +72,31 @@
   /* How much force a movement can produce relative to the strongest movement on
      the SAME band. One number per band was wrong because a deadlift and a pec
      crossover on a Black band are nowhere near each other, so a scale set by
-     one leaves the other unusable. Ordered by the source's own guidance on
-     which movements take the heaviest bands. */
+     one leaves the other unusable.
+
+     THIS IS NOT THE BAND RANKING, and the comment here used to say it was
+     ("ordered by the source's own guidance on which movements take the heaviest
+     bands"). Two different questions:
+
+       X3FEX bandRank  which band you should PROGRAM this movement on. The
+                       source states that ordering outright, and it puts the
+                       calf raise LAST - "lighter band, higher repetitions".
+       HI_FRAC         a day-one GUESS at the ceiling to draw against until a
+                       real set arrives. No source ranks movements by force
+                       produced; these are the app's own numbers, and observe()
+                       replaces each one with what the user actually pulls.
+
+     So the calf raise sits sixth here and eleventh on bandRank, and that is not
+     a disagreement about the calf raise - it is two different questions. Taking
+     this list for a band recommendation is what put the calf raise on Light
+     Gray in x3f-exercises.js, printing "160+ lb doubled" on the one movement
+     whose own mechanics list says to use less.
+
+     These numbers are PINNED, so do not tune them casually. tools/force-test
+     group 8 asserts that an unlearned White-band calf raise estimates 88
+     (130 * 0.68) and that a 22-unit peak still clears the noise floor derived
+     from it - the D11 regression, where a FIXED threshold of 25 starved this
+     exact movement forever. Every fraction here moves that floor. */
   var HI_FRAC = {
     'deadlift': 1.00,
     'bent-row': 0.92,
@@ -390,18 +413,73 @@
       if (i < 0 || i >= bands.length - 1) {
         return { dir: 'up', band: null, message: fullReps + ' full reps on the heaviest band. Shorten the band instead — wrap it around the hook once or twice.' };
       }
-      return { dir: 'up', band: bands[i + 1], message: fullReps + ' full reps means this band stopped being heavy. Move up to ' + bands[i + 1] + '.' };
+      /* THE ELITE IS A PURCHASE, NOT A PROGRESSION STEP, and this per-set line was
+         the last path still treating it as one. x3f-graduate.js was taught the
+         distinction and x3f-progress.js routes both voices through one verdict,
+         but bandAdvice() is called straight from x3f-set.js at the end of a set
+         and reached bands[i+1] on its own.
+
+         docs/x3-knowledge/official/band-progression.md §11.6 is explicit: the
+         Elite page gates it on completing the 15-40 protocol with Black and it is
+         a 600 lb band you have to go and buy. Telling someone mid-session to
+         "move up to Elite Black" names equipment they very likely do not own, and
+         the app has no way to know that they do. Say what is true instead. */
+      var next = bands[i + 1];
+      if (next === 'Elite Black') {
+        return { dir: 'up', band: null, soft: true,
+                 message: fullReps + ' full reps on Black — that is the whole protocol on the '
+                        + 'heaviest band in the standard set. The Elite band is the next step up, '
+                        + 'and it is a purchase rather than a switch.' };
+      }
+      return { dir: 'up', band: next, message: fullReps + ' full reps means this band stopped being heavy. Move up to ' + next + '.' };
     }
     if (fullReps > 0 && fullReps < P.repsMin) {
+      /* ── "LENGTHEN THE BAND" IS NOT A THING X3 DOCUMENTS ────────────────────
+
+         Both halves of this branch used to hand a White-band user an
+         instruction they cannot follow. The regression half opened with "Go
+         lighter" and then had no band to name; the other half said "Lengthen
+         the band", which appears in no X3 source anywhere. It is the mirror
+         image of a real technique - "wrap the band around the hook one or two
+         times which takes up some slack" (official/exercises.md), which
+         SHORTENS a band to make it HARDER - flipped by whoever wrote it into an
+         adjustment the equipment does not offer. That is the same failure as
+         the invented calf-raise exemption this file's header describes: the app
+         asserting more than the source does, in the source's voice, at the one
+         moment the user is being told they are too weak for the lightest band
+         they own and will believe anything.
+
+         What the source actually says below White is short and purchasable:
+
+           "the X3 Ultra Light Band sits below the X3 White Band in the
+            progression" - band-progression.md §5, marked SOURCED, adding that
+            it is a separate purchase
+
+         and it is emphatic about the two workarounds a user would otherwise
+         reach for: never stack standard bands (officially discouraged, and it
+         voids wear coverage), and never un-double a band the program prescribes
+         doubled (no source addresses it - "the app must not suggest it"). So
+         this says the Ultra Light, the movement's own regression where it has
+         one, and nothing else.
+
+         i < 0 is a band name this app does not know - a hand-edited or orphaned
+         x3f_band value. It is NOT "the lightest band" and must not be called
+         one; that would be a second invented claim standing in for a missing
+         one. It gets the same copy with the claim removed. */
       var e = ex(sl);
-      if (e && e.regression) {
-        return { dir: 'down', band: (i > 0 ? bands[i - 1] : null),
-                 message: 'Under ' + P.repsMin + ' full reps. Go lighter' + (i > 0 ? ' — try ' + bands[i - 1] : '') + ', or use the ' + e.regression.name.toLowerCase() + '.' };
+      var regress = (e && e.regression) ? e.regression.name.toLowerCase() : null;
+
+      if (i > 0) {
+        return { dir: 'down', band: bands[i - 1],
+                 message: 'Under ' + P.repsMin + ' full reps means this band is too heavy. Drop to ' +
+                          bands[i - 1] + (regress ? ', or use the ' + regress + '.' : '.') };
       }
-      if (i <= 0) {
-        return { dir: 'down', band: null, message: 'Under ' + P.repsMin + ' full reps on the lightest band. Lengthen the band, or use a regression — form comes before force.' };
-      }
-      return { dir: 'down', band: bands[i - 1], message: 'Under ' + P.repsMin + ' full reps means this band is too heavy. Drop to ' + bands[i - 1] + '.' };
+      return { dir: 'down', band: null,
+               message: 'Under ' + P.repsMin + ' full reps' +
+                        (i === 0 ? ', and this is the lightest band the app knows. ' : ', and there is no lighter band to drop to. ') +
+                        (regress
+                          ? 'Use the ' + regress + ' — that is the regression X3 gives this movement.'
+                          : 'X3 lists no regression for this movement, and the only band below White is the Ultra Light, sold separately. Form comes before force.') };
     }
     return null;
   }

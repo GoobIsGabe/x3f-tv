@@ -133,10 +133,31 @@ const A = [
   'assets/splash/bubble.png', 'assets/splash/fish.png'
 ];
 
+/* RELOAD THE CODE, REVALIDATE THE ART.
+
+   Every precache entry used to be fetched with {cache:'reload'}, which bypasses
+   the HTTP cache entirely. That is exactly right for the files that change - a
+   new worker must not fill its fresh cache with the previous build's HTML and
+   scripts, which is the one hole a Cache-Control header cannot close.
+
+   It is exactly wrong for the art. The cache name carries the commit SHA, so a
+   deploy that changes one line of CSS gets a new name, activate() drops the old
+   cache, and install() re-downloads all 83 entries - including 1.3 MB of images
+   and fonts that are byte-identical to the ones just discarded. On a phone on
+   mobile data that is a megabyte of nothing, every publish.
+
+   Art and fonts are content-stable by FILENAME here: tools/art/build.py writes
+   assets/<dir>/<slug>.webp, and a regenerated plate keeps its name, so
+   'no-cache' (revalidate, then reuse if unchanged) is the honest policy. Firebase
+   Hosting already serves fonts immutable for a year and images for a week, so
+   most of these answer 304 with no body at all - and the ones that did change
+   come down, because revalidation is not the same as trusting blindly. */
+const CODE_RE = /\.(html|js|css|json|webmanifest)$/i;
+
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(caches.open(C).then(c => Promise.all(A.map(u =>
-    c.add(new Request(u, { cache: 'reload' }))
+    c.add(new Request(u, { cache: CODE_RE.test(u) ? 'reload' : 'no-cache' }))
      .catch(err => console.warn('[sw] not precached: ' + u, err))
   ))));
 });

@@ -333,6 +333,19 @@ option{background:var(--surface);color:var(--txt)}
 .pend.show{display:flex}
 .pendtxt{flex:1 1 auto;min-width:0;font-size:var(--t-h2);font-weight:var(--w-bold);color:var(--gold)}
 
+/* "Which leg are you on?" — the split squat is the one per-side movement in the
+   program, and the guided session used to walk straight past the second leg.
+   Cyan, not mint: mint is x3f-ui.css's "you did the thing" and this is an
+   instruction, not a result. It carries no controls of its own on purpose —
+   there is nothing to answer here, only something to read while you swap your
+   feet — so it can be display:none without an invisible focus stop behind it. */
+.sideline{display:none;align-items:center;gap:var(--s-2);flex:none;
+  background:#0D1A20;border:.125rem solid rgba(53,216,245,.32);
+  border-radius:var(--r-2);padding:var(--s-2) var(--s-3);
+  font-size:var(--t-h2);font-weight:var(--w-bold);color:var(--cyan)}
+.sideline.show{display:flex}
+.sideline b{color:var(--txt)}
+
 .cbody{flex:1 1 auto;min-height:0;display:flex;gap:var(--s-4)}
 .cdemo{flex:0 0 32%;max-width:46rem;min-height:0;display:flex;flex-direction:column;gap:var(--s-1)}
 .demobox{position:relative;flex:1 1 auto;min-height:0;border-radius:var(--r-2);overflow:hidden;
@@ -525,6 +538,9 @@ addEventListener('load',function(){setTimeout(function(){
     <button class="act pri" id="cPendYes" data-nav data-nav-id="cpendyes">Yes — log it</button>
     <button class="act" id="cPendNo" data-nav data-nav-id="cpendno">Not yet</button>
   </div>
+
+  <!-- Per-side state, filled by paintCoach(). Text only: see .sideline. -->
+  <div class="sideline" id="cSide"></div>
 
   <div class="cbody">
     <div class="cdemo">
@@ -754,6 +770,30 @@ function bandChip(band) {
   return '<span class="x3f-band" data-band="' + band + '"><span class="pip"></span>' + band + '</span>';
 }
 
+/* The band advice line, said in the APP'S OWN NAME.
+
+   This read "X3 suggests Dark Gray", which put a sentence in the manufacturer's
+   mouth that the manufacturer never said. What the source actually publishes is
+   a relative ORDER — deadlift and bent-over row take the heaviest band, down to
+   the calf raise taking the lightest (docs/x3-knowledge/official/exercises.md
+   §"Band weight ranking") — and no per-movement band recommendation at all.
+   ex.band is this app's own reading of that ranking into a band NAME, and a
+   derived guess wearing the protocol's badge is exactly the failure that had a
+   previous round removing an invented calf-raise exemption.
+
+   It stays advice either way: x3f-band.js keeps ex.band out of the chain that
+   decides a value, because "routines defaulted every movement to the library's
+   suggestion" is how a user who started on White was silently moved to Dark
+   Gray in v1.4.
+
+   One function, two callers — liftHtml() paints the card and paintLift()
+   repaints it surgically, and when the wording lived in both they were free to
+   drift apart. */
+function bandAdvice(ex, band) {
+  if (!ex || !ex.band || ex.band === band) return '';
+  return ' · <i>this app suggests ' + ex.band + '</i>';
+}
+
 /* ═══════════════════════════════════════════════════════════ feedback ═══ */
 
 /* An in-page line instead of alert(). On the TV MainActivity answers every
@@ -770,7 +810,13 @@ function say(text) {
 }
 
 /* Never a dialog for an unlock: a modal blocks the page, and on a TV it is a
-   system dialog you have to dismiss with the remote in the middle of a set. */
+   system dialog you have to dismiss with the remote in the middle of a set.
+
+   It is also the only channel that can reach you WHILE THE COACH IS OPEN: #msg
+   lives in the hero, which the coach overlay covers completely, so say() during
+   a guided session talks to a wall. Hence the optional `icon` — a set that
+   failed to save has to be able to say so here, and a medal on a failure is a
+   lie told in one character. */
 function toastAch(list) {
   var host = $('achToast');
   if (!host) {
@@ -782,9 +828,10 @@ function toastAch(list) {
   function show() {
     if (i >= list.length || i >= 3) { host.classList.remove('on'); return; }
     var a = list[i++];
-    host.innerHTML = '<b>🏅 ' + a.name + '</b><span>' + a.desc + '</span>';
+    host.innerHTML = '<b>' + (a.icon || '🏅') + ' ' + a.name + '</b><span>' + a.desc + '</span>';
     host.classList.add('on');
-    beep(880, .12); setTimeout(function () { beep(1170, .14); }, 120);
+    if (a.icon) { beep(300, .18, 'square'); }
+    else { beep(880, .12); setTimeout(function () { beep(1170, .14); }, 120); }
     setTimeout(show, 2600);
   }
   show();
@@ -894,7 +941,7 @@ function liftHtml(slug, i) {
   var c = per(slug), tot = +c.sets, sd = doneSets(slug), done = sd >= tot;
   var g = gameOf(c.game), lbl = forceLabel(c.band, slug);
   var dots = dotsHtml(tot, sd);
-  var suggest = (ex.band && ex.band !== c.band) ? ' · <i>X3 suggests ' + ex.band + '</i>' : '';
+  var suggest = bandAdvice(ex, c.band);
   return '<div class="ex' + (done ? ' done' : '') + '" data-n="' + slug + '" id="ex-' + slug + '">' +
     '<div class="exhead">' +
       '<div class="exn" data-role="n">' + (done ? '✓' : (i + 1)) + '</div>' +
@@ -944,8 +991,7 @@ function paintLift(slug) {
   q('[data-role=n]').textContent = done ? '✓' : String(i + 1);
   q('[data-role=band]').innerHTML = bandChip(c.band);
   q('[data-role=lbl]').textContent = forceLabel(c.band, slug);
-  q('[data-role=mu]').innerHTML = ex.muscle +
-    ((ex.band && ex.band !== c.band) ? ' · <i>X3 suggests ' + ex.band + '</i>' : '');
+  q('[data-role=mu]').innerHTML = ex.muscle + bandAdvice(ex, c.band);
   q('[data-role=dots]').innerHTML = dotsHtml(tot, sd);
   q('[data-go]').textContent = '▶ Play in ' + g.name;
   q('[data-set]').textContent = done ? 'Done ✓' : 'Set ' + (sd + 1) + ' / ' + tot;
@@ -1152,6 +1198,43 @@ window.__x3fCloseOverlay = function () {
   if (coachOn) { askEnd(); return; }
 };
 
+/* ── where the ring lands when the screen changes shape ───────────────────
+   x3f-nav.js re-seats by itself whenever the node under the cursor stops being
+   focusable: it recalls the seat it remembers for the scope you land in, or the
+   nearest control by geometry. That is exactly right for browsing, and it is
+   dangerous HERE, because this is the one screen you look at with a loaded bar
+   in your hands and several of its controls WRITE. Every landing below was a
+   real one-press accident, found by walking the screen with a remote:
+
+     answer "Not yet"  -> "✕ End session"         ends the session
+     back from a game  -> "▶ Play in Bloom"       neither answer to the question
+                                                  the screen is asking
+     leave the coach   -> a movement's "Set 1 / 1" logs a set never performed
+     rest runs out     -> "Next ▶"                skips a movement you have
+                                                  not done
+
+   So every one of those transitions now names its own landing spot, and the
+   spot is always inert: Play launches a game, "Not yet" writes nothing, "Start
+   guided session" reopens the coach you just left. Nothing that logs a set is
+   ever under the ring the instant an overlay opens or closes.
+
+   refresh() first, always: set() seats the ring, but the item list has to be
+   rebuilt for the new shape before it, or the very next Down is measured
+   against controls that are no longer there.
+
+   The `current()` guard keeps x3f-nav.js's own rule that a mouse user is never
+   thrown a focus ring they did not ask for — if no ring is lit, there is no
+   accidental OK to prevent. On the television (__x3fNative) the ring is the
+   only cursor there is, so it always gets seated. */
+function seat(el) {
+  if (!el || !window.X3FNav) return;
+  try {
+    X3FNav.refresh();
+    if (!X3FNav.current() && !window.__x3fNative) return;
+    X3FNav.set(el);
+  } catch (e) {}
+}
+
 /* Escape / Backspace / BrowserBack are x3f-nav.js's, not this page's. The page
    used to install its own keydown listener that stopped the rest timer WITHOUT
    calling preventDefault, so the nav's handler then ran too and clicked the
@@ -1178,11 +1261,50 @@ function nextIncomplete(from) {
   return -1;
 }
 
+/* ── the split squat's second leg ─────────────────────────────────────────
+   The guided session used to walk the split squat exactly like every other
+   movement: one card, one "Log set ✓", straight to the rest timer — so the
+   coach asked for one leg and then declared the movement finished. Half a
+   movement, logged as a whole one, on the one lift the source is loudest about:
+
+     "focusing all the body's resources on one quadricep and one glute ...
+      taking that to complete exhaustion, and then the other side"
+     "15 to 40 repetitions with each leg"
+       - docs/x3-knowledge/official/exercises.md, X3 Split Squat
+
+   and the same file's app note: "the split squat is the only movement that is
+   per side. The set model, the timer, the rest logic and the log entry all need
+   a perSide: true flag — two sets, one per leg, counted as one movement."
+
+   That flag already exists in x3f-exercises.js and X3F_Library.html already
+   explains it. Only the coach ignored it. So a per-side movement now has a SIDE
+   as well as a set, and the set is not logged, not counted and not rested on
+   until both legs are done — which is what "counted as one movement" means for
+   the day tally, the history row and every number downstream of them.
+
+   What deliberately does NOT happen between the legs is a rest countdown. The
+   source describes one leg then the other and prescribes no gap between them,
+   and this app does not get to invent training guidance the source has not
+   given. The rest timer still runs after the pair, on the configured rest.
+
+   S.side is 1 or 2 and may be missing entirely — an in-flight session saved by
+   an older build has no such field — so it is read through curSide(), never
+   directly. */
+function isPerSide(slug) {
+  try { var ex = slug && EXD.get(slug); return !!(ex && ex.perSide); } catch (e) { return false; }
+}
+function curSide() { return (S && S.side === 2) ? 2 : 1; }
+/* Moving to another movement always restarts at the first leg. Every place that
+   changes S.i goes through here, so a new lift can never inherit "you are on
+   the second leg" from the one before it. */
+function goToLift(i) { if (S) { S.i = i; S.side = 1; } }
+
 function startSession() {
   var l = listFor();
   if (!l.length) { say('This day is empty. Press Edit day and add a movement first.'); return; }
   if (!(S && S.active && S.day === day)) {
-    S = { active: true, day: day, i: Math.max(0, nextIncomplete(0)), started: Date.now(), sets: 0, pending: null };
+    S = { active: true, day: day, i: Math.max(0, nextIncomplete(0)), started: Date.now(),
+          sets: 0, pending: null, side: 1 };
     saveS();
   }
   openCoach();
@@ -1198,6 +1320,17 @@ function openCoach() {
 function closeCoach() {
   $('coach').classList.remove('show');
   coachOn = false; syncOverlay();
+  /* The day screen the coach uncovers is FULL of controls that write. Leaving
+     the seat to the nav's scope memory meant that ending a resumed session put
+     the ring straight back on the movement's "Set 1 / 1" — the seat it
+     remembered from before the coach opened — where one OK logs a set that was
+     never performed. "Start guided session" is the inert landing: it reopens
+     the coach and writes nothing.
+
+     Skipped while another overlay is up. endSession() closes the coach and then
+     raises the summary, and a ring seated on the page BEHIND that summary is
+     the other half of the same bug: an overlay must trap the cursor. */
+  if (!(restOn || doneOn || askOn)) seat($('startSession'));
   /* D10: the rig used to keep a 60 fps rAF loop repainting a canvas inside an
      opacity:0 overlay for the life of the page, next to the ambient layer's
      loop and the music scheduler — three loops on a menu screen, on a SoC with
@@ -1215,9 +1348,11 @@ function paintCoach() {
   var l = listFor(), slug = curSlug(), ex = slug ? EXD.get(slug) : null;
   if (!ex) { endSession(); return; }
   var c = per(slug), sd = doneSets(slug), tot = +c.sets, g = gameOf(c.game);
+  var twoSides = isPerSide(slug), side = curSide();
 
   $('cStep').innerHTML = 'Lift <b>' + (S.i + 1) + '</b> of <b>' + l.length +
-                         '</b> · Set <b>' + Math.min(sd + 1, tot) + '</b> of <b>' + tot + '</b>';
+                         '</b> · Set <b>' + Math.min(sd + 1, tot) + '</b> of <b>' + tot + '</b>' +
+                         (twoSides ? ' · Leg <b>' + side + '</b> of <b>2</b>' : '');
 
   var totalSets = 0, doneAll = 0;
   for (var i = 0; i < l.length; i++) {
@@ -1243,21 +1378,46 @@ function paintCoach() {
     '<span class="tag">' + tot + ' set' + (tot > 1 ? 's' : '') + '</span>' +
     (ex.regression && ex.regression.name ? '<span class="tag">Too hard? ' + ex.regression.name + '</span>' : '');
   $('cPlay').textContent = '▶ Play in ' + g.name;
-  $('cLog').textContent = (sd + 1 >= tot) ? 'Log final set ✓' : 'Log set ✓';
+  /* On a per-side movement the first press finishes a LEG, and saying "Log set"
+     there is how the second leg went missing in the first place: the button
+     claimed to have banked the whole movement. Nothing is written until the
+     pair is done, and the label now says which of the two you are ending. */
+  $('cLog').textContent = twoSides
+    ? (side === 1 ? 'First leg done ▶' : 'Both legs done — log set ✓')
+    : ((sd + 1 >= tot) ? 'Log final set ✓' : 'Log set ✓');
+
+  /* Both lines are the source's own, not the app's: one leg to complete
+     exhaustion and then the other, and the band running under the front foot
+     near the heel (docs/x3-knowledge/official/exercises.md, X3 Split Squat).
+     Nothing here says anything the transcript does not. */
+  $('cSide').classList.toggle('show', twoSides);
+  if (twoSides) {
+    $('cSide').innerHTML = side === 1
+      ? '<b>Leg 1 of 2</b> — take this leg to complete fatigue, then the other one.'
+      : '<b>Leg 2 of 2</b> — swap your feet: the band runs under the new front foot, near the heel.';
+  }
 
   demoFor(slug, c.tempo);
 
   var pending = !!(S.pending && S.pending.slug === slug);
   $('cPending').classList.toggle('show', pending);
   if (S.pending) {
+    /* "That set" is a question the split squat cannot answer — there are two
+       legs in a set and you have just come back from playing one of them. */
     $('cPendingTxt').textContent = 'Back from ' + gameOf(S.pending.game).name +
-      ' — did you finish that set of ' + ex.name + '?';
+      ' — did you finish ' +
+      (twoSides ? (side === 1 ? 'the first leg' : 'the second leg') : 'that set') +
+      ' of ' + ex.name + '?';
   }
 }
 
 function play(slug) {
   if (S && S.active) {
-    S.i = Math.max(0, listFor().indexOf(slug));
+    var i = Math.max(0, listFor().indexOf(slug));
+    /* Jumping to a DIFFERENT movement from the day list restarts its sides.
+       Relaunching the one you are already on keeps the leg you are on — that is
+       how the second leg of a split squat gets played in the game at all. */
+    if (i !== S.i) goToLift(i); else S.i = i;
     S.pending = { slug: slug, game: per(slug).game, at: Date.now() };
     saveS();
   }
@@ -1268,21 +1428,69 @@ function logSet() {
   if (!S || !S.active) return;
   var slug = curSlug(); if (!slug) { endSession(); return; }
   var tot = +per(slug).sets;
-  var sd = Math.min(tot, doneSets(slug) + 1);
-  setDoneSets(slug, sd);
 
-  /* Recorded against the MOVEMENT, so the dashboard, the challenges and the
-     achievements all see guided work even when no game was launched. */
-  var P = mod('X3FProg');
-  if (P) {
-    try {
-      P.logSet({ g: 'routine', ex: slug, band: per(slug).band });
-      var fresh = P.checkAchievements();
-      if (fresh && fresh.length) toastAch(fresh);
-    } catch (e) {}
+  /* HALF A MOVEMENT IS NOT A SET.
+     On a per-side movement the first press ends the first LEG: it advances the
+     side and stops. Nothing is written, nothing is counted, no rest is started
+     — see the isPerSide() header for why the gap between the legs is left
+     silent rather than timed. */
+  if (isPerSide(slug) && curSide() === 1) {
+    S.side = 2; S.pending = null; saveS();
+    beep(680, .09); buzz(20);
+    $('cPending').classList.remove('show');
+    paintCoach();
+    /* Not the log button. The ring is sitting on the control that has just
+       changed meaning under it, and one more OK would bank a second leg you
+       have not started. Play is inert. */
+    seat($('cPlay'));
+    return;
   }
 
-  S.sets = (S.sets || 0) + 1; S.pending = null; saveS();
+  var sd = Math.min(tot, doneSets(slug) + 1);
+
+  /* THE LOG WRITE HAPPENS FIRST, AND EVERYTHING ELSE IS CONDITIONAL ON IT.
+
+     X3FProg.logSet() returns null when the entry could not be stored — the
+     engine already compacts hard and retries before it gives up, so a null is
+     not a hiccup, it is "this set is not in your history and will not be".
+     Its return value was thrown away here, so a full quota meant the day mark
+     ticked over, the tally moved, the session counted a set, the rest timer
+     opened and the summary said "logged" — for a set that exists nowhere. The
+     engine's own comment names this failure ("the set reporter then announced
+     'Set logged' for a set that was never written - silently, forever"); the
+     one screen that logs sets by hand was still doing it.
+
+     A MISSING module is not a failed write. If x3f-progress.js never loaded
+     there is nothing to write to, and the page's standing rule is that an
+     absent module degrades the app rather than blocking it: the day still
+     tracks its own progress locally. Only a present engine that says no is a
+     failure. */
+  var P = mod('X3FProg'), fresh = null;
+  if (P) {
+    var wrote = null;
+    try { wrote = P.logSet({ g: 'routine', ex: slug, band: per(slug).band }); }
+    catch (e) { wrote = null; }
+    if (!wrote) {
+      /* Said out loud, in the only channel that reaches you with the coach
+         open, and the session is left exactly where it was: nothing marked,
+         nothing advanced, the prompt still asking its question. The ring does
+         not move either, so the same press is the retry. */
+      toastAch([{ icon: '⚠', name: 'Set NOT saved',
+                  desc: 'The training log is full and this set was not written. Nothing has been counted. ' +
+                        'Press again to retry, or free up space on the device.' }]);
+      buzz(200);
+      return;
+    }
+    /* Achievements are read AFTER a confirmed write, or an unlock could be
+       announced off a set the log does not contain. */
+    try { fresh = P.checkAchievements(); } catch (e) {}
+  }
+
+  /* The day mark is a local convenience; the log above is the record. */
+  setDoneSets(slug, sd);
+  if (fresh && fresh.length) toastAch(fresh);
+
+  S.sets = (S.sets || 0) + 1; S.pending = null; S.side = 1; saveS();
   beep(760, .1); buzz(35);
   paintLift(slug); paintCur(); paintTally(); paintDays();
   $('cPending').classList.remove('show');
@@ -1290,7 +1498,7 @@ function logSet() {
   var lastOfLift = sd >= tot;
   var nx = nextIncomplete(lastOfLift ? S.i + 1 : S.i);
   if (nx < 0) { endSession(); return; }
-  if (lastOfLift) { S.i = nx; saveS(); }
+  if (lastOfLift) { goToLift(nx); saveS(); }
   paintCoach();
   startRest(lastOfLift);
 }
@@ -1299,12 +1507,12 @@ function skipLift() {
   if (!S || !S.active) return;
   var nx = nextIncomplete(S.i + 1);
   if (nx < 0 || nx === S.i) { endSession(); return; }
-  S.i = nx; S.pending = null; saveS(); paintCoach();
+  goToLift(nx); S.pending = null; saveS(); paintCoach();
 }
 function stepLift(d) {
   if (!S || !S.active) return;
   var l = listFor(); if (!l.length) return;
-  S.i = (S.i + d + l.length) % l.length;
+  goToLift((S.i + d + l.length) % l.length);
   S.pending = null; saveS(); paintCoach();
 }
 
@@ -1345,8 +1553,18 @@ function endSession() {
   render();
 }
 
-function showDone() { $('done').classList.add('show'); doneOn = true; syncOverlay(); if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} } }
-function hideDone() { $('done').classList.remove('show'); doneOn = false; syncOverlay(); if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} } }
+/* The summary names its own seat rather than letting the nav pick one, for two
+   reasons: an overlay has to TRAP the cursor (a ring left on the day screen
+   behind this panel is a cursor that has escaped), and of the three controls in
+   it, "Back to the day" is the one that changes nothing. "Undo last set" is
+   sitting right next to it. */
+function showDone() { $('done').classList.add('show'); doneOn = true; syncOverlay(); seat($('dClose')); }
+function hideDone() {
+  $('done').classList.remove('show'); doneOn = false; syncOverlay();
+  /* Same landing as closing the coach: the day screen underneath is full of
+     "Set 1 / 1" buttons and the nav would happily recall one of them. */
+  if (!(coachOn || restOn || askOn)) seat($('startSession'));
+}
 
 function askEnd() {
   var sets = (S && S.sets) || 0;
@@ -1373,7 +1591,12 @@ $('cPendYes').onclick = logSet;
 $('cPendNo').onclick = function () {
   if (S) { S.pending = null; saveS(); }
   $('cPending').classList.remove('show');
-  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+  /* The row the ring is standing on has just vanished, and a bare refresh()
+     handed the seat to the nearest surviving control — which on this overlay is
+     "✕ End session", one press away, on the screen where the user has just said
+     "not yet, I am still doing the set". Say where it goes instead: Play is the
+     movement they are on and it logs nothing. */
+  seat($('cPlay'));
 };
 /* "End session" is an explicit press, so it ends: the summary that follows is
    itself the confirmation, and it carries Undo. BACK is the ambiguous gesture,
@@ -1442,7 +1665,18 @@ function stopRest() {
   clearInterval(restT); restT = null;
   $('rest').classList.remove('show');
   restOn = false; syncOverlay();
-  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+  /* The countdown reaching zero closes this overlay WITHOUT anybody pressing
+     anything — you are on a plate, not looking at the screen — and the coach
+     underneath got its seat back from the nav's scope memory: "Next ▶", where
+     one OK skips a movement you have not done yet. The ring goes on the
+     movement instead. ("+ 30 seconds" is the other safe answer, but it leaves
+     with the overlay; Play is the one that is still on screen.)
+
+     Only when the coach is actually there to land in. endSession() also comes
+     through here, and it closes the coach a line later — its own seat, and then
+     the summary's, land after this one and win. */
+  if (coachOn) seat($('cPlay'));
+  else if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
 }
 $('restSkip').onclick = stopRest;
 $('restMore').onclick = function () {
@@ -1479,13 +1713,26 @@ $('restMore').onclick = function () {
   } catch (e) {}
 
   /* The remote has nothing focused until the first D-pad press. Seat the cursor
-     on the single most likely action so it costs zero presses — unless the
-     coach already claimed the screen, in which case its own data-nav-first has
-     it. */
+     on the single most likely action so it costs zero presses.
+
+     THE ORDER OF THESE THREE CASES IS THE FIX. Coming back from a game is not
+     "the coach is open", it is "the coach is open AND asking you a question" —
+     did you finish that set? — and the ring used to land on "▶ Play in Bloom",
+     which is neither answer, one row away from both, and re-launches the game
+     you have just come back from. It now lands on the SAFE answer. "Not yet"
+     is the one that writes nothing: a dialog under the cursor never defaults to
+     the option that approves, and here approving means a logged set. */
   try {
     if (window.X3FNav) {
       X3FNav.refresh();
-      if (!X3FNav.current()) X3FNav.set(coachOn ? $('cPlay') : $('startSession'));
+      /* Not `if (!current())` for the asking case, and that is the whole bug:
+         openCoach() has already refreshed by now, and on the television
+         (__x3fNative) a refresh into a new scope seats the ring itself, on the
+         coach's data-nav-first — Play. There was never a null cursor left for
+         this block to fill in, so the "safe answer" has to overrule a seat that
+         has already happened, not wait for the absence of one. */
+      if (coachOn && $('cPending').classList.contains('show')) seat($('cPendNo'));
+      else if (!X3FNav.current()) X3FNav.set(coachOn ? $('cPlay') : $('startSession'));
     }
   } catch (e) {}
 

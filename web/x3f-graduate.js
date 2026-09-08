@@ -16,6 +16,25 @@
    sourcing of every claim, quote by quote.
 
    ─────────────────────────────────────────────────────────────────────────
+   THIS FILE NO LONGER DECIDES ANYTHING
+   ─────────────────────────────────────────────────────────────────────────
+
+   It used to, and so did x3f-progress.js, and they disagreed. This file read
+   whole SESSIONS off the log, took the band from X3FBand.forMovement, went down
+   on the first sub-15 session and up on the first 40. X3FProg.bandAdvice() read
+   the last five SETS, took the band from what you had last actually trained,
+   went down only under 10 reps or on a second bad set, and up only after two
+   sets over 40. Neither could see the other's state. On one movement on one day
+   the home screen said "go lighter on the chest press" while the Progress page
+   said "move Chest Press up to Black", and both looked authoritative.
+
+   X3FProg.bandVerdict(slug) is now the only place that decision is made. This
+   file is the home screen's VOICE: prompt copy, the confidence label the copy
+   has to carry, the actions, and the record of what you answered. It cannot
+   reach a different conclusion from the Progress page because it does not reach
+   a conclusion at all.
+
+   ─────────────────────────────────────────────────────────────────────────
    THE THING THE SOURCES DISAGREE ABOUT
    ─────────────────────────────────────────────────────────────────────────
 
@@ -34,15 +53,47 @@
    sessions need not be consecutive, because no source says consecutive.
 
    ─────────────────────────────────────────────────────────────────────────
+   THE ELITE BAND IS NOT A STEP
+   ─────────────────────────────────────────────────────────────────────────
+
+   It used to be offered as the ordinary next rung above Black, and accepting
+   applied it - which silently assumed the user owns a band that does not come
+   with the bar. band-progression.md §11.6 is explicit: the Elite page gates it
+   on completing the 15-40 protocol with the black band ACROSS your exercises,
+   it is a separate purchase, and the page itself calls it extremely
+   challenging. So it is framed as a purchase and never switched to, however the
+   ownership question was answered. Same for any band onboarding was told is not
+   in the room: being ready for it is real news, but it is news about a purchase.
+
+   ─────────────────────────────────────────────────────────────────────────
+   PROMPTS CAN BE PUT AWAY, AND EACH ONE HAS ITS OWN MEMORY
+   ─────────────────────────────────────────────────────────────────────────
+
+   Two bugs, one cause. There was a single `declined` counter and a single
+   `offeredAt` per movement+band, shared by both directions: pressing "Stay on
+   Black" on a go-lighter prompt suppressed the go-heavier prompt too, and two
+   of those declines turned the next up-prompt into the band-shortening
+   suggestion. Declining to go DOWN says nothing whatever about wanting to go
+   UP. The two sides now have separate counters (X3FProg.gradState).
+
+   And the go-lighter prompt could not be put away at all: it was returned on
+   every render regardless of what you pressed, so the dashboard carried it
+   until you either changed band or logged a better session. Answering a prompt
+   - accept, decline, "later", or a bare acknowledgement - now silences that
+   prompt until the movement has something NEW to say, meaning a session newer
+   than the one you answered about. A safety prompt still comes back the next
+   time you fall short, which is the point of it.
+
+   ─────────────────────────────────────────────────────────────────────────
    WHAT COUNTS
    ─────────────────────────────────────────────────────────────────────────
 
    FULL-RANGE REPS ONLY. The support centre is explicit: "40 slow and controlled
    reps with a band, NOT COUNTING PARTIAL REPS", and three band pages say "40
-   FULL reps". x3f-set.js already separates full-range reps from the mid-range
-   and weak-range partials that come after failure, so this reads `full` and
-   never `reps`. Getting that wrong would push people up a band one or two
-   sessions early, every time.
+   FULL reps". X3FProg.bandSessions() reads `full` and never `reps`, and marks a
+   day written before the three-tier set existed as legacy so it cannot trigger
+   an upgrade on its own. Getting that wrong would push people up a band one or
+   two sessions early, every time.
 
    ─────────────────────────────────────────────────────────────────────────
    WHAT THIS WILL NOT DO
@@ -59,268 +110,319 @@
 
      X3FGraduate.check(slug)          -> a prompt, or null
      X3FGraduate.accept(slug)         take the suggestion
-     X3FGraduate.decline(slug)        keep the band; do not ask again this session
-     X3FGraduate.status(slug)         -> {band, qualifying, lastFull, sinceISO}
+     X3FGraduate.decline(slug[,kind]) keep the band, and put the prompt away
+     X3FGraduate.dismiss(slug[,kind]) put the prompt away, deciding nothing
+     X3FGraduate.later(slug)          ask me again after the next session
+     X3FGraduate.status(slug)         -> {band, qualifying, lastFull, onBandDays}
      X3FGraduate.all()                -> every movement with something to say
 */
 (function () {
   "use strict";
 
-  var K = 'x3f_grad';   // {"slug|band": {q, declined, upgradedAt, offeredAt}}
-
-  function read(k, d) {
-    try { var v = JSON.parse(localStorage.getItem(k)); return (v === null || v === undefined) ? d : v; }
-    catch (e) { return d; }
-  }
-  function write(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
-
   function P() { return window.X3FProg || null; }
   function EX() { return window.X3FEX || null; }
-  function protocol() {
-    var e = EX();
-    return (e && e.protocol) || { repsMin: 15, repsMax: 40 };
-  }
-  function bands() {
-    var e = EX();
-    return (e && e.bands) || ['White', 'Light Gray', 'Dark Gray', 'Black', 'Elite Black'];
-  }
+
+  /* Which band this movement is on. One answer, X3FProg's - an explicit choice
+     first, then the band you last actually trained, then the calibrated or
+     global default. Asking X3FBand.forMovement directly, as this file used to,
+     skipped the middle step: a user who had trained Black for a month but never
+     pressed a band button was judged against whatever the global default said,
+     which is how two advisers ended up looking at two different bands. */
   function bandOf(slug) {
+    var p = P();
+    if (p && p.trainingBand) {
+      var b = p.trainingBand(slug);
+      if (b) return b;
+    }
     try { if (window.X3FBand) return window.X3FBand.forMovement(slug); } catch (e) {}
     return 'White';
   }
   function nameOf(slug) {
     try { var e = EX() && EX().get(slug); if (e) return e.name; } catch (err) {}
+    var p = P();
+    if (p && p.bandVerdict) { var v = p.bandVerdict(slug); if (v && v.name) return v.name; }
     return slug;
   }
-  function id(slug, band) { return slug + '|' + band; }
-  function state(slug, band) {
-    var m = read(K, {});
-    return m[id(slug, band)] || { q: 0, declined: 0, upgradedAt: 0, offeredAt: 0 };
-  }
-  function save(slug, band, s) {
-    var m = read(K, {});
-    m[id(slug, band)] = s;
-    write(K, m);
+  function protocol() {
+    var p = P();
+    if (p && p.protocol) return p.protocol();
+    var e = EX();
+    return (e && e.protocol) || { repsMin: 15, repsMax: 40 };
   }
 
-  /* Full-range reps only, per session, newest first. A session is a day: two
-     sets of the same movement on one day is one attempt at the number, and the
-     best of them is what the number was. */
   function sessions(slug, band) {
     var p = P();
-    if (!p || !p.sets) return [];
-    var byDay = {};
-    p.sets().forEach(function (e) {
-      if (!e || e.ex !== slug) return;
-      if (e.tracked === false) return;              // volume sets are not attempts
-      var b = (window.X3FBand && e.band) ? e.band : (e.band || e.b);
-      if (b !== band) return;
-      var day = p.dayKey ? p.dayKey(e.t) : String(e.t);
-      /* `full` is the count of FULL-RANGE reps. Entries logged before the three
-         tier model existed only have `reps`, which included the partials - so
-         they are read but are deliberately NOT allowed to trigger an upgrade on
-         their own (see qualifying()). */
-      var full = (e.full != null) ? +e.full : null;
-      var rec = byDay[day] || (byDay[day] = { day: day, full: 0, legacy: false, t: e.t });
-      if (full === null) { rec.legacy = true; full = +e.reps || 0; }
-      if (full > rec.full) { rec.full = full; rec.t = e.t; }
-    });
-    return Object.keys(byDay).sort().reverse().map(function (d) { return byDay[d]; });
+    if (!p || !p.bandSessions) return [];
+    return p.bandSessions(slug, band || bandOf(slug));
   }
-
-  /* Sessions that hit the cap. A legacy entry cannot qualify by itself because
-     its rep count included partials, and the rule is explicitly full-range
-     only - counting them would move people up a band early. */
   function qualifying(slug, band) {
     var cap = protocol().repsMax;
     return sessions(slug, band).filter(function (s) { return !s.legacy && s.full >= cap; });
   }
 
-  function nextBand(band) {
-    var b = bands(), i = b.indexOf(band);
-    return (i >= 0 && i < b.length - 1) ? b[i + 1] : null;
-  }
-  function prevBand(band) {
-    var b = bands(), i = b.indexOf(band);
-    return (i > 0) ? b[i - 1] : null;
-  }
-
   function days(ms) { return Math.floor((Date.now() - ms) / 86400000); }
 
-  /* ── the decision ─────────────────────────────────────────────────────── */
+  /* Which counter a prompt belongs to. Everything about going heavier shares
+     one memory and everything about the band being too heavy shares the other;
+     they never touch. `grace` sits on the down side because it is an answer to
+     "should I go back down", not to "should I go up again". */
+  var SIDE = {
+    revert: 'down', down: 'down', grace: 'down',
+    up: 'up', 'up-offer': 'up', 'up-soft': 'up', shorten: 'up', elite: 'up', buy: 'up'
+  };
+  function sideOf(kind) { return SIDE[kind] || 'up'; }
+
+  /* Has this prompt already been answered, with nothing new since? A session
+     newer than the answer is new evidence and re-opens the question; the same
+     session that was already answered is not. */
+  function answered(v, side) {
+    var s = v.state[side];
+    if (!s) return false;
+    return v.last.t <= Math.max(s.dismissedT || 0, s.offeredAt || 0);
+  }
+
+  /* ── the decision, turned into something a person can read ────────────── */
 
   function check(slug) {
-    if (!slug || !P()) return null;
-    var band = bandOf(slug);
-    var s = state(slug, band);
-    var P_ = protocol();
-    var ses = sessions(slug, band);
-    if (!ses.length) return null;
-    var last = ses[0];
-    var ex = EX() && EX().get(slug);
-    var name = nameOf(slug);
+    var p = P();
+    if (!slug || !p || !p.bandVerdict) return null;
+    var v = p.bandVerdict(slug);
+    if (!v || !v.last) return null;
+    var band = v.band, P_ = { repsMin: v.repsMin, repsMax: v.repsMax };
+    var name = v.name || nameOf(slug);
 
     /* ---- the grace session, after a deliberate move up ------------------
        This is the app's own rule and is labelled as such wherever it speaks.
-       The program's own instructions collide here: item 5 sends you up at 40,
-       item 6 sends you straight back down under 15, and the first session on a
-       heavier band is EXPECTED to land near 15. Without a grace session the app
-       produces a visible up-down loop, which reads as a bug and costs it
+       The program's own instructions collide here: the 40-rep trigger sends you
+       up, the 15-rep floor sends you straight back down, and the first session
+       on a heavier band is EXPECTED to land near 15. Without a grace session the
+       app produces a visible up-down loop, which reads as a bug and costs it
        credibility on everything else it says. Nothing official arbitrates. */
-    if (s.upgradedAt && last.t >= s.upgradedAt && ses.length <= 1) {
-      if (last.full < 10) {
-        return {
-          kind: 'revert', slug: slug, band: band, to: prevBand(band),
-          confidence: 'safety',
-          title: 'That band may be too heavy',
-          message: last.full + ' full reps on your first session with ' + band + '. X3’s rule is ' +
-                   'to reduce the resistance if you cannot manage ' + P_.repsMin + ' — it is a safety ' +
-                   'rule as much as a training one. Go back to ' + prevBand(band) + '?',
-          actions: [{ id: 'accept', label: 'Go back to ' + prevBand(band) },
-                    { id: 'decline', label: 'Stay on ' + band }]
-        };
-      }
-      if (last.full < P_.repsMin) {
-        return {
-          kind: 'grace', slug: slug, band: band, confidence: 'ours',
-          title: 'That is normal after a band change',
-          message: last.full + ' full reps on your first session with ' + band + '. Landing near ' +
-                   P_.repsMin + ' right after moving up is expected. This app suggests giving it one ' +
-                   'more session before deciding — the program itself does not say.',
-          actions: [{ id: 'ok', label: 'Understood' }]
-        };
-      }
+    if (v.grace) {
+      if (answered(v, 'down')) return null;
+      return {
+        kind: 'grace', slug: slug, band: band, to: null, canSwitch: false,
+        confidence: 'ours',
+        title: 'That is normal after a band change',
+        message: v.message,
+        actions: [{ id: 'ok', label: 'Understood' }]
+      };
     }
 
     /* ---- down, on the first occurrence ---------------------------------
        Unconditional in the source, and its stated reason is losing control of a
        loaded bar. The costs are asymmetric, so this fires immediately rather
-       than waiting for a pattern. */
-    if (last.full > 0 && last.full < P_.repsMin && !last.legacy) {
-      var down = prevBand(band);
+       than waiting for a pattern. It can be put away, but only until the next
+       time you fall short. */
+    if (v.dir === 'down') {
+      if (answered(v, 'down')) return null;
+      var revert = (v.reason === 'revert');
       return {
-        kind: 'down', slug: slug, band: band, to: down, confidence: 'safety',
-        title: 'Go lighter on the ' + name.toLowerCase(),
-        message: 'You stopped at ' + last.full + ' full reps. X3’s rule is to reduce the ' +
-                 'resistance if you cannot do ' + P_.repsMin + ' slow, controlled reps — it is a ' +
-                 'safety rule as much as a training one.' +
-                 (down ? '' : ' You are already on the lightest band, so lengthen the band or use a regression instead.'),
-        actions: down
-          ? [{ id: 'accept', label: 'Drop to ' + down }, { id: 'decline', label: 'Stay on ' + band }]
+        kind: revert ? 'revert' : 'down', slug: slug, band: band, to: v.to,
+        canSwitch: !!v.switchable, confidence: 'safety',
+        title: revert ? 'That band may be too heavy' : ('Go lighter on the ' + name.toLowerCase()),
+        message: v.message,
+        actions: v.switchable
+          ? [{ id: 'accept', label: 'Drop to ' + v.to }, { id: 'decline', label: 'Stay on ' + band }]
           : [{ id: 'ok', label: 'Understood' }]
       };
     }
 
-    /* ---- up ------------------------------------------------------------- */
-    var q = qualifying(slug, band).length;
-    if (q < 1) return null;
-    var up = nextBand(band);
+    if (v.dir !== 'up') return null;
+    if (answered(v, 'up')) return null;
 
-    /* The Elite band is a purchase, not a progression step, and the source
-       gates it on the Black band across your exercises. */
-    if (!up) {
-      if (s.offeredAt) return null;
+    /* ---- the Elite band, and anything else you would have to buy --------
+       Never a switch. §11.6: a purchase decision gated on the black band, not a
+       routine progression - and the app has no business assuming a band it has
+       never seen evidence of. The only action is acknowledgement, because the
+       only next step belongs to the user and their wallet. */
+    if (!v.to || v.elite || v.purchase) {
       return {
-        kind: 'top', slug: slug, band: band, confidence: 'sourced',
-        title: P_.repsMax + ' full reps on the heaviest band you have',
-        message: 'X3 sells an Elite band above ' + band + ', and says you should be able to do at ' +
-                 'least ' + P_.repsMax + ' slow controlled reps with the black band first. It is a ' +
-                 'separate purchase and they describe it as extremely challenging. You can also ' +
-                 'shorten your current band by wrapping it around the hook.',
+        kind: v.elite ? 'elite' : (v.to ? 'buy' : 'top'), slug: slug, band: band,
+        to: null, canSwitch: false, confidence: 'sourced',
+        title: v.elite ? 'The Elite band is a purchase, not a step'
+             : v.to ? ('Ready for ' + v.to + ', which you would have to buy')
+                    : (P_.repsMax + ' full reps on the heaviest band there is'),
+        message: v.message,
         actions: [{ id: 'ok', label: 'Got it' }]
       };
     }
 
-    /* The calf raise. NO SOURCE EXEMPTS IT - an earlier version of this app
-       invented an exemption, which was wrong. But the program does say, of this
-       one movement, "it's much better to do it with a lighter band and higher
-       repetitions", partly because the deadlift has already spent your grip. So
-       the trigger is the same and only the COPY changes: it is offered once,
-       staying put is presented as legitimate, and it is never re-prompted. */
-    if (slug === 'calf-raise') {
-      if (s.offeredAt) return null;
+    /* ---- the calf raise -------------------------------------------------
+       NO SOURCE EXEMPTS IT - an earlier version of this app invented an
+       exemption, which was wrong and had to be removed. But the program does
+       say, of this one movement, "it's much better to do it with a lighter band
+       and higher repetitions", partly because the deadlift has already spent
+       your grip. So the trigger is identical and only the COPY changes: staying
+       put is presented as legitimate, the acknowledgement comes first so that
+       the default answer is the one that changes nothing, and it is never
+       re-prompted for that movement on that band. */
+    if (v.soft) {
+      /* ONCE, EVER - not the usual "until there is something new to say". Every
+         other prompt re-opens on a fresh session because fresh evidence is a
+         fresh question; here the question is one the program never answered, so
+         asking it a second time would just be nagging about a tension X3 left
+         unresolved. §11.7. */
+      var st = v.state.up;
+      if (st.dismissedT || st.offeredAt || st.declined) return null;
       return {
-        kind: 'up-soft', slug: slug, band: band, to: up, confidence: 'mixed',
+        kind: 'up-soft', slug: slug, band: band, to: v.to, canSwitch: true,
+        confidence: 'mixed',
         title: P_.repsMax + ' full reps on calf raises',
-        message: 'You could move up to ' + up + '. But X3’s calf raise guidance is specifically ' +
-                 'a lighter band and higher repetitions, partly because your grip is already spent ' +
-                 'from the deadlift. Their two statements pull different ways here, so staying on ' +
-                 band + ' is a legitimate choice.',
-        actions: [{ id: 'accept', label: 'Move up anyway' },
-                  { id: 'decline', label: 'Stay light' }]
+        message: v.message,
+        actions: [{ id: 'ok', label: 'Stay light' },
+                  { id: 'accept', label: 'Move up anyway' }]
       };
     }
 
-    /* Declined twice means the jump feels too big. Band shortening is a real,
-       documented mechanic - but X3 documents it as a FIT adjustment, not as a
-       half-step of resistance, so that framing is ours and is labelled. */
-    if (s.declined >= 2) {
+    /* Declined the move up twice means the jump feels too big. Band shortening
+       is a real, documented mechanic - but X3 documents it as a FIT adjustment,
+       not as a half-step of resistance, so that framing is ours and is
+       labelled. Gated on the UP counter alone: declining a go-lighter prompt is
+       not evidence about anything on this side of the ladder. */
+    if (v.state.up.declined >= 2) {
       return {
-        kind: 'shorten', slug: slug, band: band, confidence: 'mixed',
+        kind: 'shorten', slug: slug, band: band, to: null, canSwitch: false,
+        confidence: 'mixed',
         title: 'There is a smaller step',
         message: 'X3 documents wrapping the band around the hook once or twice to take up slack. ' +
                  'That makes your current band harder without changing colour. They describe it as ' +
                  'a fit adjustment — treating it as a half-step up is this app’s suggestion, ' +
                  'not theirs.',
-        actions: [{ id: 'ok', label: 'I’ll try that' }, { id: 'decline', label: 'No thanks' }]
+        /* Neither button is a decision about the band, so neither is recorded
+           as one - see ACK_ONLY. Both just put the suggestion away. */
+        actions: [{ id: 'ok', label: 'I’ll try that' }, { id: 'dismiss', label: 'No thanks' }]
       };
     }
 
-    if (q >= 2) {
+    if (v.firm) {
       return {
-        kind: 'up', slug: slug, band: band, to: up, confidence: 'sourced',
+        kind: 'up', slug: slug, band: band, to: v.to, canSwitch: true, confidence: 'sourced',
         title: 'Second time at ' + P_.repsMax + ' on the ' + name.toLowerCase(),
-        message: 'X3’s own band guidance says to move up once you can consistently reach ' +
-                 P_.repsMax + ' full reps. Move the ' + name.toLowerCase() + ' to ' + up + '.',
-        actions: [{ id: 'accept', label: 'Move up to ' + up },
+        message: v.message + ' Move the ' + name.toLowerCase() + ' to ' + v.to + '.',
+        actions: [{ id: 'accept', label: 'Move up to ' + v.to },
                   { id: 'decline', label: 'Stay on ' + band }]
       };
     }
 
-    /* One qualifying session: offer, and attribute. Never change it for them -
-       the user changes bands with their hands, so the app is making a claim,
-       not an adjustment. */
-    if (s.offeredAt && last.t <= s.offeredAt) return null;
+    /* One qualifying session: offer, and attribute. */
     return {
-      kind: 'up-offer', slug: slug, band: band, to: up, confidence: 'sourced',
+      kind: 'up-offer', slug: slug, band: band, to: v.to, canSwitch: true, confidence: 'sourced',
       title: P_.repsMax + ' full reps. That is the number.',
-      message: 'X3’s Quick Start Guide says to move to the next heavier band once you can ' +
-               'complete ' + P_.repsMax + ' slow and controlled reps with good form. Move the ' +
-               name.toLowerCase() + ' up to ' + up + ' next session?',
-      actions: [{ id: 'accept', label: 'Move up to ' + up },
+      message: v.message + ' Move the ' + name.toLowerCase() + ' up to ' + v.to + ' next session?',
+      actions: [{ id: 'accept', label: 'Move up to ' + v.to },
                 { id: 'later', label: 'Do it once more first' },
                 { id: 'decline', label: 'Stay on ' + band }]
     };
   }
 
+  /* ── answering ────────────────────────────────────────────────────────── */
+
+  /* Every answer is recorded against the session it was an answer TO, so the
+     prompt comes back when there is something new and not before. Taking a
+     wall-clock stamp instead would silence the prompt for exactly as long as it
+     took the clock to pass it, which is no time at all. */
+  function note(slug, band, side, patch) {
+    var p = P();
+    if (!p || !p.gradNote) return;
+    var o = {};
+    o[side] = patch;
+    p.gradNote(slug, band, o);
+  }
+  function current(slug) {
+    var pr = check(slug);
+    return pr || null;
+  }
+  function lastT(slug, band) {
+    var ses = sessions(slug, band);
+    return ses.length ? ses[0].t : Date.now();
+  }
+
   function accept(slug) {
-    var band = bandOf(slug);
-    var p = check(slug);
-    if (!p) return null;
-    var target = p.to;
-    if (!target) { note(slug, band, { offeredAt: Date.now() }); return null; }
+    var pr = current(slug);
+    if (!pr) return null;
+    var band = pr.band;
+    /* A prompt with nothing to switch to is a claim, not an adjustment: the
+       Elite band, a band the user does not own, the top of the ladder, the
+       shortening suggestion. Accepting one records that it was seen and changes
+       no setting. Applying it anyway is the bug this replaced - it moved people
+       onto an Elite band the app had no reason to think they owned. */
+    if (!pr.canSwitch || !pr.to) {
+      note(slug, band, sideOf(pr.kind), { dismissedT: lastT(slug, band) });
+      return null;
+    }
+    var target = pr.to;
     try { if (window.X3FBand) window.X3FBand.set(slug, target); } catch (e) {}
-    var s = state(slug, target);
-    s.upgradedAt = Date.now();
-    s.declined = 0;
-    save(slug, target, s);
+    var p = P();
+    if (p && p.gradNote) {
+      /* The grace window opens on the band you have just moved TO, and its
+         counters start clean: what you declined on the old band says nothing
+         about the new one. */
+      p.gradNote(slug, target, {
+        upgradedAt: Date.now(),
+        up: { declined: 0, offeredAt: 0, dismissedT: 0 },
+        down: { declined: 0, offeredAt: 0, dismissedT: 0 }
+      });
+    }
     return target;
   }
 
-  function decline(slug) {
-    var band = bandOf(slug);
-    var s = state(slug, band);
-    s.declined = (s.declined || 0) + 1;
-    s.offeredAt = Date.now();
-    save(slug, band, s);
+  /* Keep the band. Counts as a decline on THAT side of the ladder only, and
+     puts the prompt away until the movement has something new to say.
+
+     The kind argument is optional because the dashboard does not pass one: it
+     calls decline(slug) for every button it does not recognise, including the
+     bare acknowledgements. Re-deriving the live prompt is what makes that
+     correct - the answer lands on the side of the ladder the user was actually
+     looking at, instead of on a single shared counter. */
+  function decline(slug, kind) {
+    var pr = kind ? { kind: kind, band: bandOf(slug) } : current(slug);
+    if (!pr) return;
+    var side = sideOf(pr.kind);
+    var only = onlyAcknowledges(pr);
+    var s = (P() && P().gradState) ? P().gradState(slug, pr.band) : null;
+    var prev = (s && s[side]) ? (s[side].declined || 0) : 0;
+    note(slug, pr.band, side, {
+      /* An acknowledgement is not a decision. "Understood" on a grace note or
+         "Got it" on the Elite band must not count toward the two declines that
+         escalate to the shortening suggestion. */
+      declined: only ? prev : prev + 1,
+      dismissedT: lastT(slug, pr.band)
+    });
   }
-  function note(slug, band, patch) {
-    var s = state(slug, band);
-    for (var k in patch) if (patch.hasOwnProperty(k)) s[k] = patch[k];
-    save(slug, band, s);
+
+  /* Put the prompt away without deciding anything. Same silence, no counter. */
+  function dismiss(slug, kind) {
+    var pr = kind ? { kind: kind, band: bandOf(slug) } : current(slug);
+    if (!pr) return;
+    note(slug, pr.band, sideOf(pr.kind), { dismissedT: lastT(slug, pr.band) });
   }
-  /* "Do it once more first" is not a decline - it should ask again next time. */
-  function later(slug) { note(slug, bandOf(slug), { offeredAt: Date.now() }); }
+
+  /* Prompts that only TELL you something. The dashboard routes every button it
+     does not recognise - "Understood", "Got it", "I'll try that" - through
+     decline(), so without this an acknowledgement would be recorded as a
+     decision about the band and two of them would escalate the next offer to
+     the band-shortening suggestion. Nobody declined anything. */
+  var ACK_ONLY = { grace: 1, elite: 1, buy: 1, top: 1, shorten: 1 };
+  function onlyAcknowledges(pr) {
+    if (ACK_ONLY[pr.kind]) return true;
+    /* decline(slug, kind) with no live prompt is a caller saying outright that
+       this was a decline; take them at their word. */
+    if (!pr.actions) return false;
+    for (var i = 0; i < pr.actions.length; i++) {
+      var id = pr.actions[i].id;
+      if (id === 'accept' || id === 'decline') return false;
+    }
+    return true;
+  }
+
+  /* "Do it once more first" is not a decline - it should ask again as soon as
+     there is another session to ask about. */
+  function later(slug) {
+    var pr = current(slug);
+    if (!pr) return;
+    note(slug, pr.band, sideOf(pr.kind), { offeredAt: lastT(slug, pr.band) });
+  }
 
   function status(slug) {
     var band = bandOf(slug);
@@ -346,14 +448,15 @@
       var p = check(x.slug);
       if (p) out.push(p);
     });
-    /* Safety first, then the firm recommendation, then the offer. */
-    var rank = { revert: 0, down: 1, up: 2, 'up-offer': 3, 'up-soft': 4, shorten: 5, grace: 6, top: 7 };
-    out.sort(function (a, b) { return (rank[a.kind] || 9) - (rank[b.kind] || 9); });
+    /* Safety first, then the firm recommendation, then the offer. The dashboard
+       shows one of these at a time, so this order decides which. */
+    var rank = { revert: 0, down: 1, up: 2, 'up-offer': 3, 'up-soft': 4, shorten: 5, grace: 6, buy: 7, elite: 8, top: 9 };
+    out.sort(function (a, b) { return (rank[a.kind] == null ? 10 : rank[a.kind]) - (rank[b.kind] == null ? 10 : rank[b.kind]); });
     return out;
   }
 
   window.X3FGraduate = {
-    check: check, accept: accept, decline: decline, later: later,
+    check: check, accept: accept, decline: decline, dismiss: dismiss, later: later,
     status: status, all: all, sessions: sessions, qualifying: qualifying
   };
 })();

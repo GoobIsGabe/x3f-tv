@@ -597,10 +597,23 @@ function bandRowHTML(ex) {
     factHTML(cfg, force || 'no published range', 'num') +
     factHTML('Foot position', plate[0], plate[1] ? 'warn' : '');
 
-  /* Advice, never an instruction. Routines defaulted every movement to this
-     suggestion once, so starting a day on White silently moved you to Dark
-     Gray — a setting nobody chose. It is shown and never applied. */
-  if (sug && sug !== band) out += factHTML('X3 suggests', sug + ' for this lift');
+  /* Advice, never an instruction, AND SAID IN THE APP'S OWN NAME.
+
+     This label read "X3 suggests", which put a sentence in the manufacturer's
+     mouth that the manufacturer never said. What the source publishes is a
+     relative ORDER - deadlift and bent-over row take the heaviest band, down to
+     the calf raise taking the lightest (docs/x3-knowledge/official/exercises.md,
+     "Band weight ranking") - and no per-movement band recommendation at all.
+     ex.band is this app's own reading of that ranking into a band NAME, and a
+     derived guess wearing the protocol's badge is the same failure that had an
+     earlier round removing an invented calf-raise exemption. X3F_Routine.html
+     says it this way too; the two screens must not disagree about who is talking.
+
+     Still shown and never applied: routines defaulted every movement to this
+     suggestion once, so starting a day on White silently moved you to Dark Gray -
+     a setting nobody chose. x3f-band.js keeps ex.band out of the chain that
+     decides a value for exactly that reason. */
+  if (sug && sug !== band) out += factHTML('This app suggests', sug + ' for this lift');
   out += cal
     ? factHTML('Calibrated', Math.round(cal.lo) + '–' + Math.round(cal.hi), 'good')
     : factHTML('Calibrated', 'not yet, on this band');

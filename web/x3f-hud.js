@@ -101,7 +101,16 @@
     s.textContent = [
       '.x3fhud{position:fixed;left:0;right:0;top:0;pointer-events:none;z-index:40;',
       '  display:flex;align-items:flex-start;justify-content:space-between;',
-      '  padding:4vh 5vw 0;font-family:var(--font-display,system-ui,sans-serif);',
+      /* THE SAFE AREA, NOT 4vh. A television crops the outer edge of the picture
+         and 5% a side is the minimum that survives it - which is exactly what
+         --safe-x / --safe-y mean in x3f-ui.css, and what the menus have always
+         padded by. This strip used 4vh, so on a panel with real overscan the top
+         of the one number the whole file exists to make readable was clipped.
+         The tokens are read from the host page (every game defines them); the
+         literals are the fallback for a page that has not, and they are the same
+         5% the design system names. */
+      '  padding:var(--safe-y,5vh) var(--safe-x,5vw) 0;',
+      '  font-family:var(--font-display,system-ui,sans-serif);',
       '  transition:background-color 220ms linear}',
       /* The whole strip tints, not just the number: a tier change has to be
          visible when the number itself is outside your fovea. */
@@ -116,13 +125,29 @@
       '.x3fhud .sub{font-size:min(2rem,2.8vh);font-weight:700;opacity:.7;',
       '  text-shadow:0 .2rem .8rem rgba(0,0,0,.8)}',
       '.x3fhud .tier{font-size:min(2.4rem,3.4vh);font-weight:700;letter-spacing:.12em}',
-      /* A thin full-width bar is the one piece of live feedback that is legible
+      /* A thin bar is the one piece of live feedback that is legible
          peripherally without being motion: it changes length, it does not move
-         or flash. */
-      '.x3fhud .meter{position:fixed;left:0;right:0;bottom:0;height:.7vh;',
+         or flash. It sits ON the safe line rather than on the panel edge - a
+         meter a television has cropped off the bottom of the picture is not
+         feedback, it is a wasted composite. The games' control rows pad their
+         bottom edge past this line (--safe-b) so a live bar never paints across
+         the bottom of the Start button. */
+      '.x3fhud .meter{position:fixed;height:.7vh;',
+      '  left:var(--safe-x,5vw);right:var(--safe-x,5vw);bottom:var(--safe-y,5vh);',
       '  background:rgba(236,238,242,.10)}',
-      '.x3fhud .meter i{display:block;height:100%;width:0;',
-      '  background:var(--accent,#7C6CFF);transition:width 80ms linear}',
+      /* scaleX, NOT width. This is the single most-animated element in the app:
+         it is on screen for every rep of every set of every game, and set()
+         re-drives it whenever the force fraction moves 1%, which during a
+         concentric is most frames. `width` is a layout property, so each of
+         those steps cost the WebView a layout of the fixed strip plus a repaint
+         of the bar, on the same 1 GB SoC that has to keep a canvas game and the
+         audio scheduler inside 16.6 ms. A transform is composited: the layer is
+         painted once at full width and the compositor squashes it, which is
+         free. Pinned to the left edge and applied to a flat fill, so it is
+         pixel-for-pixel the bar that was here before. */
+      '.x3fhud .meter i{display:block;height:100%;width:100%;',
+      '  transform:scaleX(0);transform-origin:left center;',
+      '  background:var(--accent,#7C6CFF);transition:transform 80ms linear}',
       '@media (prefers-reduced-motion:reduce){.x3fhud,.x3fhud .meter i{transition:none}}'
     ].join('');
     document.head.appendChild(s);
@@ -192,7 +217,9 @@
         var f = Math.max(0, Math.min(1, +s.frac || 0));
         if (Math.abs(f - lastFrac) > 0.01) {
           lastFrac = f;
-          elMeter.style.width = (f * 100).toFixed(1) + '%';
+          /* Three decimals because scaleX is a ratio, not a percentage: at
+             1 dp the bar would step in 10% jumps of its own length. */
+          elMeter.style.transform = 'scaleX(' + f.toFixed(3) + ')';
         }
       },
 
@@ -205,7 +232,7 @@
         finished = true;
         announce('done');
         elLbl.textContent = 'REPS';
-        elMeter.style.width = '0%';
+        elMeter.style.transform = 'scaleX(0)';
       },
 
       el: root,

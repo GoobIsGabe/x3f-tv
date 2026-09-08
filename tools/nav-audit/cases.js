@@ -11,6 +11,11 @@
          document.head.appendChild(ns); }
 
   function later(fn, ms) { setTimeout(fn, ms || 260); }
+  /* Close whatever modal is up, the way BACK does on the television, so each
+     state below is walked from a clean page rather than through the last one. */
+  function closeIt() {
+    try { if (window.__x3fCloseOverlay) window.__x3fCloseOverlay(); } catch (e) {}
+  }
 
   later(function () {
     if (isLauncher) {
@@ -109,7 +114,31 @@
             allow.click();
             later(function () {
               A.audit('home: paired confirmation');
-              A.report();
+              closeIt();
+              /* THE THREE THINGS THAT MADE THIS PAGE THE LAUNCHER. app.html was
+                 held back from being the TV's home screen because launcher.html
+                 carried the bar picker, the device list and the updater. It
+                 carries them now, so they get walked here before that promotion
+                 rather than after it. */
+              later(function () {
+                window.__x3fDevices([
+                  { a: 'AA:BB:CC:DD:EE:F1', n: 'X3 FORCE' },
+                  { a: 'AA:BB:CC:DD:EE:F2', n: '' }
+                ]);
+                document.getElementById('barChip').click();
+                later(function () {
+                  A.audit('home: bar picker with devices');
+                  closeIt();
+                  later(function () {
+                    window.__x3fDevices([]);
+                    document.getElementById('barChip').click();
+                    later(function () {
+                      A.audit('home: bar picker, nothing seen');
+                      A.report();
+                    }, 300);
+                  }, 260);
+                }, 300);
+              }, 260);
             }, 320);
           }, 260);
         }, 320);
@@ -128,10 +157,47 @@
         later(function () {
           A.audit('onboarding: step ' + (step + 1));
           if (++step >= 4) return A.report();
-          /* Advance with the primary control, whatever it is called - the point
-             is to reach the next step the way a remote would, not to know its id. */
-          var next = host.querySelector('[data-nav-first]') ||
-                     host.querySelector('button[data-nav]');
+          /* ADVANCE, DO NOT TOGGLE. This used to click [data-nav-first], which was
+             the step's primary action right up until the owned-bands step started
+             marking the band you just toggled as data-nav-first (so the cursor
+             stops jumping to the first band on every press). After that change the
+             walker pressed a BAND seven times and never left step 3 - a suite that
+             reports four states while auditing one.
+
+             So look for the control that actually moves the flow on, by its label,
+             and fall back to the last button on the step, which is where every one
+             of these frames puts its primary action. */
+          /* WHICH BUTTON MOVES THE FLOW ON, in order of confidence:
+
+               1. the step's PRIMARY action - frame() gives it class "primary", and
+                  that is the authoritative answer wherever one exists;
+               2. failing that, a label that reads like an advance;
+               3. failing that, any button that is NOT an exit.
+
+             Each rule exists because the simpler version before it walked the
+             wrong thing. [data-nav-first] toggled a band (the owned-bands step
+             marks the band you just pressed, so the cursor stays put). Matching
+             "skip" ended first run at step two. Falling back to the LAST button
+             picked the Skip that step two gained when it was given an exit. Every
+             time, the suite reported a tidy number of states while auditing
+             fewer. */
+          var btns = [].slice.call(host.querySelectorAll('button[data-nav]'));
+          var isExit = function (b) { return /skip|later|back/i.test(b.textContent || ''); };
+          var next = null;
+          for (var bi = 0; bi < btns.length && !next; bi++) {
+            if (/(^|\s)primary(\s|$)/.test(btns[bi].className)) next = btns[bi];
+          }
+          if (!next) {
+            for (var bj = 0; bj < btns.length && !next; bj++) {
+              if (/next|set me up|calibrate|start|continue|rather not/i.test(btns[bj].textContent || '')
+                  && !isExit(btns[bj])) next = btns[bj];
+            }
+          }
+          if (!next) {
+            for (var bk = 0; bk < btns.length && !next; bk++) {
+              if (!isExit(btns[bk])) next = btns[bk];
+            }
+          }
           if (!next) return A.report();
           next.click();
           nextStep();

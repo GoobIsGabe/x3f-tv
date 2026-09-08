@@ -60,10 +60,14 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -99,7 +103,22 @@ public class MainActivity extends Activity {
     private static final UUID CH_BATT  = UUID.fromString("e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6");
     private static final UUID CCCD     = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final int  REQ_PERMS = 42;
-    private static final String LAUNCHER = "file:///android_asset/launcher.html";
+    /* THE HOME SCREEN. app.html, not launcher.html.
+
+       launcher.html's own note set the terms: "app.html is the new leanback home.
+       It ships in the bundle and passes the nav audit, but it is not the LAUNCHER
+       yet: the bar picker, the device list and this updater still live on this
+       page, and losing them would be a regression. So it is reachable and
+       testable from the couch first, and becomes the launcher once it carries
+       those three things."
+
+       It carries all three now, and the nav audit walks them: "home: bar picker
+       with devices", "home: bar picker, nothing seen", and Check for updates in
+       Settings. launcher.html stays in the bundle - it is what onReceivedError
+       used to fall back to, it is the phone build's twin, and deleting a working
+       page on the same day as promoting its replacement is two changes wearing
+       one commit. */
+    private static final String LAUNCHER = "file:///android_asset/app.html";
     private static final String ASSETS   = "file:///android_asset/";
     private static final String VERSION_URL = "https://raw.githubusercontent.com/GoobIsGabe/x3f-tv/dist/version.txt";
     private static final String APK_URL = "https://github.com/GoobIsGabe/x3f-tv/releases/download/latest/x3f-tv.apk";
@@ -157,10 +176,35 @@ public class MainActivity extends Activity {
     private volatile String barState = "wait", barText = "Connecting…";
     private volatile android.content.SharedPreferences prefs;
     /* Everything the scan has seen this session, address -> name, so the user can
-       pick the bar by hand when the advertisement is not self-describing. */
+       pick the bar by hand when the advertisement is not self-describing.
+       BOUNDED, and named devices outrank unnamed ones — see noteDevice(). */
     private final Map<String, String> seen = new LinkedHashMap<>();
+    private static final String UNNAMED = "(unnamed device)";
+    /* Room for every device a living room actually contains, and few enough that the
+       list can be paged through with a D-pad from the sofa. */
+    private static final int  SEEN_MAX        = 24;
+    private static final long DEVICES_PUSH_MS = 1200;
+    private volatile boolean devicePushPending = false;
+
+    /* ADDRESSES THAT ANSWERED AND TURNED OUT NOT TO BE A BAR — the GATT service was
+       missing, or the service was there without the force characteristic.
+       nameLooksLikeBar() is a substring match on a name straight off the radio, so a
+       neighbour's "X3 Soundbar" matches it. Without this list the recovery path is a
+       trap: connect, discover, find nothing, rescan, match the same advertiser again,
+       forever, with the TV cycling status text and never reaching the real bar.
+       Bounded like `seen`, and rescan() empties it so a bar that was genuinely
+       mid-firmware-update can be given another go on demand. */
+    private final Set<String> rejected = Collections.synchronizedSet(new LinkedHashSet<String>());
+    private static final int REJECT_MAX = 32;
+
     private volatile boolean triedKnown = false;
     private volatile long watchdog = 0;
+    private volatile long scanRetry = 0;
+    /* Consecutive failed service discoveries against one address — see
+       onServicesDiscovered, where they are what keeps a dropped link from being read as
+       "this is not a bar" and putting the real one on the rejected list. */
+    private volatile String discFailAddr = null;
+    private volatile int    discFailCount = 0;
     private volatile int battMv = -1;          // last battery reading, -1 = unknown
     private volatile long battPoll = 0;        // generation counter for the re-read timer
     private volatile boolean overlayOpen = false;
@@ -242,8 +286,17 @@ public class MainActivity extends Activity {
            and visibly instead of hanging for seconds on a TV that has not associated yet. */
         ws.setBlockNetworkLoads(true);
         ws.setBlockNetworkImage(true);
-        /* Moot while network is blocked, but explicit: never re-validate a file:// asset. */
-        ws.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+        /* THIS USED TO BE LOAD_CACHE_ELSE_NETWORK, described as "never re-validate a
+           file:// asset". It cannot do that: cache mode is an HTTP cache policy and a
+           file:// load never goes near the HTTP cache, so it did nothing whatsoever for
+           the bundle. What it DID govern is the only traffic this WebView ever makes —
+           x3f-sync.js talking to Firebase once enableSync() opens the door — and there
+           it is actively wrong: LOAD_CACHE_ELSE_NETWORK prefers a cached response over
+           the network even when it has expired, which for a household-sync poll means
+           the TV can read yesterday's snapshot and never notice the phone finished a
+           set. LOAD_DEFAULT is the policy that says "obey the server's headers", which
+           is what a live database needs and what the bundle is unaffected by. */
+        ws.setCacheMode(WebSettings.LOAD_DEFAULT);
         /* Safe Browsing costs real milliseconds at WebView startup and does periodic
            network work, all of it pointless for a file:// bundle that cannot navigate. */
         try { if (Build.VERSION.SDK_INT >= 26) ws.setSafeBrowsingEnabled(false); } catch (Exception ignored) {}
@@ -331,24 +384,38 @@ public class MainActivity extends Activity {
                 currentUrl = url != null ? url : LAUNCHER;
                 webReady = true;
                 overlayOpen = false;              // a fresh page has nothing open
-                if (isLauncher(url)) {
-                    pushBar();
-                    pushBattery();
-                    /* Devices found before the launcher finished loading were dropped on
-                       the floor: pushDevices() bails when the page is not ready and the
-                       list was never replayed, so the picker could be empty while `seen`
-                       had entries — on a cold start, and on every return from a game. */
-                    pushDevices();
-                    v.evaluateJavascript("window.__x3fVersion&&window.__x3fVersion(" + jsStr(BuildConfig.VERSION_NAME) + ")", null);
-                } else if (url != null && url.startsWith("file")) {
+                /* THESE USED TO BE TWO EXCLUSIVE BRANCHES, and that is why the new home
+                   could not become the launcher.
+
+                   The old shape was: the LAUNCHER gets bar/battery/devices/version and no
+                   bootstrap; every other page gets the bootstrap and only the bar. So a
+                   page could have the device list or the injected runtime, never both -
+                   and app.html needs both. It is a full leanback home (its own nav, its
+                   own overlays, the pairing flow) AND it now carries the bar picker, the
+                   device list and the updater that launcher.html used to hold alone.
+
+                   Split by what each thing is actually for instead. Every push is a
+                   `window.__x3fX && __x3fX(...)` call, so sending state to a page with no
+                   handler costs one no-op and nothing else - there was never a reason to
+                   withhold it. The BOOTSTRAP is the one thing that is genuinely
+                   page-specific: launcher.html and index.html carry their own inline
+                   cursor, so injecting a second one there is the double-nav bug this file
+                   already warns about elsewhere. */
+                if (url != null && url.startsWith("file") && !isLegacyLauncher(url)) {
                     v.evaluateJavascript(BOOTSTRAP, null);
-                    /* The bootstrap gives game pages a __x3fSetBar, so replay the current
-                       state into it. Without this a game's status chip keeps whatever it
-                       was born with ("Offline") for the whole session even though the bar
-                       is live, because on the TV the page's own onSample() tare — the only
-                       thing that ever updated that chip — never runs. */
-                    pushBar();
                 }
+                /* Replay everything the page might want to draw. Devices found before the
+                   page finished loading were dropped on the floor: pushDevices() bails
+                   when the page is not ready and the list was never replayed, so the
+                   picker could be empty while `seen` had entries - on a cold start, and on
+                   every return from a game. The bar matters for the same reason: on the TV
+                   a page's own onSample() tare never runs, so without this replay a status
+                   chip keeps whatever it was born with ("Offline") for the whole session
+                   while the bar is live. */
+                pushBar();
+                pushBattery();
+                pushDevices();
+                v.evaluateJavascript("window.__x3fVersion&&window.__x3fVersion(" + jsStr(BuildConfig.VERSION_NAME) + ")", null);
             }
 
             /* The bundle is local and the WebView holds the X3F bridge. Anything that is
@@ -386,7 +453,7 @@ public class MainActivity extends Activity {
                 if (req == null || !req.isForMainFrame()) return;
                 String u = String.valueOf(req.getUrl());
                 Log.w(TAG, "page failed to load: " + u);
-                if (!isLauncher(u)) { try { v.loadUrl(LAUNCHER); } catch (Exception ignored) {} }
+                if (!isHome(u)) { try { v.loadUrl(LAUNCHER); } catch (Exception ignored) {} }
             }
 
             /* Without this override the framework kills the whole process when the
@@ -418,7 +485,28 @@ public class MainActivity extends Activity {
         try { w.destroy(); } catch (Exception ignored) {}
     }
 
-    private boolean isLauncher(String url) { return url != null && (url.contains("launcher.html") || url.endsWith("index.html")); }
+    /* TWO DIFFERENT QUESTIONS THAT USED TO SHARE ONE ANSWER.
+
+       isHome  - "is this the screen BACK should stop at?" Back on the home
+                 backgrounds the task so returning resumes instead of restarting;
+                 anywhere else it goes home. app.html is the home now, so it has
+                 to be in here or Back on the home screen would load the home
+                 screen.
+       isLegacyLauncher - "is this one of the two old pages that carry their own
+                 inline cursor?" Those must not receive the BOOTSTRAP, because a
+                 second cursor model on one page is a documented defect in this
+                 file. Nothing else about them is special.
+
+       Conflating the two is what kept the redesigned home from being the
+       launcher: it could have Back OR the injected runtime, never both. */
+    private boolean isHome(String url) {
+        return url != null && (url.contains("launcher.html")
+                            || url.endsWith("index.html")
+                            || url.contains("app.html"));
+    }
+    private boolean isLegacyLauncher(String url) {
+        return url != null && (url.contains("launcher.html") || url.endsWith("index.html"));
+    }
 
     /* ONE escaping policy for every string this file evaluates. There used to be three
        (strip apostrophes here, a blocklist there, raw interpolation over there), all of
@@ -500,7 +588,12 @@ public class MainActivity extends Activity {
         super.onRequestPermissionsResult(req, p, res);
         boolean ok = res.length > 0;
         for (int r : res) if (r != PackageManager.PERMISSION_GRANTED) ok = false;
-        if (ok) startScan(); else setBar("", "Bluetooth denied");
+        /* POSTED, NOT CALLED. A permission result is delivered while the activity is
+           still paused (the framework drains pending results just before onResume), and
+           startScan() now refuses to touch the radio while paused — see the comment
+           there. A plain call would therefore be swallowed. Posting runs it after
+           onResume has cleared the flag. */
+        if (ok) ui.post(this::startScan); else setBar("", "Bluetooth denied");
     }
 
     // ---------- BLE ----------
@@ -514,6 +607,37 @@ public class MainActivity extends Activity {
     }
     private String safeNameOf(BluetoothDevice d) {
         try { return d.getName(); } catch (Exception e) { return null; }
+    }
+    private static String addrOf(BluetoothDevice d) {
+        try { return (d != null) ? d.getAddress() : null; } catch (Exception e) { return null; }
+    }
+
+    /* The three moves on the rejected-address list. A rejection is a session fact, not a
+       verdict on the hardware: it survives until the user asks for a rescan or picks the
+       device by hand, and it is capped so a room full of advertisers cannot grow it
+       without bound the way `seen` used to grow. */
+    private boolean isRejected(String addr) {
+        return addr != null && rejected.contains(addr);
+    }
+    private void reject(String addr) {
+        if (addr == null) return;
+        synchronized (rejected) {
+            if (rejected.size() >= REJECT_MAX) {
+                Iterator<String> it = rejected.iterator();     // LinkedHashSet: eldest first
+                if (it.hasNext()) { it.next(); it.remove(); }
+            }
+            rejected.add(addr);
+        }
+        Log.w(TAG, "not a force bar, will not retry this session: " + addr);
+        /* If the dud is also the remembered bar, forget it. Otherwise tryKnownDevices()
+           goes straight back at it on the next launch, with autoConnect and no scan, and
+           the first thing the user sees every single time is a connect that cannot work. */
+        try {
+            if (prefs != null && addr.equals(prefs.getString("lastBar", null))) prefs.edit().remove("lastBar").apply();
+        } catch (Exception ignored) {}
+    }
+    private void unreject(String addr) {
+        if (addr != null) try { rejected.remove(addr); } catch (Exception ignored) {}
     }
 
     /* Scanning alone cannot find the bar in two very ordinary situations:
@@ -530,26 +654,26 @@ public class MainActivity extends Activity {
             if (mgr != null) {
                 List<BluetoothDevice> live = mgr.getConnectedDevices(BluetoothProfile.GATT);
                 if (live != null) for (BluetoothDevice d : live) {
-                    if (nameLooksLikeBar(safeNameOf(d))) {
+                    if (nameLooksLikeBar(safeNameOf(d)) && !isRejected(addrOf(d))) {
                         setBar("wait", "Bar already connected - attaching…");
-                        connectTo(d); armWatchdog(); return true;
+                        connectTo(d); return true;      // connectTo arms the watchdog
                     }
                 }
             }
         } catch (Exception ignored) {}
         try {
             String last = (prefs != null) ? prefs.getString("lastBar", null) : null;
-            if (last != null && adapter != null) {
+            if (last != null && adapter != null && !isRejected(last)) {
                 BluetoothDevice d = adapter.getRemoteDevice(last);
-                if (d != null) { setBar("wait", "Reconnecting to your bar…"); connectTo(d); armWatchdog(); return true; }
+                if (d != null) { setBar("wait", "Reconnecting to your bar…"); connectTo(d); return true; }
             }
         } catch (Exception ignored) {}
         try {
             if (adapter != null && adapter.getBondedDevices() != null) {
                 for (BluetoothDevice d : adapter.getBondedDevices()) {
-                    if (nameLooksLikeBar(safeNameOf(d))) {
+                    if (nameLooksLikeBar(safeNameOf(d)) && !isRejected(addrOf(d))) {
                         setBar("wait", "Connecting to paired bar…");
-                        connectTo(d); armWatchdog(); return true;
+                        connectTo(d); return true;
                     }
                 }
             }
@@ -558,21 +682,68 @@ public class MainActivity extends Activity {
     }
 
     /* A direct connect has no timeout of its own - if the address is stale it can
-       sit on "Reconnecting…" forever. Fall back to scanning if it stalls. */
-    private void armWatchdog() {
+       sit on "Reconnecting…" forever. Fall back to scanning if it stalls.
+
+       ARMED BY connectTo() AND reconnect() THEMSELVES, not by their callers. It used to
+       be the caller's job, three of the five call sites remembered, and the two that did
+       not — the scan's own connectTo() and reconnect() — are exactly the paths that
+       could hang: a device that answers the advertisement and then never completes the
+       GATT connect leaves connecting=true, and every later scan result is refused by the
+       !connecting check. "Connecting…" then stays on the screen until the television is
+       unplugged. Anything that sets connecting=true arms this. */
+    private static final long WATCHDOG_MS   = 9000;
+    /* The reconnect path passes autoConnect=true, which by design has NO timeout at all:
+       the stack waits for the bar to advertise again, however long that takes. That is
+       worth a longer leash than a direct connect before we give up and scan — but not an
+       unbounded one, because a bar that has been carried out of the room never comes. */
+    private static final long RECONNECT_WATCHDOG_MS = 20000;
+
+    private void armWatchdog(long ms) {
         final long id = ++watchdog;
         ui.postDelayed(new Runnable() {
             @Override public void run() {
                 if (id != watchdog || connected) return;
                 connecting = false; closeGatt();
+                /* DO NOT SCAN WHILE PAUSED. This used to call startScan() unconditionally.
+                   onPause stops the scan precisely because SCAN_MODE_LOW_LATENCY is a
+                   100 % duty-cycle radio scan, so pressing Back to go and watch television
+                   while a connect was in flight armed this, and nine seconds later the
+                   backgrounded app quietly turned the radio back on — for the rest of the
+                   session, since nothing stops it again until the app is next resumed and
+                   paused. The state above is still cleared either way: leaving
+                   connecting=true would block the scan onResume starts for us. */
+                if (paused) { setBar("wait", "Bar not answering"); return; }
                 setBar("wait", "No answer - scanning instead…");
                 startScan();
             }
-        }, 9000);
+        }, ms);
+    }
+
+    /* Android counts scan STARTS per app: five inside thirty seconds and every further
+       start is refused with SCAN_FAILED_SCANNING_TOO_FREQUENTLY until the window rolls
+       forward. rescan(), the watchdog, onResume, a disconnect and onScanFailed itself all
+       reach startScan(), so a bar that answers slowly burns through five starts without
+       anybody doing anything unusual. Wait out the window rather than treat it as fatal.
+       Generation-counted so a burst of failures leaves ONE pending retry, not five. */
+    private static final long SCAN_RETRY_MS = 35000;
+    private void scheduleScanRetry(long ms) {
+        final long id = ++scanRetry;
+        ui.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (id != scanRetry || connected || connecting) return;
+                startScan();          // itself a no-op while paused; onResume covers that
+            }
+        }, ms);
     }
 
     private void startScan() {
         if (scanning || connected || connecting || adapter == null) return;
+        /* THE ONE CHOKEPOINT FOR "not while the app is in the background". Half a dozen
+           posted runnables in this file end up here — the watchdog, the scan retry, the
+           800 ms rescan after a wrong device, the 1200 ms reconnect after a disconnect —
+           and any of them can land after onPause has deliberately stopped the radio.
+           onResume starts the scan again the moment the user comes back. */
+        if (paused) return;
         if (!triedKnown) { triedKnown = true; if (tryKnownDevices()) return; }
         try {
             scanner = adapter.getBluetoothLeScanner();
@@ -591,22 +762,50 @@ public class MainActivity extends Activity {
             String name = safeName(d, result);
             boolean hasService = result.getScanRecord() != null && result.getScanRecord().getServiceUuids() != null
                     && result.getScanRecord().getServiceUuids().contains(new ParcelUuid(SERVICE));
-            // remember everything, so the launcher can offer a manual pick
-            try {
-                String addr = d.getAddress();
-                boolean isNew = false;
-                synchronized (seen) {
-                    if (addr != null && !seen.containsKey(addr)) {
-                        seen.put(addr, name != null ? name : "(unnamed device)");
-                        isNew = true;
-                    }
-                }
-                if (isNew) pushDevices();
-            } catch (Exception ignored) {}
+            String addr = addrOf(d);
+            // remember it, so the launcher can offer a manual pick - bounded, see noteDevice
+            noteDevice(addr, name);
             boolean looksLikeBar = nameLooksLikeBar(name) || hasService;
-            if (looksLikeBar && !connecting && !connected) connectTo(d);
+            /* isRejected is what stops the loop. This device already answered once and had
+               no force characteristic; without the check the recovery rescan finds the very
+               same advertisement a second later and starts the cycle again. */
+            if (looksLikeBar && !connecting && !connected && !isRejected(addr)) connectTo(d);
         }
-        @Override public void onScanFailed(int c) { setBar("", "Scan failed"); }
+
+        /* THIS USED TO BE ONE LINE THAT SET A STATUS STRING, and it cost the app every
+           later scan. startScan() sets scanning=true before startScan() can fail, and the
+           failure callback left it true even though NO scan was running — so startScan()
+           returned early on `scanning` from then on, for the rest of the process. One
+           transient failure and the television could never see the bar again; there was no
+           retry, no timeout, and no way out but force-stopping the app.
+
+           The code worth handling by name is the frequency cap. It is not a fault at all,
+           it is Android saying "wait": five scan starts inside thirty seconds and the sixth
+           is refused. Back off past that window and try again. */
+        @Override public void onScanFailed(int code) {
+            Log.w(TAG, "scan failed, code " + code);
+            /* ALREADY_STARTED means a scan registered under this very callback is running,
+               so the radio genuinely is looking and scanning=true is the truth. Anything
+               else means it is not. */
+            if (code == ScanCallback.SCAN_FAILED_ALREADY_STARTED) { scanning = true; return; }
+            scanning = false;
+            if (code == ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED) {
+                setBar("", "BLE scan unsupported");        // no hardware for it: nothing to retry
+                return;
+            }
+            /* SCAN_FAILED_SCANNING_TOO_FREQUENTLY (value 6) only became a PUBLIC constant
+               in API 34, but the platform has delivered the code itself since Nougat,
+               which is where the cap came from — so naming it is right even though this
+               app runs from API 24. It is safe to name because javac inlines a static
+               final int: the compiled class holds the literal 6 and never looks a field up
+               at runtime, so there is nothing here for an old framework to be missing.
+               Everything else — an internal error, a failed registration, resources gone —
+               is also worth one back-off before giving up on the radio, because every one
+               of them has a transient form and the alternative is the dead end above. */
+            if (code == ScanCallback.SCAN_FAILED_SCANNING_TOO_FREQUENTLY) setBar("wait", "Bluetooth busy - retrying…");
+            else setBar("wait", "Scan failed - retrying…");
+            scheduleScanRetry(SCAN_RETRY_MS);
+        }
     };
     private String safeName(BluetoothDevice d, ScanResult r) {
         String n = null;
@@ -629,7 +828,22 @@ public class MainActivity extends Activity {
             closeGattLocked();
             setBar("wait", "Connecting…");
             try { gatt = d.connectGatt(this, false, gattCb, BluetoothDevice.TRANSPORT_LE); }
-            catch (SecurityException e) { setBar("", "Connect permission?"); connecting = false; }
+            catch (SecurityException e) { setBar("", "Connect permission?"); connecting = false; return; }
+            /* connectGatt RETURNS NULL AND THAT WAS NEVER CHECKED. It does so when the
+               stack cannot hand out another client interface — they are process-wide and
+               hard-limited, which is the leak the bleLock above exists to prevent — or
+               when the adapter is turning off underneath us. There is then no GATT and
+               therefore no callback that could ever clear connecting, so the app sat on
+               "Connecting…" and refused every scan result from then on. */
+            if (gatt == null) {
+                connecting = false;
+                setBar("wait", "Bluetooth busy - retrying…");
+                /* Posted rather than called: startScan() from inside bleLock would come
+                   straight back through tryKnownDevices() into this method. */
+                scheduleScanRetry(3000);
+                return;
+            }
+            armWatchdog(WATCHDOG_MS);
         }
     }
     private void reconnect() {
@@ -643,10 +857,28 @@ public class MainActivity extends Activity {
                     closeGattLocked();
                     setBar("wait", "Reconnecting…");
                     gatt = d.connectGatt(this, true, gattCb, BluetoothDevice.TRANSPORT_LE);
+                    /* Same null as in connectTo, and here it was even easier to hit: this
+                       path runs 1.2 seconds after every disconnect, so a stack that has
+                       run out of client interfaces reaches it repeatedly. And even when
+                       the call succeeds, autoConnect=true never times out on its own —
+                       so nothing here ever armed the watchdog and "Reconnecting…" was a
+                       permanent screen. Both holes close together. */
+                    if (gatt == null) { connecting = false; scheduleScanRetry(3000); return; }
+                    armWatchdog(RECONNECT_WATCHDOG_MS);
                 }
             }
             catch (Exception e) { connecting = false; startScan(); }
         } else startScan();
+    }
+    /* Let go of a device that answered the connect but is not a force bar. The watchdog
+       generation is bumped first: it is still pending at this point, and its "No answer -
+       scanning instead…" would overwrite the message that actually explains what
+       happened, nine seconds after the user has already read the truth. */
+    private void giveUpOn(String addr) {
+        watchdog++;
+        connecting = false; connected = false;
+        closeGatt();
+        reject(addr);
     }
     private void closeGatt() { synchronized (bleLock) { closeGattLocked(); } }
     private void closeGattLocked() {
@@ -670,10 +902,57 @@ public class MainActivity extends Activity {
             }
         }
         @Override public void onServicesDiscovered(BluetoothGatt g, int status) {
+            /* Off THIS gatt, not off targetAddress: a callback for the connection we are
+               abandoning can still arrive after a newer attempt has moved targetAddress
+               on, and rejecting the wrong address would blacklist the real bar. */
+            String who = addrOf(g != null ? g.getDevice() : null);
+            if (who == null) who = targetAddress;
+            /* STATUS FIRST, AND A FAILED ONE IS NOT A VERDICT ON THE DEVICE. Discovery
+               comes back failed for transport reasons — the link dropped part-way, the
+               stack was busy — and getService() then returns null for a perfectly good
+               bar. The `status` argument was ignored entirely, which was survivable while
+               the answer to "no service" was an endless retry; it is not survivable now
+               that the answer is a rejection, because one unlucky discovery would take the
+               user's own bar out of the running for the session and forget the address it
+               is remembered by. Two strikes on the same address: retry it once, and only a
+               device that cannot complete discovery twice running is given up on. */
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.w(TAG, "service discovery failed, status " + status + " on " + who);
+                int strikes = (who != null && who.equals(discFailAddr)) ? discFailCount + 1 : 1;
+                discFailAddr = who; discFailCount = strikes;
+                if (strikes >= 2) { setBar("", "Bar is not answering — scanning…"); giveUpOn(who); }
+                else {
+                    watchdog++;                       // its message would arrive after ours
+                    connecting = false; connected = false; closeGatt();
+                    setBar("wait", "Lost it mid-connect - retrying…");
+                }
+                ui.postDelayed(MainActivity.this::startScan, 1200);
+                return;
+            }
+            discFailAddr = null; discFailCount = 0;   // it answered: the slate is clean
             BluetoothGattService svc = g.getService(SERVICE);
-            if (svc == null) { setBar("", "Wrong device — scanning…"); connecting = false; connected = false; closeGatt(); ui.postDelayed(MainActivity.this::startScan, 800); return; }
+            if (svc == null) {
+                setBar("", "Wrong device — scanning…");
+                giveUpOn(who);
+                ui.postDelayed(MainActivity.this::startScan, 800);
+                return;
+            }
             BluetoothGattCharacteristic ch = svc.getCharacteristic(CH_FORCE);
-            if (ch == null) { setBar("", "No force channel"); return; }
+            /* "NO FORCE CHANNEL" WAS A DEAD END WITH NO WAY OUT. The service is there and
+               the force characteristic is not — a different product from the same vendor,
+               or firmware too old — and this used to set a status string and return with
+               connecting still true and the GATT still open. Every subsequent scan result
+               was then refused by the !connecting check, no watchdog was left running
+               (discovery had already answered), and nothing anywhere retried. The screen
+               read "No force channel" until the television was unplugged.
+               Let go of the device, remember it so the rescan does not walk straight back
+               into it, say what happened, and look for another bar. */
+            if (ch == null) {
+                setBar("", "No force channel - looking for another bar…");
+                giveUpOn(who);
+                ui.postDelayed(MainActivity.this::startScan, 800);
+                return;
+            }
             try {
                 g.setCharacteristicNotification(ch, true);
                 BluetoothGattDescriptor cccd = ch.getDescriptor(CCCD);
@@ -841,13 +1120,29 @@ public class MainActivity extends Activity {
        Fix: peakWin above is updated on every single sample, and each publish carries it
        as window.__x3fPeak alongside the current value, with window.__x3fSeq so the page
        can tell one published window from the next and consume each exactly once. The
-       bootstrap feeds that peak into the game's own conditioning function as a real
-       sample — because it IS one; it happened milliseconds ago — so the games' existing
-       peak tracking sees it without any second code path to keep in step. */
+       bootstrap holds that maximum on the force channel for one of x3f-set.js's sampler
+       periods, which is what actually makes the games' own peak tracking see it — the
+       BOOTSTRAP comment on HOLD_MS explains why an extra sample was not enough. Half of
+       this channel lived here and did nothing for a release because the other half spent
+       the value microseconds after receiving it; read the two together. */
     private void injectForce(double f) {
         final WebView w = web;                    // one read: onDestroy can null it under us
-        if (w == null || !webReady || paused) return;
+        if (w == null || !webReady || paused) {
+            /* NOTHING IS CONSUMING THE PEAK, SO THERE IS NO WINDOW TO ACCUMULATE INTO.
+               peakWin was only ever cleared by a publish, and a publish cannot happen on
+               this branch — so a hard pull made while the app was backgrounded, or during
+               a page load, sat in peakWin and was published as a real sample the instant
+               the page came back. That is a maximum from minutes ago arriving as if it
+               happened now: a phantom rep, a false PB, and a calibration ceiling learned
+               from a number nobody pulled this set. Drop it on the floor, which is where
+               it belongs — the value was never measured against a running set. */
+            peakWin = 0;
+            return;
+        }
         long now = SystemClock.uptimeMillis();
+        /* NOT cleared here. Being throttled is the one case where the window has to
+           survive: peakWin is exactly the maximum of the ~38 % of samples this throttle
+           drops, and the next publish carries it. */
         if (now - lastInject < INJECT_MS) return;
         lastInject = now;
         double p = (peakWin > f) ? peakWin : f;
@@ -986,7 +1281,14 @@ public class MainActivity extends Activity {
             /* The OK key repeats. Without a guard, holding it on "Check for updates" span
                ten threads, enqueued ten DownloadManager requests to the same destination
                file, and left nine of them orphaned because dlId only ever matched the
-               last. */
+               last.
+               THE GUARD IS HELD UNTIL THE DOWNLOAD ENDS, not until it is enqueued. It used
+               to be released in doCheckUpdate's finally, which runs the moment the request
+               is handed to DownloadManager — so a second OK a few seconds later walked
+               straight back in, DELETED the APK that was being written at that instant,
+               and started the whole download again on a TV that is often on a slow link.
+               See doCheckUpdate, startDownload and dlRx: between them every path that ends
+               an update attempt clears it exactly once. */
             if (updating) return;
             updating = true;
             new Thread(MainActivity.this::doCheckUpdate).start();
@@ -997,12 +1299,18 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void pickDevice(final String addr) {
             ui.post(new Runnable() { @Override public void run() {
                 try {
+                    watchdog++;                   // cancel any fallback the last attempt armed
                     stopScan(); closeGatt();
                     connecting = false; connected = false;
+                    /* An explicit pick overrides an earlier rejection. The user is looking
+                       at the device and choosing it; if the last attempt found no force
+                       characteristic because the bar was asleep or mid-update, this is how
+                       they say "try again" without restarting the app. */
+                    unreject(addr);
                     if (adapter == null) { setBar("", "No Bluetooth"); return; }
                     BluetoothDevice d = adapter.getRemoteDevice(addr);
                     if (d == null) { setBar("", "Bad address"); return; }
-                    connectTo(d); armWatchdog();
+                    connectTo(d);                 // connectTo arms the watchdog
                 } catch (Exception e) { setBar("", "Could not connect"); }
             } });
         }
@@ -1031,9 +1339,15 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void rescan() {
             ui.post(new Runnable() { @Override public void run() {
                 watchdog++;                       // cancel any pending fallback
+                scanRetry++;                      // and any pending back-off retry
                 stopScan(); closeGatt();
                 connecting = false; connected = false; triedKnown = false;
                 synchronized (seen) { seen.clear(); }
+                /* Rescan is the user saying "forget what you think you know". A device
+                   ruled out because it had no force characteristic gets another chance
+                   here, which is the only way back if it was asleep or mid-update when
+                   the app first reached it. */
+                try { rejected.clear(); } catch (Exception ignored) {}
                 pushDevices();
                 setBar("wait", "Rescanning…");
                 ensurePermsThenScan();
@@ -1066,18 +1380,89 @@ public class MainActivity extends Activity {
                 .replace("'", "&#39;");
     }
 
+    /* THE PICKER USED TO FILL WITH JUNK AND NEVER STOP GROWING. Every advertisement from
+       every device in radio range was remembered for the life of the process, and the
+       WHOLE map was re-serialised to JSON and evaluated into the WebView for each new
+       address. BLE privacy addresses rotate — the spec's default is about every fifteen
+       minutes — so one neighbour's phone becomes four fresh "(unnamed device)" rows an
+       hour, forever. After an evening the manual-pick list is hundreds of rows of noise
+       that a D-pad cannot page through, and the launcher has rebuilt it dozens of times a
+       minute for the privilege.
+
+       Three things fix it, and all three are needed:
+         - a hard cap, so the list stays a list;
+         - names win. An unnamed stranger at the cap is discarded rather than admitted,
+           because it is almost always a rotated address that will never be seen again; a
+           NAMED device is worth a slot, so make room by dropping the oldest unnamed one.
+           The bar is the thing the user is looking for and it advertises a name;
+         - pushes are coalesced, so a burst of advertisements costs one serialisation.
+
+       Unnamed devices are still listed, deliberately: the whole point of the picker is
+       the bar whose advertisement says nothing, and refusing to show those would remove
+       the only escape hatch this app has when the matcher cannot see the bar. */
+    private void noteDevice(String addr, String name) {
+        if (addr == null) return;
+        boolean named = name != null && name.trim().length() > 0;
+        boolean changed = false;
+        synchronized (seen) {
+            String had = seen.get(addr);
+            if (had == null) {
+                if (seen.size() >= SEEN_MAX && !(named && evictOneUnnamedLocked())) return;
+                seen.put(addr, named ? name : UNNAMED);
+                changed = true;
+            } else if (named && !name.equals(had)) {
+                /* A device very often advertises with no name and supplies one in the scan
+                   response a moment later. The first form used to stick for the session,
+                   so the bar itself could sit in the picker as "(unnamed device)" while
+                   the shell knew perfectly well what it was called. */
+                seen.put(addr, name);
+                changed = true;
+            }
+        }
+        if (changed) schedulePushDevices();
+    }
+    /* Caller holds `seen`. Iterator.remove(), not entrySet removal during a for-each,
+       which is a ConcurrentModificationException. LinkedHashMap iterates oldest first. */
+    private boolean evictOneUnnamedLocked() {
+        Iterator<Map.Entry<String, String>> it = seen.entrySet().iterator();
+        while (it.hasNext()) {
+            if (UNNAMED.equals(it.next().getValue())) { it.remove(); return true; }
+        }
+        return false;      // every slot is a named device: keep them all, drop the stranger
+    }
+    /* One serialisation per burst. The flag is volatile and the check-then-set is not
+       atomic, but the callback that drives it is delivered on one thread and the worst
+       a race can cost is a second push of a correct list. */
+    private void schedulePushDevices() {
+        if (devicePushPending) return;
+        devicePushPending = true;
+        ui.postDelayed(new Runnable() { @Override public void run() {
+            devicePushPending = false;
+            pushDevices();
+        } }, DEVICES_PUSH_MS);
+    }
+
     private void pushDevices() {
         WebView w = web;
         if (w == null || !webReady) return;
         JSONArray arr = new JSONArray();
+        /* NAMED DEVICES FIRST, in two passes over one insertion-ordered map. The bar
+           advertises a name and the picker is driven by a D-pad from the sofa, so the row
+           the user is actually looking for must not sit below a column of anonymous
+           addresses. Within each group the order is still the order they were seen, which
+           is what makes the list stable while a scan is running. */
         synchronized (seen) {
-            for (Map.Entry<String, String> e : seen.entrySet()) {
-                try {
-                    JSONObject o = new JSONObject();
-                    o.put("a", e.getKey() == null ? "" : e.getKey());
-                    o.put("n", htmlSafe(e.getValue()));
-                    arr.put(o);
-                } catch (Exception ignored) {}
+            for (int pass = 0; pass < 2; pass++) {
+                for (Map.Entry<String, String> e : seen.entrySet()) {
+                    boolean unnamed = UNNAMED.equals(e.getValue());
+                    if (unnamed != (pass == 1)) continue;
+                    try {
+                        JSONObject o = new JSONObject();
+                        o.put("a", e.getKey() == null ? "" : e.getKey());
+                        o.put("n", htmlSafe(e.getValue()));
+                        arr.put(o);
+                    } catch (Exception ignored) {}
+                }
             }
         }
         final String js = "window.__x3fDevices&&window.__x3fDevices(" + arr.toString() + ")";
@@ -1095,15 +1480,24 @@ public class MainActivity extends Activity {
             try { w.evaluateJavascript(js, null); } catch (Exception ignored) {}
         });
     }
+    /* EVERY RETURN OUT OF THIS METHOD EITHER RELEASES THE GUARD OR HANDS IT TO THE
+       DOWNLOAD. There used to be a single `finally { updating = false; }`, which read like
+       the careful thing to do and was the bug: the download is asynchronous, so the finally
+       ran while the APK was still arriving. Only the startDownload() path below leaves
+       updating true, and startDownload clears it itself if the enqueue fails; otherwise
+       dlRx clears it when DownloadManager reports the download over. */
     private void doCheckUpdate() {
         try {
             pushUpdate("Checking…");
             String s = httpGet(VERSION_URL).replaceAll("[^0-9]", "");
-            if (s.isEmpty()) { pushUpdate("Couldn't read version"); return; }
+            if (s.isEmpty()) { pushUpdate("Couldn't read version"); updating = false; return; }
             int remote;
             try { remote = Integer.parseInt(s); }
-            catch (NumberFormatException nfe) { pushUpdate("Couldn't read version"); return; }
-            if (remote <= BuildConfig.VERSION_CODE) { pushUpdate("You're on the latest (v" + BuildConfig.VERSION_NAME + ")"); return; }
+            catch (NumberFormatException nfe) { pushUpdate("Couldn't read version"); updating = false; return; }
+            if (remote <= BuildConfig.VERSION_CODE) {
+                pushUpdate("You're on the latest (v" + BuildConfig.VERSION_NAME + ")");
+                updating = false; return;
+            }
             if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
                 pushUpdate("Allow \"install unknown apps\" for X3F, then check again");
                 try {
@@ -1111,12 +1505,11 @@ public class MainActivity extends Activity {
                     st.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     ui.post(() -> { try { startActivity(st); } catch (Exception ignored) {} });
                 } catch (Exception ignored) {}
-                return;
+                updating = false; return;                 // the user has to come back and press it again
             }
             pushUpdate("Downloading v" + remote + "…");
-            startDownload();
-        } catch (Exception e) { pushUpdate("Update check failed"); }
-        finally { updating = false; }
+            startDownload();                              // owns `updating` from here on
+        } catch (Exception e) { pushUpdate("Update check failed"); updating = false; }
     }
     private String httpGet(String u) throws Exception {
         HttpURLConnection c = null;
@@ -1144,22 +1537,46 @@ public class MainActivity extends Activity {
             if (c != null) try { c.disconnect(); } catch (Exception ignored) {}
         }
     }
+    /* A download that never ends must not lock the updater out for the rest of the
+       session. DownloadManager will sit in PENDING for as long as the TV has no usable
+       network and broadcasts nothing while it waits, so after this long the guard is
+       released and the user may try again — by which time startDownload cancels the
+       stalled request properly instead of deleting the file underneath it. */
+    private static final long UPDATE_STUCK_MS = 900000;   // fifteen minutes
+    private void armUpdateRelease() {
+        final long id = dlId;
+        ui.postDelayed(new Runnable() { @Override public void run() {
+            if (dlId == id && updating) { updating = false; pushUpdate("Download is taking a while - you can check again"); }
+        } }, UPDATE_STUCK_MS);
+    }
     private void startDownload() {
         try {
-            try { new java.io.File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "x3f-update.apk").delete(); } catch (Exception ignored) {}
             DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+            /* CANCEL BEFORE DELETING. The delete below used to be the first thing that
+               happened, which is what made a second press destructive: it removed the file
+               a still-running DownloadManager job had open, and that job then wrote a
+               half-APK nobody was tracking. Removing the request first means there is no
+               writer left to surprise us. */
+            try { if (dlId != -1) dm.remove(dlId); } catch (Exception ignored) {}
+            dlId = -1;
+            try { new java.io.File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "x3f-update.apk").delete(); } catch (Exception ignored) {}
             DownloadManager.Request r = new DownloadManager.Request(Uri.parse(APK_URL));
             r.setMimeType("application/vnd.android.package-archive");
             r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
             r.setTitle("X3F TV update");
             r.setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, "x3f-update.apk");
             dlId = dm.enqueue(r);
-        } catch (Exception e) { pushUpdate("Download failed"); }
+            armUpdateRelease();
+        } catch (Exception e) { pushUpdate("Download failed"); updating = false; }
     }
     private final BroadcastReceiver dlRx = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) {
             long id = i.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
             if (id == -1 || id != dlId) return;
+            /* The attempt is over either way — DownloadManager broadcasts this for a
+               failure as well as a success — so this is where the re-entry guard the OK
+               key needs is finally released. In a finally, because every line below can
+               throw and a thrown installer would otherwise wedge the updater for good. */
             try {
                 DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
                 Uri uri = dm.getUriForDownloadedFile(id);
@@ -1170,6 +1587,7 @@ public class MainActivity extends Activity {
                 inst.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(inst);
             } catch (Exception e) { pushUpdate("Install failed"); }
+            finally { updating = false; }
         }
     };
 
@@ -1296,7 +1714,7 @@ public class MainActivity extends Activity {
             if (w != null) { try { w.evaluateJavascript("window.__x3fCloseOverlay&&window.__x3fCloseOverlay()", null); } catch (Exception ignored) {} }
             return;
         }
-        if (isLauncher(currentUrl)) { moveTaskToBack(true); return; }
+        if (isHome(currentUrl)) { moveTaskToBack(true); return; }
         WebView w = web;
         if (w != null) { try { w.loadUrl(LAUNCHER); } catch (Exception ignored) {} }
     }
@@ -1406,24 +1824,43 @@ public class MainActivity extends Activity {
     has to measure absolute force, and typeof calLo==='function' is false there. */
  try{ if(window.__x3fDrv)clearInterval(window.__x3fDrv);
    if(GAME){
-     var lastSeq=0;
+     /* HOLD_MS MUST EXCEED x3f-set.js's SAMPLE_MS, WHICH IS 40. See the peak note
+        below: 48 leaves margin for a tick that arrives late without holding a stale
+        maximum long enough to be visible as a plateau. */
+     var lastSeq=0, hold=0, holdTill=0, HOLD_MS=48;
      var ing=function(v){
        try{ if(typeof window.__x3fIngest==='function'){ window.__x3fIngest(v); return; } }catch(e){}
        try{ var lo=(typeof calLo==='function')?(+calLo()||0):0; force=(v>lo)?v-lo:0; }catch(e){}
      };
      window.__x3fDrv=setInterval(function(){ try{
        var v=+window.__x3fForce||0;
-       /* The bar notifies at ~100 Hz and the shell forwards ~62 of them, so about a
-          third of every set used to be dropped and forgotten - and a fast concentric
-          snap's true peak lands in a dropped packet more often than not, which is why
-          every peak logged on the TV read low. The native side now tracks the maximum
-          across EVERY sample and publishes it with a sequence number. Feed that
-          maximum in as a real sample, because it is one: it happened a few
-          milliseconds ago, and the game's own peak tracking then sees it with no
-          second code path to keep in step. The sequence number is what stops one
-          published window being consumed twice. */
+       /* THE PEAK CHANNEL, AND WHY IT IS A HOLD RATHER THAN AN EXTRA SAMPLE.
+          The bar notifies at ~100 Hz and the shell forwards ~62 of them, so about a
+          third of every set is dropped - and a fast concentric snap's true peak lands
+          in a dropped packet more often than not, which is why every peak logged on
+          the TV read low. The native side tracks the maximum across EVERY sample and
+          publishes it as window.__x3fPeak with a sequence number, so nothing is lost
+          on the way here.
+          This loop used to spend it immediately: ing(peak) followed by ing(current) in
+          the same tick. That reached exactly one consumer - a game whose peak lives
+          inside onSample itself, which is Arena alone. Every other game reads its peak
+          from x3f-set.js, and x3f-set.js does not listen to onSample at all: it WATCHES
+          the force variable on its own 40 ms timer. Writing the peak and overwriting it
+          microseconds later meant that sampler could never see it, so the peak the
+          native side went to such trouble to preserve was destroyed on arrival, on the
+          default game, silently - the second time in this file's history that peak has
+          been lost to a shape nobody could see from one side alone.
+          So the peak is not an extra sample; it is a floor under the channel for one
+          full sampler period. A 25 Hz watcher cannot miss a 48 ms hold. It costs a
+          descent that lags by up to 48 ms out of a two-to-three-second eccentric, and
+          it keeps ONE conditioning path: everything still arrives through ing.
+          The sequence number is what stops one published window being consumed twice. */
        var s=+window.__x3fSeq||0;
-       if(s!==lastSeq){ lastSeq=s; var p=+window.__x3fPeak||0; if(p>v)ing(p); }
+       if(s!==lastSeq){ lastSeq=s; var p=+window.__x3fPeak||0;
+         if(p>v&&p>hold){ hold=p; holdTill=Date.now()+HOLD_MS; } }
+       /* Cleared the moment the real signal catches up, so a rising pull is never
+          flattened - the hold can only ever raise a falling sample, never lower one. */
+       if(hold>0){ if(v>=hold||Date.now()>=holdTill) hold=0; else v=hold; }
        ing(v);
      }catch(e){} },16); }
  }catch(e){}

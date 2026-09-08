@@ -73,12 +73,31 @@
         window.confirm = oldConfirm;
         ok('deleting a set removes it (' + P.sets().length + ' of ' + setsBefore + ')',
            P.sets().length === setsBefore - 1);
-        // band coaching
+        /* band coaching — ON FULL-RANGE REPS, WHICH IS THE WHOLE RULE.
+
+           This fixture used to carry `reps` alone, and the advice fired on it.
+           That was the app progressing people off TOTAL reps, when the source is
+           explicit and SOURCED: "40 slow and controlled reps with a band, NOT
+           COUNTING PARTIAL REPS" (docs/x3-knowledge/official/band-progression.md).
+           Since a set is 15-40 full reps and then partials to failure, total reps
+           clears 40 on a set that has not earned anything, and the app was telling
+           people to go heavier on the strength of their burnout partials.
+
+           So the fixture now says what it means. A legacy entry with no `full`
+           still must NOT qualify - that is deliberate, and the second fixture
+           below pins it. */
         localStorage.setItem('x3f_history', JSON.stringify([
-          { t: Date.now() - 86400000, k: 'set', ex: 'chest-press', band: 'Dark Gray', reps: 44 },
-          { t: Date.now() - 3600000, k: 'set', ex: 'chest-press', band: 'Dark Gray', reps: 42 }]));
+          { t: Date.now() - 86400000, k: 'set', ex: 'chest-press', band: 'Dark Gray', reps: 52, full: 44 },
+          { t: Date.now() - 3600000, k: 'set', ex: 'chest-press', band: 'Dark Gray', reps: 49, full: 42 }]));
         rerender();
-        ok('band coaching appears at 44 reps', /Move .* up to Black/i.test(txt('advice')), txt('advice').slice(0, 70));
+        ok('band coaching appears at 44 FULL reps', /Move .* up to Black/i.test(txt('advice')), txt('advice').slice(0, 70));
+
+        localStorage.setItem('x3f_history', JSON.stringify([
+          { t: Date.now() - 86400000, k: 'set', ex: 'chest-press', band: 'Dark Gray', reps: 52 },
+          { t: Date.now() - 3600000, k: 'set', ex: 'chest-press', band: 'Dark Gray', reps: 49 }]));
+        rerender();
+        ok('...and NOT on total reps alone, however high',
+           !/Move .* up to Black/i.test(txt('advice')), txt('advice').slice(0, 70));
         return F.report(page);
       }
 
@@ -101,8 +120,15 @@
         var offBand = [].filter.call(bandSels, function (s) { return s.value !== 'White'; });
         ok('every lift starts on the band you are on', bandSels.length > 0 && offBand.length === 0,
            offBand.length + ' of ' + bandSels.length + ' moved off White');
-        ok('the library suggestion is still shown as advice',
-           /X3 suggests/.test(document.getElementById('list').textContent));
+        /* The WORDING changed and the assertion followed it, deliberately. This
+           used to look for "X3 suggests", which put a sentence in the
+           manufacturer's mouth: the source publishes a relative ORDER of
+           movements, not a per-movement band, so the name was the app's own
+           reading of that ranking. What this assertion is actually for is
+           unchanged - the suggestion must be SHOWN and never APPLIED, which the
+           line above it checks by confirming every lift is still on White. */
+        ok('the library suggestion is shown in the app own words',
+           /this app suggests/i.test(document.getElementById('list').textContent));
         var lifts = document.querySelectorAll('#list .ex').length;
         ok('the day lists movements (' + lifts + ')', lifts >= 4);
 

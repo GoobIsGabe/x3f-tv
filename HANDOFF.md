@@ -36,7 +36,7 @@ Clone it wherever you like (e.g. `E:\Fun\x3f-tv`). That's the complete source �
 ## How the TV app works
 
 - Native **Android TV** app, **Java**, package `com.goob.x3ftv`, minSdk 24 / target 34, **no third-party dependencies** (framework only).
-- **Architecture:** a single full-screen **WebView** + native **BLE**. On launch it loads a bubbly HTML home (`app/src/main/assets/launcher.html`); picking a game card navigates the WebView to that game's bundled HTML. Native connects to the bar over BLE and **injects force as `window.__x3fForce`**; the TV remote's D-pad is captured natively and drives `window.__x3fNav(dir)` (focus/select). **Back** returns to the launcher.
+- **Architecture:** a single full-screen **WebView** + native **BLE**. On launch it loads the leanback home (`app/src/main/assets/app.html`); picking a card navigates the WebView to that page's bundled HTML. Native connects to the bar over BLE and **injects force as `window.__x3fForce`**; the TV remote's D-pad is captured natively and drives `window.__x3fNav(dir)` (focus/select). **Back** returns to the launcher.
 - **The bundled pages are copies** of the web pages in `app/src/main/assets/`, unchanged except the service-worker line stripped (see the sync tool below). As of v0.6 that is the 8 games (nova.html, splash.html, …) **plus three menu pages** — `routine.html` (guided workout), `library.html`, `progress.html` — and three shared scripts they load: `x3f-exercises.js` (the 11 X3 movements, one source of truth with the web build), `x3f-form.js` (live form demonstrator) and `x3f-nav.js` (menu D-pad nav).
 - **Nav, and who owns it:** the bootstrap installs its fallback spatial nav **only `if(!window.__x3fNav)`**. `x3f-nav.js` claims `window.__x3fNav` first, so the launcher and the menu pages all drive *its* geometry-aware nav (same-row Left/Right, `data-nav` items, one focus ring); the games have no `x3f-nav.js` and keep the bootstrap's. **The rule that matters:** a candidate must actually overlap your row (or column) before a Left/Right (or Up/Down) will move there — v0.6 shipped without it in the launcher and the bootstrap, so a band pill one row above could out-score the card right beside you (Right off Workout → a grey band, Left off Nova → Black). On a remote, OK cycles a `<select>` in place and the arrows are left free to move and scroll; Up/Down must never be bound to a select's value, or a page whose only control is a filter (Progress) traps the D-pad. Long pages scroll when there is nothing further to focus that way. Don't add `x3f-nav.js` to a game — its Enter/Space handling would fight Space-to-pull in the browser build.
 - **Live form demonstrator:** games launched with `?ex=<slug>` (from `routine.html` or `library.html`) mount an animated figure that mirrors your live force. It needs no TV-specific code: the bootstrap already assigns `force = window.__x3fForce`, and the panel reads `force/ref()`.
@@ -140,6 +140,20 @@ Shipped: v0.1 probe → v0.5 = all 8 games, bubbly game-style launcher, D-pad na
 - **Score the failure**: partials past full-range collapse get a meter, their own milestones and the headline slot in the set summary.
 - **Dashboard rewrite** (`X3F_Progress.html`): today, challenge, 84-day adherence grid, reps/week, peak-force/week, PB table, band coaching, achievements with filters, export/import.
 - **Music everywhere** — 10 moods across menus and all games; menus lift briefly on a keypress so the app feels awake.
+- **The home screen is `app.html`.** It was behind a "Try the new home" link on
+  `launcher.html` until it carried the three things that page held alone — the bar picker,
+  the device list and the updater. It has all three now, and the nav audit walks them
+  (`home: bar picker with devices`, `home: bar picker, nothing seen`, plus Check for
+  updates in Settings). `launcher.html` stays in the bundle: it is the nav audit's
+  `launcher` screen and `index.html`'s twin, and deleting a working page on the same day as
+  promoting its replacement is two changes in one commit.
+
+  Two questions in `MainActivity` used to share one answer, which is what kept the
+  promotion blocked: `isHome()` decides where BACK stops, `isLegacyLauncher()` decides who
+  must NOT receive the BOOTSTRAP (those two pages carry their own inline cursor). Every
+  state push — bar, battery, devices, version — now goes to every page, because each is a
+  `window.__x3fX && __x3fX(...)` call and withholding it only ever cost a feature.
+
 - **Free phone access**: `.github/workflows/hosting.yml` publishes `web/` to Firebase Hosting at https://x3f-tv.web.app over https (which Web Bluetooth needs). Free on Spark; `firebase.json` holds the config, including the `no-store` header on `sw.js` that GitHub Pages could not express. Deploying by hand is `firebase deploy --only hosting`. This replaced a `gh-pages` workflow; that branch is now unused and can be deleted.
 - Test suites: `tools/func-test/run.py` (63 feature assertions over 5 screens) and `tools/func-test/engine.html` (40 engine tests) join the nav audit.
 - Fixed: Bloom wrote TWO history entries per set, inflating every total; the dashboard did not re-check achievements after an import; `program()` said Week 1 on an empty log.

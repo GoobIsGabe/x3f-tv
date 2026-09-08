@@ -51,7 +51,9 @@
      perSide       bool                     the split squat is two sets, one leg
                                             each, counted as one movement
      band          band name                a SUGGESTION, never applied silently
-     bandRank      1..11                    1 = takes the heaviest band
+     bandRank      1..11                    1 = takes the heaviest band. Not a
+                                            free ordering: it is the source's
+                                            own ranking, transcribed below.
      floorFrac     0..1                     start tension as a fraction of peak;
                                             the default lo for an uncalibrated
                                             movement
@@ -66,7 +68,41 @@
      mechanics     [string]                 the official Execution & Mechanics list
      faults        [string]                 what goes wrong, in the source's terms
      setup, cue, range, mid, muscle, games  kept for backwards compatibility with
-                                            the existing Library and Routine pages */
+                                            the existing Library and Routine pages
+
+     ─────────────────────────────────────────────────────────────────────────
+     THE BAND RANKING IS THE SOURCE'S, NOT AN OPINION
+     ─────────────────────────────────────────────────────────────────────────
+
+     exercises.md's reconciliation checklist states it as one ordered line:
+
+       "deadlift & bent-over row heaviest -> chest press, front squat ->
+        split squat -> overhead press, bicep curl, tricep press -> upright row,
+        pec crossover -> CALF RAISE LIGHTEST"
+
+     bandRank is that line, numbered. Movements inside one arrow-separated tier
+     are equal and their relative numbers carry no meaning.
+
+     THE CALF RAISE WAS RANKED 6, MID-TABLE, AND IT IS THE LIGHTEST MOVEMENT IN
+     THE PROGRAM. That mis-rank came with `band: 'Light Gray'`, and because the
+     calf raise is one of the five movements the source prescribes DOUBLED, the
+     Library, the Calibrate picker, the Routine coach and the home cards all
+     printed "Light Gray · 160+ lb" on it - a heavier printed figure than the
+     front squat (Dark Gray singled, 50-120 lb) or the overhead press (Light
+     Gray singled, 25-80 lb). The app was recommending more load on the one
+     movement whose own mechanics list says "use a lighter band and higher
+     reps", and more than it recommended for a squat.
+
+     The suggested `band` must stay monotone with bandRank, or the ranking is
+     decoration. It is: Black, then four Dark Gray, then four Light Gray, then
+     two White. band-progression.md 11.7 is explicit that the calf raise should
+     "default its suggested starting band to the lightest the user owns", which
+     is White here - the Ultra Light band has no published force range and so
+     is deliberately absent from BAND_FORCE.
+
+     A doubled White still prints 100+ lb, because doubling a band roughly
+     doubles its force and the doubled setup is fixed by the source, not chosen.
+     That is the honest floor for this movement, not a ranking artefact. */
 
   var EX = [
     /* ---------------------------------------------------------------- PUSH */
@@ -128,7 +164,7 @@
       muscle: 'Deltoids',
       day: 'push', order: 3, joint: 'multi', optional: false, unlockWeek: null,
       substituteFor: null, perSide: false,
-      band: 'Light Gray', bandRank: 7, floorFrac: 0.50, curve: 'top', partials: [4, 6],
+      band: 'Light Gray', bandRank: 6, floorFrac: 0.50, curve: 'top', partials: [4, 6],
       verb: 'PRESS', bandConfig: 'singled', plate: 'midfoot',
       regression: { name: 'Kneeling overhead press', note: 'If you cannot reach 15 slow reps standing, do it from a kneeling position — it puts less tension on everything involved. You will graduate to standing soon after.' },
       range: 'Strongest at the top — “head through the window”', mid: 0,
@@ -184,7 +220,7 @@
       muscle: 'Chest — do it right after the chest press',
       day: 'push', order: 5, joint: 'single', optional: true, unlockWeek: 5,
       substituteFor: null, perSide: false,
-      band: 'Light Gray', bandRank: 10, floorFrac: 0.20, curve: 'top', partials: [4, 6],
+      band: 'Light Gray', bandRank: 9, floorFrac: 0.20, curve: 'top', partials: [4, 6],
       verb: 'SQUEEZE', bandConfig: 'loop', plate: 'none', regression: null,
       range: 'Strongest fully crossed at the sternum', mid: 0,
       setup: 'No bar and no plate. Band looped behind your upper back at mid-scapula, crossing over the rear delts, one side in each hand.',
@@ -237,10 +273,18 @@
     },
     {
       slug: 'upright-row', officialSlug: 'upright-row', name: 'Upright Row',
-      muscle: 'Delts · traps — shoulder-friendly alternative',
+      /* NOT "shoulder-friendly", which is what this field used to say. The
+         source says the reverse in as many words: "biomechanically the upright
+         row is not the best exercise for a whole host of reasons", and it is
+         "only, I repeat, only for people who lack shoulder mobility that cannot
+         do the overhead press". A shoulder-friendly badge reads as an upgrade,
+         and this field is the ONE thing the Routine page's add-movement <select>
+         shows next to the name - a list that has no room to explain the
+         substituteFor gate. So the gate goes in the words themselves. */
+      muscle: 'Delts · traps — only if you can’t press overhead',
       day: 'push', order: 7, joint: 'multi', optional: true, unlockWeek: null,
       substituteFor: 'overhead-press', perSide: false,
-      band: 'White', bandRank: 11, floorFrac: 0.30, curve: 'top', partials: [4, 6],
+      band: 'White', bandRank: 10, floorFrac: 0.30, curve: 'top', partials: [4, 6],
       verb: 'PULL', bandConfig: 'singled', plate: 'midfoot', regression: null,
       range: 'Deliberately limited — mid-chest is the top', mid: 0,
       setup: 'Set up like the overhead press — band singled midfoot, narrow grip, light band.',
@@ -329,7 +373,7 @@
       muscle: 'Biceps — a drag curl, which makes it multi-joint',
       day: 'pull', order: 3, joint: 'multi', optional: false, unlockWeek: null,
       substituteFor: null, perSide: false,
-      band: 'Light Gray', bandRank: 9, floorFrac: 0.20, curve: 'top', partials: [4, 6],
+      band: 'Light Gray', bandRank: 7, floorFrac: 0.20, curve: 'top', partials: [4, 6],
       verb: 'CURL', bandConfig: 'singled', plate: 'midfoot', regression: null,
       range: 'Strongest at the top squeeze, bar at mid-chest', mid: 0,
       setup: 'Band <b>singled</b> (not doubled) under the plate, supinated grip, elbows slightly bent.',
@@ -355,7 +399,11 @@
       muscle: 'Calves',
       day: 'pull', order: 4, joint: 'single', optional: false, unlockWeek: null,
       substituteFor: null, perSide: false,
-      band: 'Light Gray', bandRank: 6, floorFrac: 0.20, curve: 'top', partials: [4, 8],
+      /* LIGHTEST MOVEMENT IN THE PROGRAM - see the bandRank note at the top of
+         this file. It was ranked 6 on Light Gray, which printed "160+ lb
+         doubled" and made the calf raise the app's heaviest recommendation
+         outside the deadlift and bent row. */
+      band: 'White', bandRank: 11, floorFrac: 0.20, curve: 'top', partials: [4, 8],
       verb: 'RAISE', bandConfig: 'doubled', plate: 'balls', regression: null,
       range: 'Strongest at the top — light band, high reps', mid: 0,
       setup: '<b>Balls</b> of the feet over the band channel (not midfoot), heels hanging off the back edge — they never touch down.',
@@ -377,6 +425,56 @@
       games: ['bloom', 'zone']
     }
   ];
+
+  /* ── THE ONE EQUIPMENT-SAFETY RULE THE SOURCE STATES, AND THE APP DID NOT ──
+
+     docs/x3-knowledge/official/principles-and-mechanics.md §7 lists it first,
+     under the heading "Safety rules to surface in the app", and the transcript
+     on the same page states it twice:
+
+       "Never step off the ground plate while there is tension on the band. Put
+        the bar down first. (Otherwise the plate launches.)"
+
+     Every PER-MOVEMENT rule in that list was already in this file - no straps
+     on the deadlift, never behind the head on an overhead press, never to the
+     chin on an upright row - each sitting in a faults or mechanics array. This
+     one, the only rule in the list whose failure mode is a loaded steel plate
+     leaving the floor, was in none of them, and it is per-movement too. It went
+     missing because it has no natural home in an Execution & Mechanics list:
+     it is not part of any rep, it is what you do when the set ends, or when you
+     stop mid-set to answer the door.
+
+     (The list's remaining rule - never on wet, slippery or gravel surfaces - is
+     session-wide rather than per-movement and is still absent from the app. It
+     does not belong in this array; it belongs wherever the app talks about
+     setting up a training space, which is not this file.)
+
+     APPLIED FROM `plate`, NOT COPIED INTO SEVEN ENTRIES. The rule applies to
+     exactly the movements that stand on the ground plate, and `plate` already
+     records that. Hand-copying it would recreate the failure this block exists
+     to fix - a rule that is true of seven movements and present on six. The
+     chest press, tricep press, pec crossover and split squat are excluded
+     because they genuinely do not use the plate: their bands run behind the
+     back, behind the shoulders, or under the front foot.
+
+     TWO PLACES, BECAUSE THEY REACH DIFFERENT PEOPLE. `faults` is the Library's
+     "What goes wrong" list, read before you train; `setup` is the line the
+     Routine coach shows in a guided session, read while you are standing on
+     the plate. Neither `mechanics` nor `setupSteps` is touched, because both
+     are documented as the verbatim official lists and this rule is from a
+     different official page. */
+  var PLATE_FAULT = 'Stepping off the plate with tension still on the band — ' +
+                    'put the bar down first, or the plate launches';
+  var PLATE_SETUP = ' <b>Put the bar down before you step off the plate</b> — ' +
+                    'stepping off with tension still on the band launches it.';
+
+  EX.forEach(function (e) {
+    if (!e.plate || e.plate === 'none') return;
+    /* First in the list: it is the only fault here that can hurt someone who is
+       no longer even doing the movement. */
+    e.faults = [PLATE_FAULT].concat(e.faults || []);
+    e.setup = (e.setup || '') + PLATE_SETUP;
+  });
 
   var BY = {};
   EX.forEach(function (e) { BY[e.slug] = e; });

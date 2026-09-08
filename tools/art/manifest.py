@@ -73,14 +73,23 @@ MOVES = [
        "Side view. Arms extended forward and slightly downward, stopping short of lockout. "
        "The band passes behind the back, over one shoulder and under the opposite rear "
        "deltoid. The figure is NOT standing on a plate."),
+    # THE FIRST VERSION READ AS A DEADLIFT at card size, which is the size it is
+    # actually seen at: a standing figure holding a bar low in front of the hips is
+    # the deadlift silhouette exactly. The tricep press is separated from it by ONE
+    # thing - the band comes over the shoulder from BEHIND, not up from the floor -
+    # so the cord has to be the loudest object in the frame, and the camera has to
+    # be close enough on the torso for the elbow angle to survive being 314 px wide.
     _m("tricep-press",
-       "Strict side profile of a standing figure. Both hands hold one short straight metal bar "
-       "horizontally, directly in FRONT OF THE HIPS, roughly a hand's width away from the body. "
-       "Both elbows are tucked in against the ribs and point straight down at the floor. The "
-       "shoulders are relaxed and level. A single glowing cord leaves the bar, rises past the "
-       "chest, passes over the near shoulder and disappears behind the upper back. The whole "
-       "arm assembly is LOW - nothing is above waist height. The floor is bare; no disc, no "
-       "platform."),
+       "Strict side profile, camera CLOSE on the torso and arms - the figure is cropped at "
+       "mid-thigh, filling the frame, NOT a full-length standing figure. Both hands hold one "
+       "short straight metal bar horizontally in FRONT OF THE HIPS, a hand's width from the "
+       "body. Both elbows are pinned hard against the ribs and point straight down. "
+       "THE MOST VISIBLE THING IN THE IMAGE IS THE GLOWING CORD: it leaves the bar, climbs "
+       "steeply up the front of the chest, passes OVER the near shoulder and disappears "
+       "BEHIND the upper back - a bright unbroken diagonal from hip to shoulder. Nothing "
+       "connects the bar to the floor. The floor is bare: NO disc, NO platform, and NO cord "
+       "running downward. This is NOT a deadlift and NOT a row - no hip hinge, the spine is "
+       "vertical."),
     _m("overhead-press",
        "Three-quarter front view, camera slightly below eye level. The figure stands tall and "
        "holds ONE LONG STRAIGHT HORIZONTAL BAR fully overhead with both hands set wider than "
@@ -208,11 +217,22 @@ MARK = [
         "grows through a movement. Violet to cyan gradient across the three bars. Centred on "
         "a deep charcoal ground with generous margin. Flat, geometric, confident. "
         "No text, no letters, no lettering of any kind, no logotype, no shadow.")),
+    # "on the left third" was not enough: the generated mark came back hard against
+    # an EDGE with more than half the frame empty - measured, the bright columns ran
+    # 590..639 of 640. This is the one image on the Android TV home row, sitting
+    # between Netflix and YouTube at a glance, so composition is the whole job.
+    # Say where the mark sits AND where it must not, and give it a margin in the
+    # same breath.
     dict(slug="banner", dir="mark", aspect="16:9", fmt="png", prompt=(
-        "A wide app banner: three parallel bars of light of increasing length and increasing "
-        "brightness arranged as a rising diagonal on the left third, violet to cyan, the rest "
-        "a deep charcoal field with soft haze. Flat, geometric, confident. "
-        "No text, no letters, no lettering of any kind, no logotype.")),
+        "A wide app banner, 16:9. Three parallel bars of light of increasing length and "
+        "increasing brightness, arranged as a rising diagonal, forming one compact mark. "
+        "COMPOSITION IS CRITICAL: the mark is CENTRED VERTICALLY and sits in the LEFT HALF "
+        "of the frame, with a clear margin of empty space on ALL FOUR SIDES of it - it must "
+        "NOT touch or run off any edge, and must not be pushed into a corner. The remaining "
+        "right side is a deep charcoal field with soft violet haze. Violet to cyan gradient "
+        "across the three bars. Flat, geometric, confident, generous negative space. "
+        "No text, no letters, no numbers, no lettering of any kind, no logotype, no "
+        "watermark, no signature, no border, no frame.")),
 ]
 
 # PHASE is generated on request but is NOT in ALL. Its three images were built

@@ -11,7 +11,8 @@
      pb() / pbTable()      personal bests per movement and per band
      challenge()           today's challenge - generated once, then frozen for the day
      achievements()        badges generated from templates over a stats snapshot
-     bandAdvice()          BOTH halves of the program's band rule
+     bandVerdict()         the ONE band decision - x3f-graduate.js reads it too
+     bandAdvice()          BOTH halves of the program's band rule, as rows
      calibrationStatus()   how long ago a movement+band was actually measured
 
    WHAT CHANGED IN THIS REWRITE, and why each change matters
@@ -33,18 +34,36 @@
       the program itself (84 days) starts a new cycle, and startCycle() is there
       for the deliberate "go again" the source recommends after week 12.
 
+      AND THE TWELVE WEEKS REPEAT. Writing the anchor fixed where a cycle
+      BEGINS; it did nothing about where one ends. week was still
+      min(12, floor(elapsed/7)+1) and weekStart was derived from that clamped
+      number, so from day 84 onward "this week" was a seven-day window sitting
+      further in the past every morning: "4 of 4 this week" fell to zero and
+      never recovered, the week-12 review stayed due forever, the 84-day grid
+      quietly gave up and drew a trailing window whose rows still said Week 1
+      to Week 12, and nothing in any interface could start a second cycle.
+      whereIn() now derives the cycle from elapsed days, so week 13 is cycle 2
+      week 1 and the current week always contains today. That roll is
+      ANNOUNCED rather than silent: the twelfth week's review is marked
+      cycleEnd and says what just happened, and that review is already what the
+      dashboard puts on screen.
+
    3. THERE IS NO LEG DAY. Day membership comes from X3FEX.forDay(day, week),
       which also means the week-5 variations are not offered in week 1. The old
       code folded a made-up 'legs' bucket into both days, so the calf raise was
       a push movement and the split squat a pull one.
 
-   4. THE BAND RULE IS TWO-SIDED. "Don't move up until you can perform 40 slow,
-      controlled full range reps. If you can't complete 15 full range reps,
-      reduce the resistance." Only the first half existed. X3FCal.bandAdvice()
-      owns the sentence (including the calf-raise exemption - light band, high
-      reps is the prescription there, not a signal to add load); this file
-      decides WHICH movement+band to ask about, and retires advice for a band
-      you have already moved off, which it used to nag about forever.
+   4. THE BAND RULE IS TWO-SIDED, AND THERE IS NOW EXACTLY ONE OF IT. "Don't
+      move up until you can perform 40 slow, controlled full range reps. If you
+      can't complete 15 full range reps, reduce the resistance." Only the first
+      half existed, and then it existed twice: bandAdvice() judged the last five
+      SETS on a band while x3f-graduate.js judged whole SESSIONS, off a
+      different answer to "which band is this movement on", with different
+      trigger counts and no knowledge of each other's state. On one movement on
+      one day the home screen said go lighter while the Progress page said go
+      heavier. bandVerdict() is now the only place that decision is made;
+      bandAdvice() is the Progress page's voice and X3FGraduate is the home
+      screen's, and neither can answer differently from the other.
 
    5. THE THREE-TIER SET. A set is full range -> mid-range partials ->
       weak-range partials -> failure, and the source is explicit that what you
@@ -73,6 +92,10 @@
   "use strict";
 
   var K_HIST = 'x3f_history', K_ACH = 'x3f_ach', K_CHAL = 'x3f_chal', K_PROG = 'x3f_prog';
+  /* Band-graduation prompt state, per movement+band. Written here rather than in
+     x3f-graduate.js because the decision that reads it is here - see the
+     graduation record section for why that had to move. */
+  var K_GRAD = 'x3f_grad';
   var BANDS = ['White', 'Light Gray', 'Dark Gray', 'Black', 'Elite Black'];
 
   /* Twelve weeks at five lifts, six days a week is ~360 entries, so a hard cap
@@ -622,24 +645,38 @@
       return start;
     });
   }
-  /* How many times the log says you have started. Used only when nothing is
-     stored - an install that predates the anchor, or an imported history - so
-     that somebody coming back after a year is on cycle 2 rather than being told
-     this is their first ever week. */
+  /* Which cycle the CURRENT run began in, read out of the log. Used only when
+     nothing is stored - an install that predates the anchor, or an imported
+     history - so that somebody coming back after a year is on a later cycle
+     rather than being told this is their first ever week.
+
+     It counts cycles, not restarts. Counting one per gap was right when twelve
+     weeks was the end of the road; now that the weeks repeat, a run that lasted
+     two hundred days was two and a bit passes through the program and saying it
+     was one would make the cycle number go DOWN when the user came back. */
   function derivedCycle() {
     return cached('derivedCycle', function () {
       var keys = dayList();
       if (!keys.length) return 0;
-      var n = 1;
+      var n = 1, runStart = keys[0];
       for (var i = 1; i < keys.length; i++) {
-        if (daysBetween(keys[i - 1], keys[i]) >= RESTART_GAP) n++;
+        if (daysBetween(keys[i - 1], keys[i]) < RESTART_GAP) continue;
+        n += whereIn(runStart, keys[i - 1]).laps + 1;   // a run is worth at least one
+        runStart = keys[i];
       }
       return n;
     });
   }
   /* Called when a set is logged, never on a read. Anchoring on WRITE is what
      stops the week rewinding when compaction drops the oldest day off the front
-     of the log, which used to move startedAt forward and flip Push/Pull. */
+     of the log, which used to move startedAt forward and flip Push/Pull.
+
+     It deliberately does NOT roll the cycle. The stored anchor is the day the
+     current RUN of training began and it stays there for as long as that run
+     lasts; which cycle of the twelve weeks you are in is arithmetic over it
+     (whereIn), so the roll happens on the day it is due whether or not you
+     trained that day. A cycle that only advanced when you logged a set would
+     be frozen for anybody looking at the dashboard between workouts. */
   function touchAnchor(day) {
     if (!isDayKey(day)) return;
     var st = progState();
@@ -652,40 +689,96 @@
       return;
     }
     if (lastBefore && daysBetween(lastBefore, day) >= RESTART_GAP) {
-      saveProg({ startedAt: day, cycle: (st.cycle || 1) + 1, restartedAt: Date.now() });
+      /* Coming back from a long absence starts a cycle AFTER the ones the
+         calendar already ran through, not after the one you were on when you
+         stopped. Storing (st.cycle||1)+1 told a user who had rolled through
+         three cycles and then vanished for a year that they were on cycle 2. */
+      saveProg({ startedAt: day, cycle: cycleNumber(st, lastBefore) + 1, restartedAt: Date.now() });
       bust();
     }
   }
-  /* The deliberate "go again" the source recommends after week 12: repeat the
-     program with heavier bands and cleaner form. Nothing in the log is touched. */
+  /* The deliberate "go again": start the twelve weeks over from today rather
+     than waiting for the current cycle to run out. Nothing in the log is
+     touched. reviewSeen is cleared because it holds a date key from the cycle
+     that just ended and would otherwise suppress the first review of this one. */
   function startCycle(day) {
     var st = progState();
-    saveProg({ startedAt: isDayKey(day) ? day : today(), cycle: (st.cycle || 1) + 1, restartedAt: Date.now(), reviewSeen: null });
+    saveProg({
+      startedAt: isDayKey(day) ? day : today(),
+      cycle: cycleNumber(st, today()) + 1,
+      restartedAt: Date.now(), reviewSeen: null
+    });
     bust();
     return program();
   }
 
-  /* ---------- the 12-week program ---------- */
+  /* ---------- the 12-week program ----------
+     WHERE YOU ARE, from an anchor and a date, with no reference to the log. The
+     program is day-count based - "you can put those workouts on whatever days
+     you want" - so this is pure arithmetic, and the twelve weeks REPEAT.
+
+     absWeek is never clamped, which is the whole fix: week 13 is cycle 2 week 1
+     rather than a second helping of week 12, and weekStart is derived from the
+     unclamped count so the seven days it names always contain today. The
+     source's own after-12-weeks page offers three onward paths and the only one
+     this app can host is "repeat the 12-Week Program with heavier bands and
+     cleaner form", so that is the one it rolls into. */
+  function cycleDays() { return lastWeek() * 7; }
+  function whereIn(anchor, day) {
+    var per = lastWeek(), len = cycleDays();
+    var elapsed = Math.max(0, daysBetween(anchor, day));
+    var absWeek = Math.floor(elapsed / 7) + 1;      // 1, 2, 3 ... never clamped
+    var laps = Math.floor((absWeek - 1) / per);     // whole cycles completed
+    var week = absWeek - laps * per;                // 1..12, always
+    var cycleStart = laps ? keyMinus(anchor, -(laps * len)) : anchor;
+    return {
+      elapsed: elapsed, absWeek: absWeek, laps: laps, week: week,
+      cycleStart: cycleStart,
+      weekStart: keyMinus(cycleStart, -((week - 1) * 7))
+    };
+  }
+  /* Which cycle a given day falls in, for a given stored state. Used by the two
+     writers, which both need the answer BEFORE they change the anchor and so
+     cannot ask program(). */
+  function cycleNumber(st, day) {
+    var anchor = isDayKey(st.startedAt) ? st.startedAt : derivedStart();
+    var base = st.cycle || derivedCycle() || 1;
+    if (!anchor || !isDayKey(day)) return base;
+    return base + whereIn(anchor, day).laps;
+  }
+
   function program() {
     return cached('program', function () {
       var st = progState();
       var days = workoutDays();
       var keys = dayList();
       var derived = derivedStart();
-      var started = isDayKey(st.startedAt) ? st.startedAt : derived;
+      /* The origin of the current RUN. It is not the start of the current
+         cycle: after twelve weeks the cycle moves and this does not, which is
+         what keeps every week boundary in the run aligned to the same weekday
+         (a roll is a whole number of weeks) and lets fullWeeks() count weeks
+         from before the roll. */
+      var origin = isDayKey(st.startedAt) ? st.startedAt : derived;
       /* A stored anchor that the log has long since left behind (an import, or
          a manual wipe of the history) heals itself on read without writing. */
-      if (started && derived && daysBetween(started, derived) >= RESTART_GAP) started = derived;
+      if (origin && derived && daysBetween(origin, derived) >= RESTART_GAP) origin = derived;
+      /* A RUN THAT LAPSED STOPS COUNTING. The weeks roll off the calendar,
+         not off your training, so an install last used eight months ago would
+         otherwise report cycle 4 week 7 - a week nobody trained, climbing on
+         its own forever, which is the same lie as the frozen week 12 in the
+         opposite direction. Past the restart gap the run is over: report where
+         they left off, say it is dormant, and let the next logged set open a
+         new cycle (touchAnchor does that). */
+      var lastDay = keys.length ? keys[keys.length - 1] : null;
+      var ref = today(), dormant = false;
+      if (origin && lastDay && daysBetween(lastDay, ref) >= RESTART_GAP) { ref = lastDay; dormant = true; }
       // Nothing logged means the program has not started. Reporting week 1 here
       // would hand out the "Week 1" badge to someone who has never trained.
-      var week = 0, elapsed = 0;
-      if (started) {
-        elapsed = Math.max(0, daysBetween(started, today()));
-        week = Math.min(lastWeek(), Math.max(1, Math.floor(elapsed / 7) + 1));
-      }
+      var at = origin ? whereIn(origin, ref) : null;
+      var week = at ? at.week : 0;
       var ph = phaseFor(week);
       var perWeek = ph ? ph.perWeek : 4;
-      var weekStart = started ? keyMinus(started, -((week - 1) * 7)) : null;
+      var weekStart = at ? at.weekStart : null;
       /* "This week" is YOUR week - the seven days of the program week you are
          in - not a rolling window that ends today and not a calendar Sunday.
          Three different definitions of a week used to disagree inside this one
@@ -700,17 +793,33 @@
       }
       var doneToday = !!days[today()];
       var nextType = nextDayType(ph, thisWeekDone, keys);
+      var base = st.cycle || (origin ? (derivedCycle() || 1) : 0);
+      var lastW = lastWeek();
       return {
-        startedAt: started, active: !!started, cycle: st.cycle || (started ? derivedCycle() : 0),
-        week: week, weekStart: weekStart, dayOfWeek: weekStart ? daysBetween(weekStart, today()) : -1,
+        /* startedAt is the CURRENT cycle's day one - which is what the 84-day
+           grid draws and what "week 3 of twelve" is counted from. originAt is
+           where the whole run began. They are the same thing until the first
+           roll, and a consumer that wants "how long have you been at this"
+           wants originAt. */
+        startedAt: at ? at.cycleStart : null, originAt: origin,
+        active: !!origin,
+        cycle: at ? base + at.laps : 0, cycleBase: base, cyclesDone: at ? base + at.laps - 1 : 0,
+        week: week, weekAbsolute: at ? at.absWeek : 0, dormant: dormant,
+        weekStart: weekStart, dayOfWeek: weekStart ? daysBetween(weekStart, ref) : -1,
         phase: ph ? ph.name : 'Not started', phaseIndex: ph ? phases().indexOf(ph) : -1,
         teaches: ph ? (ph.teaches || '') : '', pattern: ph ? ph.pattern : null,
         perWeek: perWeek, workouts: keys.length, thisWeek: thisWeekDone, doneToday: doneToday,
         todayType: doneToday ? 'Done' : nextType,
         nextType: nextType,
         weekProgress: Math.min(1, perWeek ? thisWeekDone / perWeek : 0),
-        complete: week >= lastWeek() && thisWeekDone >= perWeek,
-        cycleReady: week >= lastWeek()
+        /* You have finished the twelve weeks once you have rolled out of them,
+           or on the day you complete the twelfth week's target. This used to
+           read week >= 12 && thisWeek >= perWeek, which stopped being true the
+           moment the cycle rolled and so was false for every user who had
+           actually finished. */
+        complete: !!at && (at.laps > 0 || (week >= lastW && thisWeekDone >= perWeek)),
+        finalWeek: week >= lastW,
+        cycleReady: week >= lastW
       };
     });
   }
@@ -763,15 +872,24 @@
      84 cells, and the labels on them are now true. The old grid was always a
      trailing 84-day window ending today while the dashboard labelled its rows
      "Week 1" to "Week 12", so a user in week 3 was shown a grid whose "Week 12"
-     row was the current week. It is anchored to the cycle while the cycle is
-     running - which also makes the future flag reachable, having been
-     permanently false before. */
+     row was the current week. It is anchored to the cycle - which also makes
+     the future flag reachable, having been permanently false before.
+
+     The `< 84` test used to be the thing that silently reverted the whole grid
+     to a mislabelled trailing window on day 84 and left it there. Now that the
+     cycle rolls, the anchor is the current cycle's first day and this window
+     always contains today - or, for a dormant install, the last cycle actually
+     trained, which is the honest picture and is still correctly labelled. The
+     trailing fallback survives only for an anchor dated in the FUTURE, where
+     drawing 84 boxes that cannot contain today would be worse. */
   function grid() {
     return cached('grid', function () {
       var days = workoutDays(), out = [];
       var pr = program(), t = today();
-      var start = (pr.startedAt && daysBetween(pr.startedAt, t) < 84) ? pr.startedAt : keyMinus(t, 83);
-      for (var i = 0; i < 84; i++) {
+      var len = cycleDays();
+      var off = pr.startedAt ? daysBetween(pr.startedAt, t) : -1;
+      var start = (pr.startedAt && off >= 0) ? pr.startedAt : keyMinus(t, len - 1);
+      for (var i = 0; i < len; i++) {
         var k = keyMinus(start, -i);
         out.push({
           day: k, done: !!days[k], future: daysBetween(k, t) < 0,
@@ -1105,7 +1223,12 @@
       totalMid: totalMid, totalWeak: totalWeak,
       totalPart: totalPart, bestReps: bestReps, bestFull: bestFull, bestPart: bestPart, peak: peak,
       byEx: byEx, byBand: byBand, streak: st.current, bestStreak: st.best,
-      week: pr.week, cycle: pr.cycle, phase: pr.phase,
+      /* The FURTHEST week reached, not the current one. The week badges read
+         this and they are called "Reach week 9 of the 12-week program" - having
+         rolled into cycle 2 you have reached all twelve, and reporting week 1
+         would show every one of them as no-longer-met on the achievements
+         screen the week after you earned them. */
+      week: pr.cycle > 1 ? lastWeek() : pr.week, cycle: pr.cycle, phase: pr.phase,
       guided: Object.keys(guidedDays).length, challenges: challengesDone(),
       bandsUsed: Object.keys(byBand).length, exUsed: Object.keys(byEx).length
     };
@@ -1118,24 +1241,31 @@
   function fullWeeks() {
     return cached('fullWeeks', function () {
       var pr = program();
-      if (!pr.startedAt) return 0;
-      var keys = dayList(), n = 0;
-      var lastDay = keys[keys.length - 1];
-      if (!lastDay) return 0;
-      var span = daysBetween(pr.startedAt, lastDay);
-      var perWeekCount = {};
+      if (!pr.weekStart) return 0;
+      var keys = dayList(), n = 0, per = lastWeek();
+      if (!keys.length) return 0;
+      /* Offsets are measured from THIS week's first day and are allowed to go
+         NEGATIVE, which is the point. Bucketing from the cycle anchor would
+         have thrown away every week before the current cycle the moment the
+         first roll happened - so a user's Perfect Week count, and the badges
+         that read it, would drop to zero at week 13. Every roll is a whole
+         number of weeks, so the seven-day boundaries are the same ones the
+         earlier cycles were counted on. */
+      var counts = {};
       keys.forEach(function (d) {
-        var off = daysBetween(pr.startedAt, d);
-        if (off < 0) return;
-        var w = Math.floor(off / 7);
-        perWeekCount[w] = (perWeekCount[w] || 0) + 1;
+        var w = Math.floor(daysBetween(pr.weekStart, d) / 7);
+        counts[w] = (counts[w] || 0) + 1;
       });
-      var weeks = Math.floor(span / 7);
-      for (var w = 0; w <= weeks; w++) {
-        var ph = phaseFor(Math.min(lastWeek(), w + 1));
-        var target = ph ? ph.perWeek : 4;
-        if ((perWeekCount[w] || 0) >= target) n++;
-      }
+      Object.keys(counts).forEach(function (k) {
+        var w = +k;
+        /* Which week of a cycle that bucket was, so it is judged against the
+           target that week actually had: four workouts in the Foundational
+           phase, six after it. */
+        var abs = pr.weekAbsolute + w;
+        var weekNo = ((((abs - 1) % per) + per) % per) + 1;
+        var ph = phaseFor(weekNo);
+        if (counts[k] >= (ph ? ph.perWeek : 4)) n++;
+      });
       return n;
     });
   }
@@ -1280,20 +1410,80 @@
     return fresh;
   }
 
-  /* ---------- band progression ----------
+  /* ---------- band progression: ONE decision, two voices ----------
      "Start Light. Progress Slowly. Begin with the lightest band. Don't move up
      until you can perform 40 slow, controlled full range reps with good form.
      If you can't complete 15 full range reps, reduce the resistance."
 
      Both halves, and the second one matters more, because a band that is too
-     heavy is the one that hurts you. X3FCal.bandAdvice owns the wording and the
-     calf-raise exemption (light band, high reps is the prescription there, not a
-     signal to add load); this function decides which movement+band to ask about.
+     heavy is the one that hurts you.
 
-     What it stops doing: reading the ALL-TIME best on any band the movement was
-     ever trained on. A user who moved to Black a year ago was still being told
-     "move Chest Press up to Light Gray" forever, from a row whose last set was
-     three hundred days old. */
+     WHY THIS IS ONE FUNCTION NOW. There were two advisers and they disagreed
+     out loud. The home screen asked x3f-graduate.js, which grouped the log into
+     SESSIONS (a day is one attempt at the number), read the band from
+     X3FBand.forMovement, went down on the first sub-15 session and up on the
+     first 40. This file asked bandCoach() over the last five SETS, read the
+     band from trainingBand(), went down only under 10 or on a second bad set,
+     and up only after two sets over 40. Log twelve full reps on the day after
+     two big sets and the Progress page said "Move Chest Press up to Black"
+     while the dashboard said "Go lighter on the chest press" - same movement,
+     same day, opposite instructions, and each one looked authoritative.
+
+     So bandVerdict() decides and nothing else does. bandAdvice() below is the
+     Progress page's voice; X3FGraduate is the home screen's, with the prompt
+     copy, the sourcing labels and the accept/decline actions. They can differ
+     in register. They cannot differ in answer.
+
+     What the decision stops doing: reading the ALL-TIME best on any band the
+     movement was ever trained on. A user who moved to Black a year ago was
+     still being told "move Chest Press up to Light Gray" forever, from a row
+     whose last set was three hundred days old. */
+
+  /* The bands the X3 bar ships with. The Elite is a separate purchase and so is
+     the Ultra Light below White - band-progression.md §11.6 - which is why
+     neither is ever the target of a routine "move up to". */
+  var INCLUDED_BANDS = { 'White': 1, 'Light Gray': 1, 'Dark Gray': 1, 'Black': 1 };
+
+  /* Which bands the user told onboarding they own. Absent or empty means they
+     never answered, and an unanswered question is not a "no": for a band that
+     comes in the box, assume it is there. For one that has to be BOUGHT,
+     silence has to mean no, or the app is putting words in their mouth about a
+     hundred-dollar purchase. */
+  function ownedBands() {
+    var v = get('x3f_ownedBands', null);
+    return (Array.isArray(v) && v.length) ? v : null;
+  }
+  function ownsBand(band) {
+    if (!band) return false;
+    var own = ownedBands();
+    if (own) return own.indexOf(band) >= 0;
+    return !!INCLUDED_BANDS[band];
+  }
+  function protocolOf() {
+    try {
+      var p = window.X3FEX && window.X3FEX.protocol;
+      if (p && p.repsMin > 0 && p.repsMax > 0) return p;
+    } catch (e) {}
+    return { repsMin: 15, repsMax: 40 };
+  }
+
+  /* The band each movement was last actually trained on, for every movement at
+     once. Built in one pass and memoised, because this is now on the path of
+     eleven verdicts per dashboard repaint and the per-movement version walked
+     the whole log eleven times. Deliberately NOT memoising the explicit choice
+     with it: that can change from the band picker at any moment, and the log
+     revision this cache keys on would not notice. */
+  function lastTrainedBands() {
+    return cached('lastTrainedBands', function () {
+      var m = {};
+      sets().forEach(function (e) {
+        if (!e.ex || !tracked(e) || !hasNumbers(e)) return;
+        var b = bandOf(e);
+        if (b) m[e.ex] = b;
+      });
+      return m;
+    });
+  }
   function trainingBand(slug) {
     /* An explicit per-movement choice is a decision the user has made and it
        outranks history. Otherwise the band you last actually trained is the
@@ -1304,74 +1494,336 @@
         if (chosen) return chosen;
       }
     } catch (e) {}
-    var last = null;
-    sets().forEach(function (e) {
-      if (e.ex !== slug || !tracked(e) || !hasNumbers(e)) return;
-      var b = bandOf(e);
-      if (b) last = b;
-    });
+    var last = lastTrainedBands()[slug] || null;
     if (last) return last;
     try { if (window.X3FBand) return window.X3FBand.forMovement(slug); } catch (e) {}
     var m = exOf(slug);
     return (m && m.band) ? m.band : null;
   }
 
-  /* The local mirror of X3FCal.bandAdvice, used only when x3f-cal.js is not on
-     the page (the engine test harness loads this file on its own). Same rule,
-     same thresholds, no calf-raise exemption to invent - it defers to the real
-     one whenever it exists. */
-  function bandCoach(slug, band, full) {
-    try {
-      if (window.X3FCal && window.X3FCal.bandAdvice) return window.X3FCal.bandAdvice(slug, band, full);
-    } catch (e) {}
+  /* ---------- the graduation record ----------
+     x3f_grad, one entry per movement+band. It lives here rather than in
+     x3f-graduate.js because the decision lives here and the decision needs it:
+     the Progress page does not load x3f-graduate.js, so if the grace window
+     after a band change were private to that file, the home screen would say
+     "landing near 15 is normal right after moving up" while the Progress page
+     said "move the chest press back down" - the same two-advisers bug in a
+     different costume.
+
+     THE SIDES ARE SEPARATE, and that is a bug fix, not a refactor. There used
+     to be one `declined` counter and one `offeredAt` for both directions, so
+     pressing "Stay on Black" on a go-lighter prompt silenced the go-heavier
+     prompt as well, and two of those declines turned the next up-prompt into
+     the band-shortening suggestion. Declining to go down says nothing whatever
+     about wanting to go up.
+
+     Migration: a record written by the old flat shape has its declined and
+     offeredAt read as the UP side, which is where they were consumed. The worst
+     that can happen is one suppressed up-offer on an install that had declined
+     a go-lighter prompt, and it clears itself the next time that movement is
+     trained. */
+  function gradAll() {
+    var m = get(K_GRAD, {});
+    return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
+  }
+  function gradKey(slug, band) { return slug + '|' + band; }
+  function gradSide(o, legacyDeclined, legacyOffered) {
+    o = (o && typeof o === 'object') ? o : {};
+    return {
+      declined: +o.declined || legacyDeclined || 0,
+      offeredAt: +o.offeredAt || legacyOffered || 0,
+      /* The timestamp of the newest session at the moment the prompt was put
+         away. A prompt comes back when there is something NEW to say, and not
+         before - which is what makes it dismissable at all. */
+      dismissedT: +o.dismissedT || 0
+    };
+  }
+  function gradState(slug, band) {
+    var raw = gradAll()[gradKey(slug, band)] || {};
+    var isNew = !!(raw.up || raw.down);
+    return {
+      upgradedAt: +raw.upgradedAt || 0,
+      up: gradSide(raw.up, isNew ? 0 : (+raw.declined || 0), isNew ? 0 : (+raw.offeredAt || 0)),
+      down: gradSide(raw.down, 0, 0)
+    };
+  }
+  /* Merge a patch of the shape {upgradedAt, up:{...}, down:{...}} and write it
+     back in the current shape, so a record touched once stops being legacy. */
+  function gradNote(slug, band, patch) {
+    if (!slug || !band) return null;
+    var st = gradState(slug, band);
+    patch = patch || {};
+    if (patch.upgradedAt != null) st.upgradedAt = +patch.upgradedAt || 0;
+    ['up', 'down'].forEach(function (side) {
+      var p = patch[side];
+      if (!p) return;
+      Object.keys(p).forEach(function (k) { st[side][k] = +p[k] || 0; });
+    });
+    var m = gradAll();
+    m[gradKey(slug, band)] = st;
+    set(K_GRAD, m);
+    bust();
+    return st;
+  }
+
+  /* ---------- the evidence ----------
+     Full-range reps only, one record per DAY, newest first. A day is one
+     attempt at the number: two sets of the same movement on the same day are
+     not two chances to trigger a band change, and the best of them is what the
+     number was.
+
+     A run entry - Splash, Nova, Duel, Rhythm - reports a score and no reps, and
+     it used to land here as a session with `full` missing, which marked the
+     whole DAY legacy. So one thirty-second Splash run on the same day as a real
+     set of 42 quietly disqualified that set from ever counting toward 40. An
+     entry with no rep count at all says nothing about reps and is skipped. */
+  function bandSessions(slug, band) {
+    if (!slug || !band) return [];
+    return cached('bandSes|' + slug + '|' + band, function () {
+      var byDay = {}, order = [];
+      sets().forEach(function (e) {
+        if (!e || e.ex !== slug || !tracked(e)) return;
+        if (bandOf(e) !== band) return;
+        var hasFull = (e.full != null), hasReps = (e.reps != null);
+        if (!hasFull && !hasReps) return;
+        var day = dayKey(e.t);
+        var rec = byDay[day];
+        if (!rec) { rec = byDay[day] = { day: day, full: 0, legacy: false, t: e.t }; order.push(day); }
+        /* An entry written before the three-tier set existed has only `reps`,
+           and that number INCLUDED the partials that come after full-range
+           failure. Reading it as a full-range count would move people up a band
+           one or two sessions early, every time, so the day is marked legacy
+           and cannot trigger an upgrade on its own. */
+        var full;
+        if (hasFull) full = +e.full || 0;
+        else { rec.legacy = true; full = +e.reps || 0; }
+        if (full > rec.full) rec.full = full;
+        if (e.t > rec.t) rec.t = e.t;      // the LATEST set of the day, for "anything new since?"
+      });
+      order.sort();
+      var out = [];
+      for (var i = order.length - 1; i >= 0; i--) out.push(byDay[order[i]]);
+      return out;
+    });
+  }
+
+  /* ---------- the decision ----------
+     The one place either voice is allowed to get an answer from. It reports
+     what the evidence says and what the user owns; it never changes anything.
+
+     The two triggers are the printed rule. The COUNTS are the reconciliation
+     documented in band-progression.md §3: four instructional sources make one
+     40-rep session the trigger and four product pages say "consistently", and
+     nothing quantifies "consistently", so the first qualifying session offers
+     and the second confirms. Going down is unconditional in the source and
+     fires on the first occurrence, because the costs are asymmetric - a band
+     that is too heavy is the one that hurts you. */
+  var GRACE_FLOOR = 10;
+  function bandVerdict(slug, band) {
+    band = band || trainingBand(slug);
+    if (!slug || !band) return null;
+    var P = protocolOf();
+    var ses = bandSessions(slug, band);
+    if (!ses.length) return null;
+    var last = ses[0];
+    var st = gradState(slug, band);
     var bands = bandList(), i = bands.indexOf(band);
-    if (full >= 40 && slug !== 'calf-raise') {
-      if (i < 0 || i >= bands.length - 1) return { dir: 'up', band: null, message: full + ' full reps on the heaviest band. Shorten the band instead.' };
-      return { dir: 'up', band: bands[i + 1], message: full + ' full reps means this band stopped being heavy. Move up to ' + bands[i + 1] + '.' };
+    var qual = 0, bestQual = 0;
+    ses.forEach(function (s) {
+      if (s.legacy || s.full < P.repsMax) return;
+      qual++;
+      if (s.full > bestQual) bestQual = s.full;
+    });
+
+    var v = {
+      slug: slug, name: nameOf(slug), band: band, sessions: ses, last: last,
+      qualifying: qual, repsMin: P.repsMin, repsMax: P.repsMax, state: st,
+      dir: null, to: null, reps: last.full, reason: null,
+      firm: false, grace: false, soft: false, message: '',
+      /* switchable is "the app could set this band for you". purchase is "the
+         target has to be bought first". elite is the one band that is never a
+         routine step whoever owns it. Nothing may be switched unless
+         switchable, which is what stops the app assuming an Elite band it has
+         no evidence the user has ever held. */
+      switchable: false, purchase: false, elite: false
+    };
+    var down = (i > 0) ? bands[i - 1] : null;
+    var up = (i >= 0 && i < bands.length - 1) ? bands[i + 1] : null;
+
+    /* THE GRACE SESSION, after a deliberate move up. This is the app's own rule
+       and every voice that speaks it says so. The program's own instructions
+       collide here: the 40-rep trigger sends you up and the 15-rep floor sends
+       you straight back down, and the first session on a heavier band is
+       EXPECTED to land near 15. Without it the app produces a visible up-down
+       loop, which reads as a bug and costs it credibility on everything else it
+       says. Nothing official arbitrates. Ten is ours too: far enough under the
+       floor that it is not the adjustment settling in. */
+    if (st.upgradedAt && last.t >= st.upgradedAt && ses.length <= 1 && !last.legacy) {
+      if (last.full > 0 && last.full < GRACE_FLOOR) {
+        v.dir = 'down'; v.to = down; v.reason = 'revert';
+        v.message = last.full + ' full reps on your first session with ' + band + '. X3’s rule is to ' +
+                    'reduce the resistance if you cannot manage ' + P.repsMin + ' — it is a safety rule ' +
+                    'as much as a training one.';
+        return lighter(v, down);
+      }
+      if (last.full < P.repsMin) {
+        v.grace = true; v.reason = 'grace';
+        v.message = last.full + ' full reps on your first session with ' + band + '. Landing near ' +
+                    P.repsMin + ' right after moving up is expected. This app suggests one more session ' +
+                    'before deciding — the program itself does not say.';
+        return v;
+      }
     }
-    if (full > 0 && full < 15) {
-      if (i <= 0) return { dir: 'down', band: null, message: 'Under 15 full reps on the lightest band. Lengthen the band, or use a regression.' };
-      return { dir: 'down', band: bands[i - 1], message: 'Under 15 full reps means this band is too heavy. Drop to ' + bands[i - 1] + '.' };
+
+    if (!last.legacy && last.full > 0 && last.full < P.repsMin) {
+      v.dir = 'down'; v.to = down; v.reason = 'under-min';
+      v.message = 'You stopped at ' + last.full + ' full reps. X3’s rule is to reduce the resistance ' +
+                  'if you cannot do ' + P.repsMin + ' slow, controlled reps — it is a safety rule as ' +
+                  'much as a training one.' +
+                  (down ? '' : ' This is already the lightest band in the box, so lengthen the band or ' +
+                               'use a regression; X3’s only lighter band is the Ultra Light, and that ' +
+                               'is a separate purchase.');
+      return lighter(v, down);
+    }
+
+    if (qual < 1) return v;
+    v.dir = 'up';
+    v.to = up;
+    v.firm = qual >= 2;
+    v.reason = v.firm ? 'second-40' : 'first-40';
+    v.reps = bestQual || P.repsMax;    // what was actually done, not the threshold
+    /* THE ELITE BAND IS NOT A RUNG ON THIS LADDER. band-progression.md §11.6:
+       "treat it as a purchase decision, not a routine progression" - the Elite
+       page gates it on completing the whole 15-40 protocol with Black ACROSS
+       your exercises, it is sold separately, and the page itself calls it
+       extremely challenging. This app used to offer it as the ordinary next
+       step at Black and set it on accept, which assumed the user owned a band
+       that does not come with the bar. It is never switchable, however the
+       ownership question was answered: a user who has one changes to it with
+       their hands, deliberately, like every other band.
+
+       The same applies more mildly to any band onboarding was told they do not
+       have. It is still reported - being ready for it is real news - but as
+       something to buy rather than something to do tonight. */
+    v.elite = !!up && !INCLUDED_BANDS[up];
+    v.switchable = !!up && !v.elite && ownsBand(up);
+    v.purchase = !!up && !v.switchable;
+    /* The calf raise is NOT exempt - no source exempts any movement, and an
+       earlier version of this app invented an exemption that had to be removed.
+       What the source does say about this one movement is that it is "much
+       better to do it with a lighter band and higher repetitions", partly
+       because the deadlift has already spent your grip. Those two statements
+       genuinely pull different ways, so the trigger is identical and only the
+       framing softens: staying put is presented as a legitimate choice rather
+       than as being wrong. */
+    v.soft = (slug === 'calf-raise');
+    if (!up) {
+      v.message = P.repsMax + ' full reps on the heaviest band there is. Shorten the band instead — ' +
+                  'wrap it around the hook once or twice.';
+    } else if (v.elite) {
+      v.message = P.repsMax + ' full reps on ' + band + '. X3 sells an Elite band above it, and says ' +
+                  'you should be able to complete the ' + P.repsMin + '–' + P.repsMax + ' rep protocol ' +
+                  'with the black band across your exercises first. It is a separate purchase and they ' +
+                  'describe it as extremely challenging. Shortening the band you have — wrapping it ' +
+                  'around the hook once or twice — adds load tonight without buying anything.';
+    } else if (v.soft) {
+      v.message = P.repsMax + ' full reps on calf raises. You could move up to ' + up + ' — but X3 ' +
+                  'prescribes this movement with a lighter band and higher repetitions, partly because ' +
+                  'your grip is already spent from the deadlift. Their two statements pull different ' +
+                  'ways here, so staying on ' + band + ' is a legitimate choice.';
+    } else if (v.firm) {
+      v.message = 'Second session at ' + P.repsMax + ' full reps. X3’s own band pages say to move up ' +
+                  'once you can consistently reach ' + P.repsMax + ' full reps.';
+    } else {
+      v.message = P.repsMax + ' full reps. X3’s Quick Start Guide says to move to the next heavier ' +
+                  'band once you can complete ' + P.repsMax + ' slow and controlled reps with good form.';
+    }
+    if (v.purchase && !v.elite) {
+      v.message += ' You told us you do not have a ' + up + ' band, so this is a purchase rather than ' +
+                   'a switch. Until then, shorten the band you have by wrapping it around the hook.';
+    }
+    return v;
+  }
+
+  /* Going lighter is a safety instruction, so the lighter band is offered as a
+     switch whenever there is one - but never one the user has said they do not
+     own, because "drop to Dark Gray" is not an instruction somebody without a
+     Dark Gray band can follow. They get the two things they can do instead. */
+  function lighter(v, down) {
+    v.switchable = !!down && ownsBand(down);
+    if (down && !v.switchable) {
+      v.message += ' You told us you do not have a ' + down + ' band — lengthen the one you are on so ' +
+                   'there is less tension at the bottom, or use a regression.';
+    }
+    return v;
+  }
+
+  /* Every movement with something to say, worst first. Safety before ambition:
+     a band that is too heavy is the one that hurts you. */
+  function bandVerdicts() {
+    var seen = {}, out = [];
+    sets().forEach(function (e) {
+      if (!e.ex || seen[e.ex] || !tracked(e)) return;
+      seen[e.ex] = 1;
+      var v = bandVerdict(e.ex);
+      if (v) out.push(v);
+    });
+    out.sort(function (a, b) {
+      var ra = (a.dir === 'down') ? 0 : (a.dir === 'up' ? 1 : 2);
+      var rb = (b.dir === 'down') ? 0 : (b.dir === 'up' ? 1 : 2);
+      return ra - rb;
+    });
+    return out;
+  }
+
+  /* What one set on its own says, for a caller that has a rep count and no
+     history - the set reporter's line, and the engine test harness. Same
+     thresholds, same ladder, and it deliberately no longer forwards to
+     X3FCal.bandAdvice: that is a THIRD answer to the same question (one set,
+     first occurrence, either direction) and forwarding to it is how this file
+     ended up disagreeing with the home screen in the first place. */
+  function bandCoach(slug, band, full) {
+    var P = protocolOf();
+    var bands = bandList(), i = bands.indexOf(band);
+    if (full >= P.repsMax) {
+      var up = (i >= 0 && i < bands.length - 1) ? bands[i + 1] : null;
+      if (!up) return { dir: 'up', band: null, message: full + ' full reps on the heaviest band. Shorten the band instead.' };
+      /* Same gate as bandVerdict: the Elite is a purchase whoever owns one, and
+         so is any band onboarding was told is not in the room. */
+      if (!INCLUDED_BANDS[up] || !ownsBand(up)) {
+        return { dir: 'up', band: null, purchase: up,
+                 message: full + ' full reps. The next band up is ' + up + ', which you would have to buy — ' +
+                          'or shorten the band you have by wrapping it around the hook.' };
+      }
+      return { dir: 'up', band: up, message: full + ' full reps means this band stopped being heavy. Move up to ' + up + '.' };
+    }
+    if (full > 0 && full < P.repsMin) {
+      if (i <= 0) return { dir: 'down', band: null, message: 'Under ' + P.repsMin + ' full reps on the lightest band. Lengthen the band, or use a regression.' };
+      return { dir: 'down', band: bands[i - 1], message: 'Under ' + P.repsMin + ' full reps means this band is too heavy. Drop to ' + bands[i - 1] + '.' };
     }
     return null;
   }
 
+  /* The Progress page's voice. One row per movement that has somewhere to go,
+     in the shape that page renders: it prints "Move <name> up to <to>" as the
+     heading, which is the one sentence that must never be said about a band the
+     user may not own - so a purchase-gated step is not a row here. It is not
+     lost: the home screen's graduate prompt frames it as the purchase it is,
+     with the source's own wording. */
   function bandAdvice() {
     var out = [];
-    var byMove = {};
-    /* Only the sets that count, only on the band the movement is actually
-       trained on, most recent last. */
-    sets().forEach(function (e) {
-      if (!e.ex || !tracked(e) || !hasNumbers(e)) return;
-      if (!byMove[e.ex]) byMove[e.ex] = [];
-      byMove[e.ex].push(e);
-    });
-    Object.keys(byMove).forEach(function (slug) {
-      var band = trainingBand(slug);
-      if (!band) return;
-      var recent = byMove[slug].filter(function (e) { return bandOf(e) === band; }).slice(-5);
-      if (!recent.length) return;
-      var fulls = recent.map(fullOf).filter(function (n) { return n > 0; });
-      if (!fulls.length) return;
-      var latest = fulls[fulls.length - 1];
-      var best = Math.max.apply(null, fulls);
-      var over = fulls.filter(function (n) { return n >= 40; }).length;
-      var under = fulls.slice(-3).filter(function (n) { return n < 15; }).length;
-      var adv = null, reps = 0;
-      /* Two sets over 40 before we say "go heavier": one enormous set can be a
-         miscount, and moving up a band you are not ready for undoes the form
-         the whole program is built on.
-
-         Going DOWN is different. A single set that collapsed under ten reps is
-         already evidence the band is wrong; between ten and fifteen it takes a
-         second set, because one bad day is not a band change. */
-      if (over >= 2) { adv = bandCoach(slug, band, best); reps = best; }
-      else if (latest > 0 && latest < 10) { adv = bandCoach(slug, band, latest); reps = latest; }
-      else if (under >= 2) { adv = bandCoach(slug, band, latest); reps = latest; }
-      if (!adv || !adv.band || adv.band === band) return;
+    bandVerdicts().forEach(function (v) {
+      if (!v.dir || !v.to || !v.switchable) return;
+      /* Put away means put away, on this side of the ladder only. A prompt the
+         user answered - declined, dismissed, or "do it once more first" - stays
+         gone until the movement has something new to say, which is a session
+         newer than the one they answered about. */
+      var s = v.state[v.dir];
+      if (v.last.t <= Math.max(s.dismissedT, s.offeredAt)) return;
       out.push({
-        ex: slug, name: nameOf(slug), from: band, to: adv.band, dir: adv.dir,
-        reps: reps, message: adv.message, why: adv.message
+        ex: v.slug, name: v.name, from: v.band, to: v.to, dir: v.dir,
+        reps: v.reps, message: v.message, why: v.message,
+        firm: v.firm, soft: v.soft
       });
     });
     return out;
@@ -1450,9 +1902,18 @@
     /* The week under review is the one ending today when today is its last day,
        and otherwise the one that just finished - so a review is never missed
        just because the TV was off on the seventh evening. */
-    var reviewStart = (idx >= 6) ? pr.weekStart : keyMinus(pr.weekStart, 7);
-    var weekNo = (idx >= 6) ? pr.week : pr.week - 1;
-    if (weekNo < 1) return null;
+    var back = (idx >= 6) ? 0 : 1;
+    var reviewStart = back ? keyMinus(pr.weekStart, 7) : pr.weekStart;
+    /* Counted in ABSOLUTE weeks and then mapped back onto the twelve, because
+       the week before cycle 2 week 1 is cycle 1 week 12 - not week zero. The
+       old pr.week - 1 returned null for the whole first week of every new
+       cycle, which is exactly when the end-of-cycle review is due. */
+    var per = lastWeek();
+    var abs = pr.weekAbsolute - back;
+    if (abs < 1) return null;
+    var weekNo = ((abs - 1) % per) + 1;
+    var cycleNo = pr.cycleBase + Math.floor((abs - 1) / per);
+    var cycleEnd = (weekNo === per);
     var st = progState();
     var from = reviewStart, to = keyMinus(reviewStart, -6);
     var ph = phaseFor(weekNo);
@@ -1489,8 +1950,29 @@
       sentence = trained + ' of ' + target + ' sessions. Short of the target, not short of the program — pick the next one up where you left it.';
     }
 
+    /* THE END OF A CYCLE IS A THING THAT HAPPENS TO YOU, so it is said out
+       loud. Before this, week twelve ended and the app simply stopped moving:
+       no milestone, no next step, and a dashboard that reported the same stale
+       week forever. The three onward paths are the source's own (member site,
+       "After 12 weeks"); only the third is something this app can track, so it
+       is the one the cycle rolls into and the other two are named without
+       being described beyond what the page says. */
+    var nextSteps = null;
+    if (cycleEnd) {
+      nextSteps = 'X3 names three ways on from here: their Hypertrophy program, the Westside ' +
+                  'Barbell X3 Training Academy (a separate membership), or run the twelve weeks ' +
+                  'again with heavier bands and cleaner form.';
+      sentence += (trained ? ' That closes cycle ' + cycleNo + ' — twelve weeks.'
+                           : ' The twelve weeks are up all the same.') +
+                  ' Cycle ' + (cycleNo + 1) +
+                  (back ? ' has started' : ' starts with your next week') +
+                  ': the same program, heavier bands, cleaner form.';
+    }
+
     return {
-      week: weekNo, cycle: pr.cycle, phase: ph ? ph.name : '', teaches: ph ? (ph.teaches || '') : '',
+      week: weekNo, cycle: cycleNo, phase: ph ? ph.name : '', teaches: ph ? (ph.teaches || '') : '',
+      /* The last week of a cycle, and what the source says comes next. */
+      cycleEnd: cycleEnd, nextSteps: nextSteps,
       /* Due until it has been acknowledged for this exact week, not only on the
          seventh evening - the TV is often off that night, and a review nobody
          ever sees is not a feature. */
@@ -1546,13 +2028,16 @@
     var pr = program();
     var ph = phaseFor(pr.week);
     return {
-      week: pr.week, cycle: pr.cycle,
+      week: pr.week, cycle: pr.cycle, cyclesDone: pr.cyclesDone,
       phase: ph ? ph.name : 'Not started',
       teaches: ph ? (ph.teaches || '') : '',
       perWeek: pr.perWeek,
       done: pr.thisWeek, target: pr.perWeek,
       next: pr.todayType,
-      cycleReady: pr.cycleReady
+      /* In the last week of a cycle. Not "stuck at the end of the program" -
+         which is what this used to mean, because the week never moved past
+         twelve. */
+      cycleReady: pr.cycleReady, complete: pr.complete
     };
   }
 
@@ -1567,6 +2052,11 @@
     stats: stats, achievements: achievements, checkAchievements: checkAchievements,
     dayMovements: dayMovements,
     catalogue: catalogue, bandAdvice: bandAdvice, bandCoach: bandCoach, BANDS: BANDS,
+    /* The single band decision and the record it reads. x3f-graduate.js is the
+       other voice for these; nothing else should be deciding. */
+    bandVerdict: bandVerdict, bandVerdicts: bandVerdicts, bandSessions: bandSessions,
+    trainingBand: trainingBand, gradState: gradState, gradNote: gradNote,
+    ownedBands: ownedBands, ownsBand: ownsBand, protocol: protocolOf,
     logCalibration: logCalibration, calibrations: calibrations,
     calibrationStatus: calibrationStatus, staleCalibrations: staleCalibrations,
     weekReview: weekReview, markReviewSeen: markReviewSeen,
