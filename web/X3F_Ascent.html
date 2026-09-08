@@ -12,6 +12,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>X3F Ascent</title>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
   html,body{margin:0;height:100%;background:#05070d;overflow:hidden;
     font-family:'Segoe UI',system-ui,sans-serif;color:#eaf2ff;user-select:none;-webkit-tap-highlight-color:transparent}
@@ -73,7 +77,26 @@
 </div>
 <div id="err">Couldn't load the 3D engine (Three.js) — check your internet connection, then reload.</div>
 
+<!-- The one page in this app that needs the network. three.js is ~600 KB, which
+     does not fit the sub-5MB APK budget, so Ascent is phone-only and online-only
+     and is deliberately not in the TV bundle or the service worker's precache.
+     If the library does not arrive, say so plainly rather than showing a black
+     screen that looks like a crash. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+if (typeof THREE === 'undefined') {
+  document.addEventListener('DOMContentLoaded', function () {
+    document.body.innerHTML =
+      '<div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;' +
+      'text-align:center;padding:2rem;font:600 1.25rem system-ui;color:#ECEEF2;background:#0F1114">' +
+      '<div><p style="margin-bottom:1rem">Ascent needs an internet connection.</p>' +
+      '<p style="color:#8B93A5;font-weight:500;max-width:32rem;line-height:1.5">It is the only game ' +
+      'that loads a 3D library from the web, so it cannot run offline. Every other game works ' +
+      'with no connection at all.</p>' +
+      '<p style="margin-top:1.5rem"><a href="index.html" style="color:#7C6CFF">Back</a></p></div></div>';
+  });
+}
+</script>
 <script>
 "use strict";
 if(!window.THREE){ document.getElementById('err').style.display='flex'; }

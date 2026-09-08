@@ -2,15 +2,32 @@
 <!-- X3F NOVA - an expansive space-defense arcade-RPG for the X3 Force bar (Web Bluetooth).
  Force = your energy beam's power. It auto-aims at the most threatening enemy; sustain force to
  melt waves, ease off and you're exposed. Sectors of waves + bosses, an upgrade shop, power-ups,
- overdrive->NOVA, shield+health, combos, achievements. Shares band/history with the app (x3f_*).
- Fully procedural art; playable + offline with zero assets. -->
+ overdrive->NOVA, shield+health, combos, achievements. Fully procedural art; playable + offline
+ with zero assets. Shares band/history with the app (x3f_*).
+
+ WHAT IT SCORES CHANGED. Nova was already the closest of the arcade games to the method - a
+ sustained-tension mapping, damage proportional to force, overdrive charged by the integral of
+ effort - and none of that moved. What was wrong was the accounting around it. The combo climbed
+ on kills and NEVER decayed, so a long weak run outscored a short brutal one; the beam's one
+ real threshold was an arbitrary 0.7 rather than the line the set reporter actually grades a
+ full-range rep at; letting the band go completely slack cost nothing at all; and the run was
+ discarded outright unless you happened to die, so pressing Restart threw away twelve minutes
+ of genuine work under tension.
+
+ Now the combo is a TENSION chain that breaks when the band goes slack, the strong range is the
+ weapon (full damage on shielded targets, and a real multiplier, at fullRangeFrac of the top you
+ have established today), the shield stops regenerating while you are slack, and every way out
+ of a run banks it. -->
+
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>X3F Nova</title>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#05030f"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
 :root{
   --bg:#05030f;--panel:rgba(20,14,44,.55);--brd:rgba(160,140,255,.22);--brd2:rgba(160,140,255,.4);
@@ -79,7 +96,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <div class="ctrl">
 <button class="cta ghost" id="zeroBtn">Re-Zero</button>
 <div class="grow"></div>
-<button class="cta ghost" id="restartBtn">Restart</button>
+<button class="cta ghost" id="restartBtn">New Run</button>
 </div>
 </div>
 <div class="scrim show" id="firstrun"><div class="card">
@@ -107,6 +124,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <script src="x3f-hype.js"></script>
 <script src="x3f-progress.js"></script>
 <script src="x3f-set.js"></script>
+<script src="x3f-hud.js"></script>
 <script src="x3f-music.js"></script>
 <script>
 "use strict";
@@ -135,6 +153,16 @@ BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textConte
 bandSel.onchange=()=>{band=bandSel.value;xset('band',band)};
 function logSession(o){try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push(Object.assign({t:Date.now(),b:band},o));while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}}
 let cues=xget('cues',true);const cueBtn=$('cueBtn');function syncCue(){cueBtn.textContent=cues?'Cues on':'Cues off'}syncCue();
+/* Cues off means ALL of them, and the whole job is done by writing the setting.
+
+   This used to be a real bug - x3f-hype.js cached x3f_cues at create(), so
+   turning cues off mid-set silenced beep() and left the four-tone fanfare and
+   the confetti haptics running at full volume for the rest of the session. The
+   module's rewrite made cuesOn() read the key live on every call (x3f-hype.js
+   cuesOn), so writing it here is now sufficient. Deliberately NOT also calling
+   hype.mute(): that is the instance-level OVERRIDE, it would do exactly the same
+   thing by a second route, and a redundant call is how the next person concludes
+   the setting alone does not work. */
 cueBtn.onclick=()=>{cues=!cues;xset('cues',cues);syncCue()};
 let actx=null;function beep(f,d,type,vol){if(!cues)return;try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),g=actx.createGain();o.type=type||'sine';o.frequency.value=f;o.connect(g);g.connect(actx.destination);g.gain.setValueAtTime(0.0006,actx.currentTime);g.gain.exponentialRampToValueAtTime(vol||0.18,actx.currentTime+0.008);g.gain.exponentialRampToValueAtTime(0.0006,actx.currentTime+d);o.start();o.stop(actx.currentTime+d+0.03)}catch(e){}}
 function boom(){beep(90,0.22,'sawtooth',0.16);}
@@ -185,18 +213,58 @@ const stars=[];for(let i=0;i<120;i++)stars.push({x:Math.random(),y:Math.random()
 // ---------- game state ----------
 let scene='menu';
 let enemies=[],parts=[],dust=[],pups=[];
-const player={x:0,y:0,dmg:55,beamW:16,maxShield:60,shield:60,regen:10,magnet:0.13,odRate:1,health:3,invuln:0,hitDelay:0};
-let stardust=0,score=0,combo=1,od=0,novaFlash=0,shake=0,slow=0;
+const player={x:0,y:0,dmg:55,beamW:16,maxShield:60,shield:60,regen:10,magPull:300,odRate:1,health:3,invuln:0,hitDelay:0};
+let stardust=0,score=0,combo=1,od=0,shake=0,slow=0;   // novaFlash was written twice, read never
 let sectorIdx=0,waveIdx=0,waveDefs=[],spawnQ=[],spawnClock=0,bossActive=false,boss=null,phase='wave';
 let aimX=0,aimY=0,beamOn=false,kills=0,noDmgSector=true,banner='',bannerT=0;
+let runStart=0,reported=true,liveTop=0,slackMs=0,slackBroke=false,paused=false;
+
+// ---------- the force model ----------
+/* The one number that matters here is LINEAR: norm = force/ref(), which - because
+   the game's force is already floored by the movement's calibrated lo and ref()
+   is X3FCal.span() - is arithmetically X3FCal.raw(). Every threshold below is
+   applied to it and never to X3FCal.frac(), the eased display curve: 0.85 eased
+   is 0.90 linear, and a weapon whose damage gate drifts with a drawing decision
+   is a bug waiting to happen. Nova draws its force as a bar, so it has no use for
+   the eased curve at all. */
+const PROTO=(window.X3FEX&&X3FEX.protocol)||{fullRangeFrac:0.85,midRangeFrac:0.45,repsMin:15,repsMax:40};
+/* Mirrors x3f-set.js's SLACK_FRAC / SLACK_MS so the game and the coach mean the
+   same thing by "slack", with a longer dwell so the game never punishes before
+   the reporter would even call it a fault. */
+const SLACK_LINE=0.04, SLACK_MS=800;
+/* The full-range line, measured against the top established THIS SESSION - the
+   same way x3f-set.js grades a rep, because "if you came in tired and never
+   reached your best, the reps you did manage are still your full range". This is
+   what makes the beam's one real threshold a fact about the athlete rather than
+   the arbitrary 0.7 that used to be there. */
+function topLin(){return liveTop>0.25?liveTop:1;}
+function fullLine(){return topLin()*(PROTO.fullRangeFrac||0.85);}
+
+const EXNAME=(function(){try{const e=window.X3FEX&&EXSLUG?X3FEX.get(EXSLUG):null;return e?e.name:'Nova'}catch(e){return 'Nova'}})();
+/* The shared in-set scoreboard. Nova had no force readout and no rep count of any
+   kind - the canvas HUD is invisible to the TV shell's 10-foot type scaling,
+   which keys off .chip, so on a television Nova's numbers were menu-sized. This
+   is the one enormous, consistent counter, sized in vh so it scales itself, and
+   its reps come from X3FSet.live() - the same detector that writes the log, so
+   the screen and the history cannot disagree. done() latches the instance shut so
+   the last number survives, which is why a new run gets a new one. */
+let hud=null;
+function newHud(){
+  try{if(hud)hud.destroy()}catch(e){}
+  hud=window.X3FHUD?X3FHUD.create({host:document.body,name:EXNAME}):null;
+  if(hud)hud.el.style.display='none';
+}
+function showHud(on){if(hud)hud.el.style.display=on?'':'none';}
 
 const UPGRADES=[
  {key:'dmg',   nm:'Beam Damage', ds:'+22% beam power', ic:'⚡', base:22, lvl:0},
- {key:'width', nm:'Beam Width',  ds:'wider beam, more targets', ic:'🌊', base:24, lvl:0},
+ {key:'width', nm:'Beam Width',  ds:'+22% beam width, more targets', ic:'🌊', base:24, lvl:0},
  {key:'shield',nm:'Shield Core', ds:'+25 max shield', ic:'🛡️', base:20, lvl:0},
  {key:'regen', nm:'Shield Regen',ds:'+40% regen speed', ic:'♻️', base:18, lvl:0},
  {key:'od',    nm:'Overdrive',   ds:'NOVA charges +30% faster', ic:'💥', base:22, lvl:0},
- {key:'magnet',nm:'Tractor Beam',ds:'+50% stardust pull range', ic:'🧲', base:16, lvl:0},
+ /* The copy used to say +50% while applyStats() applied +60%, and the one field
+    that DID match the copy (player.magnet) was never read by anything. */
+ {key:'magnet',nm:'Tractor Beam',ds:'+60% stardust pull force', ic:'🧲', base:16, lvl:0},
 ];
 function upLvl(k){const u=UPGRADES.find(x=>x.key===k);return u?u.lvl:0}
 function upCost(u){return Math.round(u.base*Math.pow(1.65,u.lvl))}
@@ -206,8 +274,7 @@ function applyStats(){
   player.maxShield=60+25*upLvl('shield');
   player.regen=10*(1+0.4*upLvl('regen'));
   player.odRate=1*(1+0.3*upLvl('od'));
-  player.magnet=0.13*(1+0.5*upLvl('magnet'));
-  player.magPull=300*(1+0.6*upLvl('magnet'));
+  player.magPull=300*(1+0.6*upLvl('magnet'));   // player.magnet was never read
 }
 
 // ---------- enemy configs (hp in beam-seconds units; base beam ~55 dmg/s) ----------
@@ -274,21 +341,116 @@ function award(k){if(ach[k])return;ach[k]=1;xset('novaAch',ach);banner='★ '+AC
 
 // ---------- run control ----------
 function startRun(){
+  /* Bank whatever is already in progress before wiping it. Restart used to call
+     straight into here, so twelve minutes of real work under tension vanished on
+     one unconfirmed tap of a button that sits in the control bar all game. It is
+     announced, so you can see it was saved rather than hope. */
+  bankRun(false);
   applyStatsReset();scene='play';score=0;combo=1;stardust=0;od=0;kills=0;player.health=3;player.shield=player.maxShield;player.invuln=0;player.hitDelay=0;
   enemies=[];parts=[];dust=[];pups=[];sectorIdx=-1;
+  runStart=performance.now();reported=false;liveTop=0;slackMs=0;slackBroke=false;paused=false;
+  /* Reset the WATCHER, not just the game. X3FSet.watch() starts sampling at page
+     load and only clears itself inside report(), so the first run of a session
+     reported a time under tension that spanned everything since the page opened.
+     On the TV, where the shell auto-starts the run at load, that meant every
+     first run carried the whole boot. */
+  try{if(window.X3FSet)X3FSet.reset()}catch(e){}
+  if(hype)hype.reset();
+  newHud();showHud(true);
+  if(hud)hud.set({reps:0,full:0,mid:0,weak:0,tier:'full',frac:0});
   $('firstrun').classList.remove('show');$('shop').classList.remove('show');$('gameover').classList.remove('show');
   startSector(0);
 }
 function applyStatsReset(){UPGRADES.forEach(u=>u.lvl=0);applyStats();player.shield=player.maxShield;}
+
+/* ONE way to bank a run, and everything that ends one calls it.
+
+   Dying was the only path that logged anything. Restart, Back, closing the tab
+   and the TV's Back key all discarded the run outright. bankRun() is idempotent
+   (`reported`), so the game-over card, the Restart button, pagehide and a
+   backgrounded tab can all call it and exactly one entry is written.
+
+   The report carries a score and NO rep count on purpose: that pairing is what
+   marks the entry `run`, and x3f-progress.js then folds same-day runs of the
+   same game, movement and band into one session instead of three. The watcher
+   still supplies the reps, the three tiers, the peak and the time under tension
+   it measured itself, so the entry is completely honest - it is honestly a run
+   rather than a set. */
+function bankRun(quiet){
+  if(reported)return null;
+  reported=true;
+  const secs=runStart?Math.max(0,Math.round((performance.now()-runStart)/1000)):0;
+  const seen=(window.X3FSet&&X3FSet.seen)?X3FSet.seen():{reps:0,tut:0};
+  if(score>hiScore){hiScore=score;xset('novaHi',hiScore);}
+  if(!(Math.round(score)>0||(seen.reps||0)>0||(seen.tut||0)>2)){
+    try{if(window.X3FSet)X3FSet.reset()}catch(e){}
+    return null;
+  }
+  if(window.X3FSet)return X3FSet.report({g:'nova',score:Math.round(score),secs:secs,hype:hype,announce:!quiet});
+  logSession({g:'nova',score:Math.round(score),sector:sectorIdx+1,kills:kills,secs:secs});
+  return null;
+}
 function gameOver(){
   scene='over';beep(120,0.5,'sawtooth',0.16);
-  if(score>hiScore){hiScore=score;xset('novaHi',hiScore);}
-  if(window.X3FSet)X3FSet.report({g:'nova',score:Math.round(score),hype:hype});
-  else logSession({g:'nova',score:Math.round(score),sector:sectorIdx+1,kills:kills});
+  const r=bankRun(false);
+  if(hud)hud.done();
+  showHud(false);                 // z-index 40 would sit on top of this card
   $('goTitle').textContent=(sectorIdx+1>=SECNAMES.length)?'DEEP SPACE END':'GAME OVER';
-  $('goStats').innerHTML='Score <b style="color:var(--accent)">'+Math.round(score)+'</b> · reached Sector <b>'+(sectorIdx+1)+'</b> · '+kills+' kills<br>Best: '+hiScore+' pts, Sector '+bestSector;
+  /* WHAT WAS ACTUALLY LOGGED, on the one surface the player can still look at.
+     The set summary used to live entirely in toasts the player has already
+     looked away from, and Nova's log entry was a bare score. Now the card says
+     what the reporter measured - so what the history contains is visible at the
+     moment it is written rather than only in the dashboard a day later. */
+  let line='';
+  const e=r&&r.entry;
+  if(e&&e.reps!=null){
+    line='<br>Logged: <b>'+e.reps+'</b> reps'
+       +(e.full!=null?' · '+e.full+' full':'')
+       +((+e.mid||0)+(+e.weak||0)>0?' · '+((+e.mid||0)+(+e.weak||0))+' partial':'')
+       +(e.tut?' · '+Math.round(e.tut)+'s under tension':'');
+  }
+  $('goStats').innerHTML='Score <b style="color:var(--accent)">'+Math.round(score)+'</b> · reached Sector <b>'+(sectorIdx+1)+'</b> · '+kills+' kills<br>Best: '+hiScore+' pts, Sector '+bestSector+line;
   $('gameover').classList.add('show');
 }
+/* Leaving is not a reason to lose a set. No beforeunload on purpose - a confirm
+   dialog mid-workout is worse than the bug - so the run is banked on the way out.
+   pagehide covers the TV's Back key and a tab close; visibilitychange covers
+   switching apps, where rAF stops and the run cannot continue anyway. */
+addEventListener('pagehide',function(){bankRun(true)});
+
+/* BACKGROUNDING, which used to be a two-heart penalty.
+
+   spawnClock is wall-clock and rAF stops when the tab is hidden, so the wave
+   queue kept accruing while nothing drew. On return, one frame drained the WHOLE
+   remaining queue - up to eighteen enemies at sector 4, all at the same y, all
+   reaching the base together, two hearts gone before a single frame was painted.
+
+   The fix is to treat hidden time as time that did not happen: every absolute
+   deadline the game holds is pushed forward by the gap. "Back during a set is
+   pause, not exit" - but only up to a point. Twenty seconds of not looking at the
+   screen while holding a loaded bar means the set is over, so past that the run
+   is banked rather than resumed, because a single entry spanning a two-second
+   glance and a twenty-minute absence is not an honest set. */
+const RESUME_GRACE_MS=20000;
+let hiddenAt=0;
+function rebase(gap){
+  spawnClock+=gap;runStart+=gap;lastT+=gap;
+  if(slow)slow+=gap;
+  if(bannerT)bannerT+=gap;
+  if(player.invuln)player.invuln+=gap;
+  for(const e of enemies)if(e.hit)e.hit+=gap;
+}
+addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='hidden'){
+    if(scene==='play'){paused=true;hiddenAt=performance.now();}
+    return;
+  }
+  if(!paused)return;
+  paused=false;
+  const gap=performance.now()-hiddenAt;
+  if(scene==='play'&&gap>RESUME_GRACE_MS){bankRun(true);gameOver();return;}
+  rebase(gap);
+});
 
 // ---------- shop ----------
 function openShop(){
@@ -296,6 +458,7 @@ function openShop(){
   $('launchBtn').textContent='Launch Sector '+(sectorIdx+2)+' →';
   if(hype)hype.say('SECTOR '+(sectorIdx+1)+' CLEAR','core holding · upgrade up',true);
   if(music)music.duck(1.2);
+  showHud(false);            // the shop is a full-screen overlay; the counter is not
   renderShop();$('shop').classList.add('show');
 }
 function renderShop(){
@@ -305,7 +468,7 @@ function renderShop(){
   }).join('');
   $('shopList').querySelectorAll('.buy').forEach(b=>b.onclick=()=>{const u=UPGRADES.find(x=>x.key===b.dataset.k);const c=upCost(u);if(stardust>=c){stardust-=c;u.lvl++;applyStats();if(u.key==='shield')player.shield=Math.min(player.maxShield,player.shield+25);beep(660,0.08,'square',0.12);renderShop();}});
 }
-$('launchBtn').onclick=()=>{$('shop').classList.remove('show');startSector(sectorIdx+1);scene='play';};
+$('launchBtn').onclick=()=>{$('shop').classList.remove('show');startSector(sectorIdx+1);scene='play';showHud(true);};
 
 // ---------- particles ----------
 function P(o){o.life=0;o.max=o.max||1;parts.push(o);if(parts.length>420)parts.shift();}
@@ -329,7 +492,7 @@ function damageEnemy(e,d){
 function killEnemy(e){
   const idx=enemies.indexOf(e);if(idx<0)return;enemies.splice(idx,1);
   explode(e.x,e.y,e.col,e.type==='boss'?60:16,e.type==='boss'?2.4:1);
-  if(e.type==='boss'){bossActive=false;boss=null;boom();shake=Math.max(shake,18);novaFlash=performance.now()+1;$('flash').style.background='radial-gradient(circle at 50% 45%,rgba(255,120,150,.6),transparent 60%)';$('flash').style.opacity='0.8';setTimeout(()=>$('flash').style.opacity='0',80);}
+  if(e.type==='boss'){bossActive=false;boss=null;boom();shake=Math.max(shake,18);$('flash').style.background='radial-gradient(circle at 50% 45%,rgba(255,120,150,.6),transparent 60%)';$('flash').style.opacity='0.8';setTimeout(()=>$('flash').style.opacity='0',80);}
   else boom();
   combo=Math.min(99,combo+1);const gained=Math.round(e.sc*combo);score+=gained;kills++;
   if(hype)hype.set(score);
@@ -351,7 +514,7 @@ function grabPup(p){
   bannerT=performance.now()+1200;beep(760,0.1,'triangle',0.14);
 }
 function triggerNova(){
-  novaFlash=performance.now()+1;$('flash').style.background='radial-gradient(circle at 50% 55%,rgba(160,220,255,.75),transparent 62%)';$('flash').style.opacity='0.85';setTimeout(()=>$('flash').style.opacity='0',90);
+  $('flash').style.background='radial-gradient(circle at 50% 55%,rgba(160,220,255,.75),transparent 62%)';$('flash').style.opacity='0.85';setTimeout(()=>$('flash').style.opacity='0',90);
   shake=Math.max(shake,16);player.invuln=performance.now()+1500;P({ty:'ring',x:player.x,y:player.y,r0:10,r1:Math.max(W,H),max:.6,c:'rgba(160,220,255,'});
   enemies.slice().forEach(e=>{if(e.type==='boss'){damageEnemy(e,260);}else{damageEnemy(e,320);}});
   boom();beep(150,0.4,'sawtooth',0.16);
@@ -360,12 +523,41 @@ function triggerNova(){
 // ---------- update ----------
 function update(dt,now){
   player.x=W/2;player.y=H-Math.min(W,H)*0.14;
-  const R=ref(),norm=Math.min(1.2,force/R);
+  const R=ref(),norm=Math.min(1.2,force/R);     // LINEAR - see the force model
   const slowF=(now<slow)?0.45:1;
+
+  /* Ask the reporter what the set looks like so far. Same detector that writes
+     the log, so the scoreboard and the history cannot disagree, and Nova counts
+     nothing itself. */
+  let L=null;
+  if(window.X3FSet&&X3FSet.live){L=X3FSet.live();if(L.top>liveTop)liveTop=L.top;}
+
+  /* THE BAND GOING SLACK IS THE ONE THING THAT BREAKS THE CHAIN.
+
+     The combo used to climb on kills and never decay, resetting only when
+     something reached the base - so within a sector it ratcheted to 99 and a
+     long weak run outscored a short brutal one. Time was the currency, which is
+     precisely what the roadmap forbids. Now the chain measures how long you have
+     held tension, and "never let the band go slack at the bottom" is the rule it
+     enforces. The shield stops regenerating while you are slack too: the core
+     runs on the power you are feeding it, which is the same sentence the program
+     uses about the muscle. */
+  if(norm<SLACK_LINE)slackMs+=dt*1000;else{slackMs=0;slackBroke=false;}
+  const slack=slackMs>=SLACK_MS;
+  if(slack&&!slackBroke){
+    slackBroke=true;
+    if(combo>1){combo=1;banner='TENSION LOST';bannerT=now+1400;beep(170,0.22,'sawtooth',0.13);
+      if(hype)hype.say('SLACK','the core runs on tension',false);}
+  }
+
   // spawn queue
   if(phase==='wave'){
     const el=(now-spawnClock)/1000;
-    while(spawnQ.length&&el>=spawnQ[0].t){spawnEnemy(spawnQ.shift().type);}
+    /* Capped per frame. rebase() on resume is the real fix for a backgrounded
+       tab, but this is the belt: any future path that hands the loop a big time
+       jump releases the queue over a few frames instead of emptying it into one. */
+    let budget=3;
+    while(spawnQ.length&&el>=spawnQ[0].t&&budget-->0){spawnEnemy(spawnQ.shift().type);}
     const nonBoss=enemies.filter(e=>e.type!=='boss').length;
     if(spawnQ.length===0&&nonBoss===0&&!bossActive){
       if(waveIdx+1<waveDefs.length)startWave(waveIdx+1);
@@ -382,15 +574,24 @@ function update(dt,now){
     else{if(e.vx){e.x+=e.vx*dt;}e.y+=e.sp*dt*slowF;}
     if(e.trail&&Math.random()<0.6)P({ty:'p',x:e.x,y:e.y-e.r,vx:0,vy:-20,g:0,r:1.5,max:.3,c:'rgba(127,220,255,'});
     // reached the base?
-    if(e.y>=player.y-e.r*0.5){breach(e);enemies.splice(i,1);continue;}
+    if(e.y>=player.y-e.r*0.5){
+      /* Only killEnemy() used to clear bossActive/boss, so a boss removed on
+         this path left phase==='boss', bossActive===true, no boss in play, no
+         spawning and no sector clear - a permanent stall whose only exit was the
+         button that threw the run away. Latent today because the boss stops
+         descending at y < 0.2H, and silent the moment anything about the boss's
+         movement, the player's position or the radius changes. */
+      if(e===boss||e.type==='boss'){bossActive=false;boss=null;}
+      breach(e);enemies.splice(i,1);continue;
+    }
   }
   // beam
-  updateBeam(dt,norm,now);
+  updateBeam(dt,norm,now,slack);
   // overdrive auto nova
   if(od>=100){od=0;triggerNova();}
-  // shield regen
+  // shield regen - suspended while the band is slack (see above)
   if(player.hitDelay>0)player.hitDelay-=dt;
-  else if(player.shield<player.maxShield)player.shield=Math.min(player.maxShield,player.shield+player.regen*dt);
+  else if(!slack&&player.shield<player.maxShield)player.shield=Math.min(player.maxShield,player.shield+player.regen*dt);
   // stardust
   for(let i=dust.length-1;i>=0;i--){const d=dust[i];d.life+=dt;
     const dx=player.x-d.x,dy=player.y-d.y,dist=Math.hypot(dx,dy)||1;
@@ -414,16 +615,38 @@ function breach(e){
   else{player.health--;player.shield=player.maxShield;player.invuln=performance.now()+900;beep(140,0.3,'sawtooth',0.16);
     if(player.health<=0){gameOver();}}
 }
-function updateBeam(dt,norm,now){
-  beamOn=false;if(norm<0.06||!enemies.length)return;
+/* THE STRONG RANGE IS THE WEAPON.
+
+   Damage stays strictly proportional to force - that part was always right, and
+   it is the reason Nova is the one arcade game that never rewarded speed: you
+   cannot twitch your way to a kill, you have to hold.
+
+   What changed is the threshold. Shielded orbs used to need norm >= 0.7, a number
+   with no source. The program has a number, and the set reporter already grades
+   every rep against it: fullRangeFrac of the top you established today. So the
+   line where the beam breaks a shield is now literally the line where a rep
+   counts as full range, and it moves with the athlete rather than with the
+   calibration - "you move to full extension without lockout until you can no
+   longer reach that stronger range". Above it the beam also hits harder, so the
+   whole game pulls you toward living near full extension, which is where the
+   entire method lives.
+
+   The multiplier is deliberately modest. It has to be worth reaching for and it
+   must not make the mid-range partials at the end of a set feel worthless, since
+   those partials are the part of the set the source says counts most. */
+const STRONG_MULT=1.6;
+function updateBeam(dt,norm,now,slack){
+  beamOn=false;if(norm<0.06||slack||!enemies.length)return;
   // target = most advanced enemy (largest y), boss lower priority unless closest
   let tgt=null,best=-1e9;for(const e of enemies){const pr=e.y+(e.type==='boss'?-H*0.3:0);if(pr>best){best=pr;tgt=e;}}
   if(!tgt)return;beamOn=true;
   aimX+=(tgt.x-aimX)*Math.min(1,dt*14);aimY+=(tgt.y-aimY)*Math.min(1,dt*14);
   const px=player.x,py=player.y,dx=aimX-px,dy=aimY-py,len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len;
-  const bw=player.beamW*(0.5+norm*0.85),reach=len+Math.min(W,H)*0.12,dps=player.dmg*norm*dt;
+  const strong=norm>=fullLine();
+  const bw=player.beamW*(0.5+norm*0.85),reach=len+Math.min(W,H)*0.12;
+  const dps=player.dmg*norm*(strong?STRONG_MULT:1)*dt;
   for(let i=enemies.length-1;i>=0;i--){const e=enemies[i];const ex=e.x-px,ey=e.y-py,proj=ex*ux+ey*uy;if(proj<0||proj>reach)continue;
-    const perp=Math.abs(ex*uy-ey*ux);if(perp<bw+e.r){let d=dps;if(e.shielded&&norm<0.7)d*=0.3;damageEnemy(e,d);if(Math.random()<0.3)sparks(e.x,e.y,'rgba(255,255,255,');}}
+    const perp=Math.abs(ex*uy-ey*ux);if(perp<bw+e.r){let d=dps;if(e.shielded&&!strong)d*=0.3;damageEnemy(e,d);if(Math.random()<0.3)sparks(e.x,e.y,'rgba(255,255,255,');}}
 }
 
 // ---------- draw ----------
@@ -439,7 +662,14 @@ function draw(now){
   if(scene==='menu'){ctx.restore();return;}
   const norm=Math.min(1.2,force/ref());
   // stardust
-  for(const d of dust){ctx.fillStyle='#ffd23f';ctx.shadowColor='#ffe27a';ctx.shadowBlur=6;ctx.beginPath();ctx.arc(d.x,d.y,2.4,0,7);ctx.fill();}ctx.shadowBlur=0;
+  /* Style is identical for every mote, so it is set once outside the loop. A
+     boss drops 40+10*sector of these with a ten-second lifetime, and setting
+     shadowColor/shadowBlur per particle made 100+ redundant state changes a
+     frame - the single most expensive thing a canvas can be asked to churn on a
+     TV SoC. */
+  if(dust.length){ctx.fillStyle='#ffd23f';ctx.shadowColor='#ffe27a';ctx.shadowBlur=6;
+    for(const d of dust){ctx.beginPath();ctx.arc(d.x,d.y,2.4,0,7);ctx.fill();}
+    ctx.shadowBlur=0;}
   // powerups
   for(const p of pups){drawPup(p,now);}
   // enemies
@@ -500,33 +730,53 @@ function drawPlayer(norm,now){
   ctx.fillStyle='#cfc4ff';ctx.shadowColor='#8f7dff';ctx.shadowBlur=14+norm*20;ctx.beginPath();ctx.arc(0,0,s*0.42*(1+norm*0.2),0,7);ctx.fill();ctx.shadowBlur=0;
   ctx.restore();
 }
+/* THE CANVAS HUD MOVED TO THE BOTTOM, all of it.
+
+   The top of the screen now belongs to the shared in-set scoreboard, which is the
+   one thing that has to be readable from four to eight feet away in peripheral
+   vision. Everything Nova draws itself is a between-reps number - score, sector,
+   chain, stardust, bars - so it goes where a glance is cheap and nothing
+   collides.
+
+   The new bar is BEAM POWER, and it answers the thing Nova never had: any force
+   readout at all. It carries a tick at the full-range line, so the threshold that
+   breaks a shielded orb is visible instead of being a number in the source, and
+   it turns gold when you are above it. */
 function drawHUD(norm,now){
   const pad=Math.min(W,H)*0.03,fs=Math.min(W,H)*0.032;
-  ctx.textBaseline='top';ctx.font='700 '+fs+"px 'Space Grotesk',sans-serif";
-  // score + sector
-  ctx.fillStyle='#eee9ff';ctx.fillText(Math.round(score),pad,pad*0.6);
-  ctx.font='600 '+fs*0.62+"px 'Space Grotesk',sans-serif";ctx.fillStyle='#a99fd6';
-  ctx.fillText('SECTOR '+(sectorIdx+1)+(sectorIdx<SECNAMES.length?'  ·  '+SECNAMES[sectorIdx]:'  ·  DEEP SPACE'),pad,pad*0.6+fs*1.05);
-  // combo (right)
-  ctx.textAlign='right';ctx.font='700 '+fs+"px 'Space Grotesk',sans-serif";ctx.fillStyle=combo>=5?'#ffd23f':'#ff7ad0';ctx.fillText('x'+combo,W-pad,pad*0.6);
-  ctx.font='600 '+fs*0.62+"px 'Space Grotesk',sans-serif";ctx.fillStyle='#ffd23f';ctx.fillText('✦ '+Math.floor(stardust),W-pad,pad*0.6+fs*1.05);ctx.textAlign='left';
-  // shield + health + overdrive bars (bottom-left above ctrl handled in canvas top area? draw near player)
-  const barW=Math.min(W*0.44,240),barX=pad,barY=H-pad*0.6-14;
-  // overdrive bar (bottom)
-  ctx.fillStyle='rgba(255,255,255,.12)';ctx.fillRect(barX,barY,barW,7);
-  ctx.fillStyle=od>=100?'#ffd23f':'#37e6ff';ctx.fillRect(barX,barY,barW*od/100,7);
-  ctx.fillStyle='#a99fd6';ctx.font='600 '+fs*0.5+"px 'Space Grotesk',sans-serif";ctx.textBaseline='bottom';ctx.fillText('OVERDRIVE',barX,barY-2);
-  // shield bar (above overdrive)
-  const syb=barY-20;ctx.fillStyle='rgba(255,255,255,.12)';ctx.fillRect(barX,syb,barW,9);
-  ctx.fillStyle='#37e6ff';ctx.fillRect(barX,syb,barW*Math.max(0,player.shield)/player.maxShield,9);
-  ctx.textBaseline='bottom';ctx.fillStyle='#a99fd6';ctx.fillText('SHIELD',barX,syb-2);
-  // health hearts (right)
-  ctx.textAlign='right';ctx.font='700 '+fs*0.9+"px sans-serif";ctx.fillStyle='#ff5d78';let hs='';for(let i=0;i<player.health;i++)hs+='♥';ctx.fillText(hs||'—',W-pad,H-pad*0.6);ctx.textAlign='left';
-  ctx.textBaseline='alphabetic';
-  // boss bar
-  if(bossActive&&boss){const bw=W-pad*2,by=pad*0.6+fs*2.4;ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(pad,by,bw,10);ctx.fillStyle='#ff5d78';ctx.fillRect(pad,by,bw*Math.max(0,boss.hp)/boss.maxhp,10);ctx.strokeStyle='rgba(255,255,255,.3)';ctx.lineWidth=1;ctx.strokeRect(pad,by,bw,10);}
-  // banner
-  if(now<bannerT){const a=Math.min(1,(bannerT-now)/400);ctx.globalAlpha=a;ctx.textAlign='center';ctx.font='700 '+Math.min(W,H)*0.06+"px 'Fredoka',sans-serif";ctx.fillStyle='#eee9ff';ctx.shadowColor='#8f7dff';ctx.shadowBlur=20;ctx.fillText(banner,W/2,H*0.34);ctx.shadowBlur=0;ctx.textAlign='left';ctx.globalAlpha=1;}
+  const barW=Math.min(W*0.44,240),barX=pad;
+  const bY=H-pad*0.6-14, oY=bY-20, sY=oY-20;      // beam / overdrive / shield
+  ctx.textBaseline='bottom';
+  // beam power (bottom) - with the full-range line marked
+  const strong=norm>=fullLine();
+  ctx.fillStyle='rgba(255,255,255,.12)';ctx.fillRect(barX,bY,barW,7);
+  ctx.fillStyle=strong?'#ffd23f':'#8f7dff';ctx.fillRect(barX,bY,barW*Math.min(1,norm),7);
+  ctx.fillStyle='rgba(255,255,255,.85)';ctx.fillRect(barX+barW*Math.min(1,fullLine())-1,bY-3,2,13);
+  ctx.fillStyle=strong?'#ffd23f':'#a99fd6';ctx.font='600 '+fs*0.5+"px 'Space Grotesk',sans-serif";
+  ctx.fillText(strong?'BEAM POWER · FULL RANGE':'BEAM POWER',barX,bY-2);
+  // overdrive
+  ctx.fillStyle='rgba(255,255,255,.12)';ctx.fillRect(barX,oY,barW,7);
+  ctx.fillStyle=od>=100?'#ffd23f':'#37e6ff';ctx.fillRect(barX,oY,barW*od/100,7);
+  ctx.fillStyle='#a99fd6';ctx.fillText('OVERDRIVE',barX,oY-2);
+  // shield
+  ctx.fillStyle='rgba(255,255,255,.12)';ctx.fillRect(barX,sY,barW,9);
+  ctx.fillStyle='#37e6ff';ctx.fillRect(barX,sY,barW*Math.max(0,player.shield)/player.maxShield,9);
+  ctx.fillStyle='#a99fd6';ctx.fillText('SHIELD',barX,sY-2);
+  // score / sector / chain / stardust + hearts (bottom right)
+  ctx.textAlign='right';
+  ctx.font='700 '+fs*0.9+"px sans-serif";ctx.fillStyle='#ff5d78';
+  let hs='';for(let i=0;i<player.health;i++)hs+='♥';ctx.fillText(hs||'—',W-pad,H-pad*0.6);
+  ctx.font='700 '+fs+"px 'Space Grotesk',sans-serif";ctx.fillStyle='#eee9ff';
+  ctx.fillText(Math.round(score),W-pad,oY+4);
+  ctx.font='600 '+fs*0.62+"px 'Space Grotesk',sans-serif";
+  ctx.fillStyle=combo>=5?'#ffd23f':'#ff7ad0';ctx.fillText('CHAIN x'+combo+'   ✦ '+Math.floor(stardust),W-pad,sY+2);
+  ctx.fillStyle='#a99fd6';
+  ctx.fillText('SECTOR '+(sectorIdx+1)+(sectorIdx<SECNAMES.length?'  ·  '+SECNAMES[sectorIdx]:'  ·  DEEP SPACE'),W-pad,sY-fs*0.75);
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  // boss bar - above the bottom stack, out of the scoreboard's way
+  if(bossActive&&boss){const bw=W-pad*2,by=sY-fs*1.9;ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(pad,by,bw,10);ctx.fillStyle='#ff5d78';ctx.fillRect(pad,by,bw*Math.max(0,boss.hp)/boss.maxhp,10);ctx.strokeStyle='rgba(255,255,255,.3)';ctx.lineWidth=1;ctx.strokeRect(pad,by,bw,10);}
+  // banner - below the scoreboard's number, which owns the top quarter
+  if(now<bannerT){const a=Math.min(1,(bannerT-now)/400);ctx.globalAlpha=a;ctx.textAlign='center';ctx.font='700 '+Math.min(W,H)*0.06+"px 'Fredoka',sans-serif";ctx.fillStyle='#eee9ff';ctx.shadowColor='#8f7dff';ctx.shadowBlur=20;ctx.fillText(banner,W/2,H*0.46);ctx.shadowBlur=0;ctx.textAlign='left';ctx.globalAlpha=1;}
   // idle hint
   if(scene==='play'&&norm<0.06&&enemies.length){ctx.globalAlpha=0.6+0.3*Math.sin(now*0.006);ctx.textAlign='center';ctx.fillStyle='#a99fd6';ctx.font='600 '+fs*0.7+"px 'Space Grotesk',sans-serif";ctx.fillText(EFFORT+' TO FIRE THE BEAM',W/2,player.y-Math.min(W,H)*0.12);ctx.textAlign='left';ctx.globalAlpha=1;}
 }
@@ -535,9 +785,22 @@ function drawHUD(norm,now){
 let lastT=performance.now(),dtGlobal=0.016;
 function loop(now){
   if(!W)resize();
-  const dt=Math.min(0.05,(now-lastT)/1000);lastT=now;dtGlobal=dt;
-  if(scene==='play')update(dt,now);
+  /* dt is floored at zero as well as capped. A rAF timestamp is the START of the
+     frame, so the very first one can predate the `lastT` captured during script
+     evaluation - and a negative dt runs the simulation backwards for a frame,
+     which among other things asks the canvas for negative radii and throws out
+     of the render loop. */
+  const dt=Math.max(0,Math.min(0.05,(now-lastT)/1000));lastT=now;dtGlobal=dt;
+  if(scene==='play'&&!paused)update(dt,now);
   draw(now);
+  /* The scoreboard belongs to the set, not to the scene: the shop and the
+     game-over card are full-screen overlays and the counter would sit on top of
+     them. */
+  if(hud&&scene==='play'){
+    const L=(window.X3FSet&&X3FSet.live)?X3FSet.live():null;
+    if(L)hud.set({reps:L.reps,full:L.full,mid:L.mid,weak:L.weak,tier:L.tier||'full',
+                  frac:Math.min(1,force/ref())});
+  }
   requestAnimationFrame(loop);
 }
 resize();player.x=W/2;player.y=H*0.86;aimX=W/2;aimY=H*0.3;requestAnimationFrame(loop);
@@ -546,7 +809,12 @@ resize();player.x=W/2;player.y=H*0.86;aimX=W/2;aimY=H*0.3;requestAnimationFrame(
 const hype=window.X3FHype?X3FHype.create({host:$('stage'),unit:'points',
   theme:{hot:'#ffd35c',cool:'#8f7dff',text:'#e7ecff'},
   ladder:[250,500,1000,2000,3500,5000,7500,10000,15000,25000],
-  best:()=>(typeof bestScore!=='undefined'?bestScore:0)}):null;
+  /* This read `bestScore`, which is Splash's variable and is declared nowhere in
+     this file. `typeof` on an undeclared global returns 'undefined' silently, so
+     the expression evaluated to 0 on every call, x3f-hype.js requires best > 0
+     before it will fire NEW BEST, and beating a 12,000-point personal best
+     therefore produced no acknowledgement of any kind during the run. */
+  best:()=>hiScore}):null;
 const music=window.X3FMusic?X3FMusic.create({mood:'nova',
   getIntensity:()=>Math.min(1,(force/ref())*1.05)}):null;
 (function(){const b=$('musicBtn');if(!b)return;

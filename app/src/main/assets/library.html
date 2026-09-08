@@ -1,56 +1,343 @@
 <!DOCTYPE html>
-<!-- X3F LIBRARY - the real X3 program: per-exercise setup, coaching cue, and strength-curve note,
- each paired with the games that train it. Movement data lives in x3f-exercises.js,
- shared with the guided sessions on X3F_Routine.html. -->
-<html lang="en"><head>
+<html lang="en">
+<!-- X3F LIBRARY — the movement reference.
+
+     WHAT CHANGED, AND WHY
+     ─────────────────────
+     This page used to be eleven cards carrying two lines of prose each. Since
+     x3f-exercises.js was reconciled against the member site it holds the whole
+     official record per movement — the Initial Setup list, the Execution &
+     Mechanics list, the faults, the band routing, the plate position, the
+     strength curve, the partial count to expect, the regression, the week it
+     unlocks, what it substitutes for. Almost none of that was on screen. It is
+     now, verbatim, because that record IS the value of a reference page.
+
+     Presentation is rebuilt on x3f-ui.css. The page carried its own private copy
+     of an older design language — one of four that had drifted apart (menus
+     audit D20) — and that copy is gone. Nothing here is sized in raw px: every
+     length is rem/vw/vh against :root{font-size:calc(100vw/120)}, so 1rem is 16
+     design px and the layout is identical whether the TV WebView hands us a 960
+     or a 1920 CSS-pixel viewport. A raw px here would render at half the
+     intended size on the most common Android TV configuration.
+
+     THREE THINGS THIS PAGE HAS TO TEACH, because getting them wrong is a
+     training error rather than a cosmetic one:
+
+       1. A BAND NAME IS NOT A LOAD. Doubling a band roughly doubles its force,
+          and doubled-vs-singled is fixed by the movement's setup, not chosen. A
+          White band doubled (100+ lb) is heavier than a Dark Gray band singled
+          (50–120 lb). So every card prints X3FEX.forceLabel() — the published
+          pound range for the routing that movement actually uses — and band
+          identity is never a colour swatch: it is the name in text, plus a
+          distinct shape, and only then a hue (OVERHAUL-PLAN AD-4).
+       2. THE BENT ROW IS THE OUTLIER. Its lat and bicep strength curves cross,
+          so its strongest range is the MIDDLE, not the top — which is why it
+          yields 10–15 partials where everything else yields 4–6. That is the
+          single most surprising fact in the source and it gets a callout.
+       3. THE UPRIGHT ROW IS A SUBSTITUTE, for people whose shoulders cannot
+          press overhead, and the source calls it biomechanically inferior.
+          Listing it as an equal eleventh option is a form-safety miss, so it is
+          gated behind that statement rather than presented alongside the rest.
+
+     LAYOUT AND THE D-PAD. Every horizontal group — the top bar, the contents
+     row, each card's band row, each card's launch row — is a full-width
+     container marked data-nav-row. That is not decoration: a row's CONTAINER is
+     what Up/Down measures, so a full-width container is what lets the cursor
+     drop INTO the row instead of stepping past it. Getting this wrong is
+     exactly how 28 Library game links became unreachable (docs/audit/
+     phase1-verify.md S-2): the band picker sat at the far right of the card and
+     the game links at the far left, so Down from a picker always found the next
+     card's picker aligned and near, and never once entered the left-hand column.
+     Both are on the left now AND both are full-width rows, so that failure is
+     ruled out twice over.
+
+     NOT STICKY, deliberately. A sticky top bar is permanently the nearest thing
+     above the cursor, so once the previous row scrolls off screen Up lands on
+     the header instead of the previous movement. The remote's BACK button
+     reaches [data-nav-back] wherever the page is scrolled, so nothing is lost by
+     letting the bar scroll away. -->
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>X3F Library</title>
-<meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#0F1114"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="x3f-ui.css">
 <style>
-:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--gold:#ffd35c;--cyan:#37d6ff;--violet:#8f7dff;--hot:#ff5d78;--orange:#ff9a5c;--navring:#2ff0b0;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);--e:cubic-bezier(.2,.9,.25,1)}
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html{scroll-behavior:smooth}
-body{font-family:var(--d);color:var(--txt);background:radial-gradient(120vw 60vh at 80% -10%,rgba(47,240,176,.08),transparent 60%),var(--bg);min-height:100dvh;padding:calc(16px + var(--sat)) 16px calc(28px + var(--sab));-webkit-user-select:none;user-select:none}
-.wrap{max-width:820px;margin:0 auto}
-.top{display:flex;align-items:center;gap:8px;margin-bottom:14px}
-.brand{font-weight:800;font-size:19px;letter-spacing:2px}.brand b{color:var(--accent)}
-.spacer{flex:1}
-a.home{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 14px;transition:border-color .18s}
-a.home:hover{border-color:var(--accent)}
-.method{background:linear-gradient(180deg,rgba(47,240,176,.09),rgba(255,255,255,.03));border:1px solid var(--brd);border-radius:16px;padding:13px 15px;margin-bottom:18px}
-.method h3{font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
-.method p{font-family:var(--n);font-size:12.5px;color:var(--dim);line-height:1.55}
-.method b{color:var(--txt)}
-.cat{font-family:var(--n);font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--dim);margin:20px 2px 10px;font-weight:700;display:flex;align-items:center;gap:10px}
-.cat:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--brd),transparent)}
-.ex{background:var(--panel);border:1px solid var(--brd);border-radius:16px;padding:14px;margin-bottom:10px;transition:border-color .2s,box-shadow .24s var(--e)}
-.ex:hover{border-color:var(--brd2)}
-.exhead{display:flex;align-items:flex-start;gap:10px;margin-bottom:9px}
-.exname{font-weight:800;font-size:17px;line-height:1.15}
-.muscle{font-family:var(--n);font-size:11.5px;color:var(--dim);margin-top:2px}
-.exhead .r{flex:1}
-select{font-family:var(--n);font-weight:600;font-size:12.5px;background:var(--bg2);color:var(--txt);border:1px solid var(--brd2);border-radius:10px;padding:8px 9px;cursor:pointer;flex:0 0 auto}
-.strong{display:inline-block;font-family:var(--n);font-size:11.5px;font-weight:700;color:var(--gold);background:rgba(255,211,92,.1);border:1px solid rgba(255,211,92,.28);border-radius:8px;padding:4px 9px;margin-bottom:9px}
-.strong.mid{color:var(--orange);background:rgba(255,154,92,.12);border-color:rgba(255,154,92,.35)}
-.detail{font-family:var(--n);font-size:12.5px;line-height:1.5;color:var(--dim);margin-bottom:6px}
-.detail .lbl{display:inline-block;font-weight:700;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--cyan);margin-right:6px;vertical-align:1px}
-.detail.cue .lbl{color:var(--accent)}
+/* Only what is specific to this screen. Everything shared lives in x3f-ui.css. */
+
+:root{
+  /* x3f-nav.js injects [data-nav]{scroll-margin:var(--x3f-navmargin,1.5rem)}.
+     A movement card is taller than a viewport, so a stop scrolled flush to the
+     edge buries the label that explains it. Three rem of lead keeps a row's own
+     heading on screen without scrolling a whole extra card into view. */
+  --x3f-navmargin:3rem;
+}
+
+/* ── the injected 10-foot block, and how this page survives it ────────────
+   tools/sync-from-web.py wraps every menu page that is not in its
+   RESOLUTION_INVARIANT set in a `@media (min-width:1200px)` rescue written for
+   the old phone-sized pages. It sets `body{font-size:17px}`,
+   `.detail{font-size:14px!important}` and `select{font-size:14px!important}`,
+   among others. Fourteen raw px is half the 28-design-px legibility floor on a
+   panel that reports a 1920 viewport and a quarter of it at 960 — it would
+   undo the one thing that makes this page resolution-invariant.
+
+   Renaming out of the way is the usual answer and it is what the rest of this
+   file does (nothing here is called .wrap, .exname, .muscle, .note, .day,
+   .mini, .set, .play, .cta or .go). It is not available for `.detail` or for
+   `select`: tools/func-test/cases.js asserts on `.detail` and on `#lib select`,
+   and those assertions describe behaviour this page must keep. So the page wins
+   the cascade instead. Two !important declarations are decided by SPECIFICITY,
+   never by order, so a scoped selector beats the injected bare one from
+   anywhere in the document; `body` needs only the !important, because the
+   injected rule does not carry one. */
+body{font-size:var(--t-body)!important}
+#lib .detail{font-size:var(--t-body)!important}
+#lib select{font-size:var(--t-body)!important}
+
+/* ── the one scroll container ─────────────────────────────────────────────
+   x3f-ui.css puts overflow:hidden on <body> (a TV screen never scrolls the
+   document), so the page owns exactly one scroller and everything lives in it.
+   100dvh needs Chrome 108 and a TV WebView is commonly several releases behind,
+   so the 100vh line underneath is the one that runs there. */
+.shell{position:relative;z-index:1;height:100vh;height:100dvh;
+  overflow-y:auto;overflow-x:hidden;padding:0 var(--safe-x);scrollbar-width:none}
+.shell::-webkit-scrollbar{display:none}
+
+/* Focus is drawn once, by x3f-ui.css's .foc, and its glow is an ::after pinned
+   to the element — which needs a positioned box or it escapes to whatever
+   ancestor happens to be positioned. */
+[data-nav]{position:relative}
+
+/* ── top bar ─────────────────────────────────────────────────────────────
+   x3f-music.js looks for .top/.topbar/.updrow/header to host its toggle, and
+   appends a [data-nav] button. Being the row container means that button joins
+   the row rather than becoming an orphan band of its own. */
+.topbar{display:flex;align-items:center;gap:var(--s-2);
+  padding:var(--safe-y) 0 var(--s-3);flex-wrap:wrap}
+.brand{font-size:var(--t-h2);font-weight:var(--w-bold);letter-spacing:.06em}
+/* --accent-2 rather than --accent: the brand violet is 4.7:1 on this ground and
+   the floor for text is 7:1. The lighter step clears 8:1 and still reads violet. */
+.brand b{color:var(--accent-2)}
+.grow{flex:1 1 auto}
+
+.navbtn{font-family:var(--font-display);font-size:var(--t-min);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-pill);padding:var(--s-1) var(--s-3);cursor:pointer;
+  text-decoration:none;white-space:nowrap;line-height:1.3;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+/* Focus changes the FILL, not only the ring. A ring alone is not readable
+   across a room by someone who cannot separate the accent hue from the surface. */
+.navbtn.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+
+/* ── the two explainer panels ────────────────────────────────────────────
+   These are the only prose on the page that is not straight from the source,
+   and they exist because both facts are load-bearing: what a set is supposed to
+   be, and why a band name alone tells you nothing.
+
+   They carry no [data-nav], so the D-pad cannot pause on them — which means
+   they have to be READABLE ON ARRIVAL or they cannot be read at all. That is
+   menus audit D7 (six sections of the Progress dashboard that the cursor
+   teleports past and can never stop on) arriving from the other direction. So
+   the two sit SIDE BY SIDE and are budgeted to fit, with the top bar and the
+   contents row, inside one 1080-design-px screen. Anything that does not fit
+   there does not belong in an intro. */
+.intro{display:grid;grid-template-columns:1.05fr .95fr;gap:var(--s-3);
+  align-items:start;margin-bottom:var(--s-3)}
+.panel{background:var(--surface);border:.125rem solid var(--line);
+  border-radius:var(--r-2);padding:var(--s-3) var(--s-4)}
+.panel h2{font-size:var(--t-h2);font-weight:var(--w-bold);margin-bottom:var(--s-2)}
+.panel .lead{font-size:var(--t-min);color:var(--txt-2);line-height:1.45}
+.panel .lead b{color:var(--txt)}
+
+.rules{display:grid;grid-template-columns:1fr 1fr;gap:var(--s-2) var(--s-4);
+  margin-top:var(--s-2)}
+.rule dt{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--accent-2);margin-bottom:.25rem}
+.rule dd{font-size:var(--t-min);color:var(--txt-2);line-height:1.45}
+
+/* The published pound ranges, laid out as a table because that is what it is.
+   Band identity in the left column is a .x3f-band: name in text, plus a shape
+   that differs per band, and only then a hue. */
+.bandtab{display:grid;grid-template-columns:auto 1fr 1fr;gap:var(--s-1) var(--s-3);
+  margin-top:var(--s-2);align-items:center}
+.bandtab .th{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--dim)}
+.bandtab .v{font-family:var(--font-num);font-variant-numeric:tabular-nums;
+  font-size:var(--t-min);font-weight:var(--w-bold);color:var(--txt);white-space:nowrap}
+.bandtab .v.none{color:var(--dim);font-family:var(--font-display);font-weight:var(--w-body)}
+
+/* ── contents row ────────────────────────────────────────────────────────
+   Eleven complete movement records is a long page. Four jump targets turn
+   "scroll to the calf raise" from sixteen presses into two. */
+.jump{display:flex;gap:var(--s-2);flex-wrap:wrap;align-items:center;
+  padding:0 0 var(--s-3)}
+.jlabel{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--dim);margin-right:var(--s-1)}
+.jbtn{font-family:var(--font-display);font-size:var(--t-min);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-pill);padding:var(--s-1) var(--s-3);cursor:pointer;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.jbtn .n{color:var(--dim);font-weight:var(--w-body)}
+.jbtn.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+.jbtn.foc .n{color:#0B0813;opacity:.7}
+
+/* ── group headings ──────────────────────────────────────────────────────── */
+.cathead{margin:var(--s-5) 0 var(--s-3)}
+.cat{font-size:var(--t-title);font-weight:var(--w-bold);line-height:1.1}
+.catnote{font-size:var(--t-min);color:var(--dim);margin-top:var(--s-1);max-width:60rem;line-height:1.45}
+
+/* ── a movement card ─────────────────────────────────────────────────────── */
+.ex{background:var(--surface);border:.125rem solid var(--line);border-radius:var(--r-3);
+  padding:var(--s-4);margin-bottom:var(--s-3)}
+.ex.mid{border-color:rgba(255,158,74,.45)}     /* the bent row */
+.ex.sub{border-color:rgba(255,99,118,.45)}     /* the upright row */
+
+.exhead{display:flex;align-items:flex-start;gap:var(--s-3);flex-wrap:wrap;
+  margin-bottom:var(--s-3)}
+.exid{font-family:var(--font-num);font-variant-numeric:tabular-nums;
+  font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.12em;
+  color:var(--accent-2);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-1);padding:var(--s-1) var(--s-2);white-space:nowrap}
+.exttl{flex:1 1 30rem;min-width:0}
+.mname{font-size:var(--t-h1);font-weight:var(--w-bold);line-height:1.1}
+.msc{font-size:var(--t-min);color:var(--txt-2);margin-top:var(--s-1);line-height:1.4}
+.verb{font-family:var(--font-num);font-size:var(--t-h2);font-weight:var(--w-bold);
+  letter-spacing:.14em;color:var(--mint)}
+
+/* ── facts row: the band picker plus everything the setup fixes for you ──
+   The picker sits FIRST and at the left edge, in line with the launch row
+   below it. That alignment is half of the fix for phase1-verify S-2; the
+   data-nav-row containers are the other half. */
+.bandrow{display:flex;align-items:center;gap:var(--s-3);flex-wrap:wrap;
+  background:var(--bg-lift);border:.125rem solid var(--line);border-radius:var(--r-2);
+  padding:var(--s-3);margin-bottom:var(--s-3)}
+/* The focus ring is a 0.625rem outline at a 0.25rem offset on a box that also
+   grows 6%, so a focusable control needs about a rem of clearance or the ring
+   paints over its own label. That is not a detail: the label is what tells you
+   OK cycles the value. */
+.picker{display:flex;flex-direction:column;gap:var(--s-2)}
+.picker .lbl{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--dim)}
+#lib select{font-family:var(--font-display);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-1);padding:var(--s-1) var(--s-3);cursor:pointer;
+  -webkit-appearance:none;appearance:none;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+#lib select.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+/* The option list itself is drawn by the platform and never opens on a TV —
+   x3f-nav.js cycles the value in place on OK — but it is still readable when
+   this page is opened in a browser. */
+#lib select option{background:var(--surface-2);color:var(--txt)}
+
+.fact{display:flex;flex-direction:column;gap:.15rem;padding:0 var(--s-2);
+  border-left:.125rem solid var(--line)}
+.fact .k{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--dim)}
+.fact .v{font-size:var(--t-body);font-weight:var(--w-bold);color:var(--txt)}
+.fact .v.num{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+.fact.warn .v{color:var(--amber)}
+.fact.good .v{color:var(--mint)}
+
+/* ── callouts ────────────────────────────────────────────────────────────
+   Used sparingly, for the four places where the source says something that
+   contradicts what a reasonable person would assume. */
+.call{border-radius:var(--r-2);padding:var(--s-2) var(--s-3);margin-bottom:var(--s-3);
+  border:.125rem solid var(--line-2);background:var(--surface-2)}
+.call .ck{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.12em;
+  text-transform:uppercase;margin-bottom:var(--s-1)}
+.call p{font-size:var(--t-body);color:var(--txt-2);line-height:1.45;max-width:64rem}
+.call p b{color:var(--txt)}
+.call.amber{border-color:rgba(255,158,74,.5);background:#1B1710}
+.call.amber .ck{color:var(--amber)}
+.call.hot{border-color:rgba(255,99,118,.55);background:#21120F}
+.call.hot .ck{color:var(--hot)}
+.call.cyan{border-color:rgba(53,216,245,.45)}
+.call.cyan .ck{color:var(--cyan)}
+.call.violet .ck{color:var(--accent-2)}
+
+/* ── the official lists ──────────────────────────────────────────────────
+   Two columns, because a single column of body text across a 1920 canvas is
+   about 110 characters and the eye loses the return sweep well before that.
+   Half the screen at 32 design px is ~55 characters, which is the target. */
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:var(--s-3) var(--s-5);
+  margin-bottom:var(--s-3)}
+/* The cap matters only when the grid collapses to one column: 32 design px
+   across the full content width is about 100 characters a line, and the eye
+   loses the return sweep long before that at ten feet. */
+.col{max-width:64rem}
+.col h4{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--cyan);margin-bottom:var(--s-2)}
+.col.mech h4{color:var(--accent-2)}
+.col ol,.col ul{list-style:none}
+.detail{color:var(--txt-2);line-height:1.45;margin-bottom:var(--s-2);
+  display:flex;gap:var(--s-2);align-items:baseline}
+.detail .b{flex:none;font-family:var(--font-num);font-variant-numeric:tabular-nums;
+  font-weight:var(--w-bold);color:var(--dim);min-width:1.6rem}
 .detail b{color:var(--txt)}
-.games{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
-.gm{display:flex;flex-direction:column;gap:2px;text-decoration:none;color:inherit;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:9px 13px;min-width:86px;transition:border-color .15s,transform .1s var(--e)}
-.gm:active{transform:translateY(1px)}.gm:hover{border-color:var(--accent)}
-.gm .gn{font-weight:800;font-size:14px}
-.gm .gu{font-family:var(--n);font-size:10.5px;letter-spacing:.5px;color:var(--dim);text-transform:uppercase}
-.gm.bloom{border-left:3px solid var(--accent)}.gm.max{border-left:3px solid var(--gold)}.gm.zone{border-left:3px solid var(--cyan)}.gm.boss{border-left:3px solid var(--hot)}.gm.duel{border-left:3px solid #ff9a6a}.gm.rhythm{border-left:3px solid var(--violet)}.gm.splash{border-left:3px solid var(--gold)}.gm.nova{border-left:3px solid var(--violet)}
-.note{color:var(--dim);font-size:12.5px;line-height:1.5;margin-top:16px;text-align:center}
-.note a{color:var(--accent)}
-/* end of a scrollable list: breathing room plus a hairline, so hitting the
-   bottom reads as the bottom instead of the page just refusing to move */
-.endcap{height:1px;width:min(140px,40%);margin:30px auto calc(80px + var(--sab));background:linear-gradient(90deg,transparent,var(--brd2),transparent)}
-</style><script>
+
+.faults{border-top:.125rem solid var(--line);padding-top:var(--s-3);margin-bottom:var(--s-3)}
+.faults h4{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--hot);margin-bottom:var(--s-2)}
+.faultlist{display:flex;gap:var(--s-2);flex-wrap:wrap}
+.fault{font-size:var(--t-min);color:var(--txt-2);background:var(--surface-2);
+  border:.125rem solid rgba(255,99,118,.3);border-radius:var(--r-pill);
+  padding:var(--s-1) var(--s-3)}
+
+/* ── launch row ──────────────────────────────────────────────────────────── */
+.launch{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:var(--s-2)}
+.games{display:flex;gap:var(--s-3);flex-wrap:wrap}
+.gm{display:flex;flex-direction:column;gap:.15rem;text-decoration:none;color:inherit;
+  background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-left:.5rem solid var(--accent);border-radius:var(--r-2);
+  padding:var(--s-2) var(--s-4);min-width:22rem;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.gm .gn{font-size:var(--t-body);font-weight:var(--w-bold)}
+.gm .gu{font-size:var(--t-min);color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.gm.foc{background:var(--accent);color:#0B0813}
+.gm.foc .gu{color:#0B0813;opacity:.75}
+/* A game's own accent, which is a different question from band identity: the
+   game's NAME is written on the card, so the colour is decoration rather than
+   the only carrier of meaning. */
+.gm.g-bloom{border-left-color:var(--mint)}
+.gm.g-max{border-left-color:var(--gold)}
+.gm.g-zone{border-left-color:var(--cyan)}
+.gm.g-boss{border-left-color:var(--hot)}
+.gm.g-duel{border-left-color:var(--amber)}
+.gm.g-rhythm{border-left-color:var(--accent-2)}
+.gm.g-splash{border-left-color:var(--cyan)}
+.gm.g-nova{border-left-color:var(--accent)}
+
+/* ── the upright-row gate ────────────────────────────────────────────────
+   Collapsed on every visit on purpose. The source is emphatic — "only, I
+   repeat, only for people who lack shoulder mobility" — and a reference page
+   that lists it as an equal eleventh option is quietly telling a healthy
+   shoulder to do the inferior movement. Re-asserting the warning per visit
+   costs one press and is the whole point of the control. */
+.gaterow{display:flex;padding-top:var(--s-2)}
+.gatebtn{font-family:var(--font-display);font-size:var(--t-body);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid rgba(255,99,118,.55);
+  border-radius:var(--r-2);padding:var(--s-2) var(--s-4);cursor:pointer;text-align:left;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.gatebtn.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+
+.foot{font-size:var(--t-min);color:var(--dim);line-height:1.45;
+  text-align:center;margin-top:var(--s-4);max-width:64rem;margin-left:auto;margin-right:auto}
+.pad{height:12rem}
+
+/* One column below a squarish viewport: a 4:3 panel or a browser window that is
+   taller than it is wide would otherwise run 26-character columns. */
+@media (max-aspect-ratio:5/4){
+  .cols{grid-template-columns:1fr}
+  .rules{grid-template-columns:1fr 1fr}
+}
+</style>
+<script>
 /* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames */
 window.X3FFILES={bloom:'bloom.html',splash:'splash.html',nova:'nova.html',flow:'flow.html',
  zone:'arena.html',max:'arena.html',boss:'arena.html',duel:'duel.html',rhythm:'rhythm.html',
@@ -78,53 +365,604 @@ addEventListener('load',function(){setTimeout(function(){
 </script>
 </head>
 <body>
-<div class="wrap">
-<div class="top"><div class="brand">X3F <b>LIBRARY</b></div><div class="spacer"></div>
-<a class="home" href="routine.html" data-nav>Routines</a>
-<a class="home" href="launcher.html" data-nav data-nav-back>Home</a></div>
-<div class="method">
-<h3>The X3 way — every movement</h3>
-<p><b>Variable resistance</b> loads you heavy in the strong range, light in the weak range. Keep <b>constant tension</b> — never lock out at the top, never rest at the bottom. Slow &amp; controlled, ~2–3s each way. Do <b>15–40 full reps</b>, then keep going with <b>diminishing range</b> — shorter and shorter partials — to <b>true failure</b>. The goal is exhausting the muscle, not hitting a number. (Bloom's burnout phase is built on exactly this.)</p>
+
+<div class="shell" id="shell">
+
+  <div class="topbar" id="topbar" data-nav-row>
+    <div class="brand">X3F <b>LIBRARY</b></div>
+    <div class="grow"></div>
+    <a class="navbtn" href="routine.html" data-nav data-nav-id="nav-routine">Guided workout</a>
+    <a class="navbtn" href="launcher.html" data-nav data-nav-back data-nav-id="nav-home">Home</a>
+  </div>
+
+  <!-- The contents row comes BEFORE the two explainer panels on purpose. It is
+       the first thing the cursor can sit on, so it has to be on screen when the
+       page opens — and it turns "scroll to the calf raise" from sixteen presses
+       into two for anybody who already knows the method. -->
+  <div class="jump" id="jump" data-nav-row></div>
+
+  <div class="intro" id="intro"></div>
+
+  <div id="lib"></div>
+
+  <div class="foot">Every setup and mechanics list on this page is the official one, from the member
+    site. Pick the band you are actually on, then launch a game — it starts pre-configured for that
+    movement and that band.</div>
+  <div class="pad"></div>
 </div>
-<div id="lib"></div>
-<div class="note">Pick a band, then tap a game to launch it pre-configured. Want the whole day coached end to end? Use <a href="routine.html" data-nav>guided Routines</a>.</div>
-<div class="endcap"></div>
-</div>
+
+<script>
+/* Claim the focus class BEFORE x3f-nav.js loads. Otherwise it installs its own
+   ring — a green box-shadow inherited from the palette this page just stopped
+   using — and the screen ends up with two focus vocabularies. x3f-ui.css owns
+   .foc, so there is exactly one ring in the app. */
+window.X3FNAV_CLASS = 'foc';
+</script>
 <script src="x3f-exercises.js"></script>
+<script src="x3f-band.js"></script>
+<script src="x3f-nav.js"></script>
+<script src="x3f-fx.js"></script>
+<script src="x3f-music.js"></script>
 <script>
 "use strict";
-const $=id=>document.getElementById(id);
-function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
-function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
-const EXD=window.X3FEX, BANDS=EXD.bands;
-let libBand=xget('libBand',{});
-function bandFor(ex){return libBand[ex.slug]||ex.band}
-function opts(sel){return BANDS.map(b=>`<option value="${b}"${b===sel?' selected':''}>${b}</option>`).join('')}
-function render(){
-  $('lib').innerHTML=EXD.groups.map(([cat,slugs])=>`<div class="cat">${cat}</div>`+slugs.map(slug=>{
-    const ex=EXD.get(slug); if(!ex)return '';
-    const bd=bandFor(ex);
-    return`<div class="ex">
-      <div class="exhead"><div class="r"><div class="exname">${ex.name}</div><div class="muscle">${ex.muscle}</div></div>
-        <select data-n="${ex.slug}" data-nav>${opts(bd)}</select></div>
-      <div class="strong${ex.mid?' mid':''}">💪 ${ex.range}</div>
-      <div class="detail"><span class="lbl">Setup</span>${ex.setup}</div>
-      <div class="detail cue"><span class="lbl">Cue</span>${ex.cue}</div>
-      <div class="games">${ex.games.map(g=>{const G=EXD.games[g];
-        return`<a class="gm ${g}" href="${EXD.gameUrl(g,{from:'lib',band:bd,tempo:'3000',ex:ex.slug})}" data-nav><span class="gn">${G.name}</span><span class="gu">${G.sub}</span></a>`}).join('')}</div>
-    </div>`;
-  }).join('')).join('');
-  $('lib').querySelectorAll('select').forEach(s=>s.onchange=()=>{libBand[s.dataset.n]=s.value;xset('libBand',libBand);render()});
-  if(window.X3FNav)X3FNav.refresh();
+
+/* ────────────────────────────────────────────────────────────────────────
+   Every module except x3f-exercises.js is optional here. Ambience, music and
+   even the nav may fail to load and this page must still render its content —
+   a decorative module is never allowed to blank the reference. That is not
+   hypothetical: the ambient layer could leave the whole page at opacity:0 if
+   its mount threw (menus audit D6).
+   ──────────────────────────────────────────────────────────────────────── */
+
+const $ = id => document.getElementById(id);
+
+/* D15. This helper used to end in `?? d`. Nullish coalescing needs Chrome 80,
+   and a syntax error is thrown at PARSE time — before the try/catch on the very
+   same line exists — so on an older Android TV WebView the entire inline script
+   failed to parse and the page rendered a header, a blurb and nothing else. No
+   movement was ever listed. x3f-band.js writes the same helper without it. */
+function xget(k, d) {
+  try {
+    var v = JSON.parse(localStorage.getItem('x3f_' + k));
+    return (v === null || v === undefined) ? d : v;
+  } catch (e) { return d; }
 }
-render();
+function xset(k, v) { try { localStorage.setItem('x3f_' + k, JSON.stringify(v)); } catch (e) {} }
+
+const EXD = window.X3FEX || null;
+const BANDS = (EXD && EXD.bands) || ['White', 'Light Gray', 'Dark Gray', 'Black', 'Elite Black'];
+
+/* Everything out of the data file goes through this. The one deliberate
+   exception is `ex.cue`, which carries <b> emphasis in the data on purpose and
+   is inserted as markup — it is named at its single use site so the exception
+   cannot spread by copy-paste. */
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ── which band is this movement on ──────────────────────────────────────
+   ONE answer, owned by x3f-band.js. This used to be `libBand[slug] || ex.band`
+   — two of the six things that could decide a band, and neither of them the one
+   that matters most: a calibration the user has actually done. Calibrate wrote
+   against the GLOBAL band and this read a PER-MOVEMENT one, so the normal path
+   through the app filed a calibration under one key and looked it up under
+   another; the game then fell back to a hardcoded ceiling and no rep was ever
+   counted. Asking x3f-band.js here is the half of that fix that stops the
+   Library HANDING a game the wrong band. The local fallback exists only so a
+   404 on that module degrades to the old behaviour instead of a blank page. */
+const BAND = {
+  get: function (slug) {
+    if (window.X3FBand) return X3FBand.forMovement(slug);
+    var m = xget('exBand', {});
+    return (m && m[slug]) || xget('band', 'White');
+  },
+  set: function (slug, band) {
+    /* An explicit per-movement choice. It deliberately does not move the global
+       setting — v1.4 fixed a bug where choosing a band for one movement
+       silently moved every other movement with it. */
+    if (window.X3FBand) { X3FBand.set(slug, band); return; }
+    var m = xget('exBand', {});
+    m[slug] = band; xset('exBand', m);
+    paintCard(slug);
+  },
+  suggested: function (slug) {
+    if (window.X3FBand && X3FBand.recommended) return X3FBand.recommended(slug);
+    var ex = EXD && EXD.get(slug);
+    return ex ? ex.band : null;
+  },
+  /* A real (non-auto) calibration for this movement on this band, if there is
+     one. "Calibrated 96–214 lb" is the difference between a game that scales to
+     you and one that scales to a hardcoded guess. */
+  calibration: function (slug, band) {
+    if (!window.X3FBand || !X3FBand.calibratedFor) return null;
+    var all = X3FBand.calibratedFor(slug);
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].band === band && !all[i].auto) return all[i];
+    }
+    return null;
+  }
+};
+
+/* ── the vocabulary the data file speaks ─────────────────────────────────
+   Every one of these is a hard constraint of the movement's setup rather than a
+   preference, which is why they are printed as facts next to the band and not
+   buried in the prose. */
+const CONFIG = {
+  doubled: 'Doubled band',
+  singled: 'Singled band',
+  loop: 'Looped band',
+  'front-foot': 'Under the front foot'
+};
+/* [label, is-the-exception]. The calf raise is the only movement that is not
+   midfoot, so its foot position is called out in amber rather than stated. */
+const PLATE = {
+  midfoot: ['Midfoot on the plate', 0],
+  balls: ['Balls of the feet', 1],
+  none: ['No ground plate', 0]
+};
+const CURVE = {
+  top: 'Strongest at the top',
+  mid: 'Strongest in the MIDDLE'
+};
+
+function forceOf(band, slug) {
+  try {
+    var s = EXD && EXD.forceLabel ? EXD.forceLabel(band, slug) : '';
+    return s || '';
+  } catch (e) { return ''; }
+}
+
+function bandChip(band) {
+  return '<span class="x3f-band" data-band="' + esc(band) + '"><span class="pip"></span>' +
+         esc(band) + '</span>';
+}
+
+/* ══════════════════════════════════════════════════ the explainer panels ══ */
+
+/* The two facts a reader needs before the eleven cards mean anything: what a
+   set is, and why a band name on its own is not a load. Numbers come from
+   X3FEX.protocol so nothing here can drift away from the engine that enforces
+   them. */
+function renderIntro() {
+  var P = (EXD && EXD.protocol) || {};
+  var lo = P.repsMin || 15, hi = P.repsMax || 40;
+  var sec = Math.round((P.repIdealMs || 5000) / 1000);
+
+  var rules = [
+    ['Variable resistance',
+     'Heavy where you are strong, light where you are weak. Each card names where its strong range is.'],
+    ['Constant tension',
+     'No lockout at the top, no slack at the bottom. Both are resting.'],
+    ['Tempo',
+     '2–3 seconds each way — about ' + sec + ' seconds a rep. Speed is never rewarded.'],
+    ['The set',
+     lo + '–' + hi + ' full reps, then diminishing range until the bar will not move an inch.'],
+    ['One set',
+     'One all-out set per movement. More than one makes you do worse.'],
+    ['Band rule, both ways',
+     hi + '+ full reps: go heavier. Under ' + lo + ': go LIGHTER — the half people forget.']
+  ];
+
+  var force = (EXD && EXD.bandForce) || {};
+  var rows = BANDS.map(function (b) {
+    var f = force[b] || {};
+    return '<div>' + bandChip(b) + '</div>' +
+           '<div class="v' + (f.singled && f.singled[0] !== null ? '' : ' none') + '">' +
+             (f.singled && f.singled[0] !== null
+               ? (f.singled[1] === null ? f.singled[0] + '+ lb' : f.singled[0] + '–' + f.singled[1] + ' lb')
+               : 'no published range') + '</div>' +
+           '<div class="v' + (f.doubled && f.doubled[0] !== null ? '' : ' none') + '">' +
+             (f.doubled && f.doubled[0] !== null
+               ? (f.doubled[1] === null ? f.doubled[0] + '+ lb' : f.doubled[0] + '–' + f.doubled[1] + ' lb')
+               : 'not used doubled') + '</div>';
+  }).join('');
+
+  $('intro').innerHTML =
+    '<div class="panel">' +
+      '<h2>The X3 way</h2>' +
+      '<div class="lead">Six rules that apply to all eleven movements below.</div>' +
+      '<dl class="rules">' +
+        rules.map(function (r) {
+          return '<div class="rule"><dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd></div>';
+        }).join('') +
+      '</dl>' +
+    '</div>' +
+    '<div class="panel">' +
+      '<h2>A band name is not a load</h2>' +
+      '<div class="lead">Doubled or singled is fixed by the movement’s setup — you do not choose it — ' +
+        'and doubling roughly doubles the force. So a <b>White band doubled is heavier than a Dark Gray ' +
+        'band singled</b>, and a colour on its own is misleading. Every card prints the published ' +
+        'pounds for the routing that movement actually uses.</div>' +
+      '<div class="bandtab">' +
+        '<div class="th">Band</div><div class="th">Singled</div><div class="th">Doubled</div>' +
+        rows +
+      '</div>' +
+    '</div>';
+}
+
+/* ══════════════════════════════════════════════════════════ the cards ═════ */
+
+/* Notes on each group, keyed by position in X3FEX.groups. The group NAMES come
+   from the data file; what the grouping means does not, and the difference
+   between "extra work" and "instead of" is the whole reason these four exist. */
+const GROUP_NOTE = [
+  'Four movements, one set each, multi-joint first. Never pre-exhaust a small muscle that a bigger lift depends on.',
+  'Four movements, one set each. The calf raise comes last on purpose — the deadlift has already taken your grip, so the bar is held by your traps.',
+  'Extra work, unlocked in week 5. Added to push day, never instead of the core four.',
+  'A replacement for the overhead press, for shoulders that cannot press overhead. Not an extra movement, and not a better one.'
+];
+
+/* The upright row stays collapsed until it is asked for, and re-collapses on
+   every fresh visit. Session-scoped on purpose: a band change re-renders the
+   list and must not slam it shut under the reader, but arriving at the page
+   again should re-assert the warning. */
+let gateOpen = false;
+
+function factHTML(k, v, cls) {
+  return '<div class="fact' + (cls ? ' ' + cls : '') + '"><div class="k">' + esc(k) +
+         '</div><div class="v' + (cls === 'num' ? ' num' : '') + '">' + esc(v) + '</div></div>';
+}
+
+function bandRowHTML(ex) {
+  var band = BAND.get(ex.slug);
+  var cfg = CONFIG[ex.bandConfig] || 'Band';
+  var plate = PLATE[ex.plate] || ['—', 0];
+  var force = forceOf(band, ex.slug);
+  var cal = BAND.calibration(ex.slug, band);
+  var sug = BAND.suggested(ex.slug);
+
+  var out = '<div class="bandrow" data-nav-row>' +
+    '<div class="picker"><span class="lbl">Your band · OK to change</span>' +
+      '<select data-n="' + ex.slug + '" data-nav data-nav-id="band-' + ex.slug + '">' +
+        BANDS.map(function (b) {
+          return '<option value="' + esc(b) + '"' + (b === band ? ' selected' : '') + '>' + esc(b) + '</option>';
+        }).join('') +
+      '</select></div>' +
+    '<div class="fact"><div class="k">On the bar</div><div class="v">' + bandChip(band) + '</div></div>' +
+    factHTML(cfg, force || 'no published range', 'num') +
+    factHTML('Foot position', plate[0], plate[1] ? 'warn' : '');
+
+  /* Advice, never an instruction. Routines defaulted every movement to this
+     suggestion once, so starting a day on White silently moved you to Dark
+     Gray — a setting nobody chose. It is shown and never applied. */
+  if (sug && sug !== band) out += factHTML('X3 suggests', sug + ' for this lift');
+  out += cal
+    ? factHTML('Calibrated', Math.round(cal.lo) + '–' + Math.round(cal.hi), 'good')
+    : factHTML('Calibrated', 'not yet, on this band');
+
+  return out + '</div>';
+}
+
+function listHTML(title, cls, items, numbered) {
+  if (!items || !items.length) return '';
+  return '<div class="col ' + cls + '"><h4>' + esc(title) + '</h4>' +
+    '<' + (numbered ? 'ol' : 'ul') + '>' +
+    items.map(function (s, i) {
+      return '<li class="detail">' +
+        '<span class="b">' + (numbered ? (i + 1) : '·') + '</span>' +
+        '<span>' + esc(s) + '</span></li>';
+    }).join('') +
+    '</' + (numbered ? 'ol' : 'ul') + '></div>';
+}
+
+/* The four places the source contradicts what a reasonable person would assume.
+   Each one is a training error if it is missed, not a nicety. */
+function callsHTML(ex) {
+  var out = '';
+
+  if (ex.curve === 'mid') {
+    out += '<div class="call amber"><div class="ck">The outlier — read this one</div><p>' +
+      'This is the only movement whose strongest range is the <b>middle</b>, not the top. ' +
+      'The lat and the bicep strength curves cross each other, so peak power happens mid-rep. ' +
+      'That is why the bent row yields <b>' + ex.partials[0] + '–' + ex.partials[1] + ' partials</b> ' +
+      'after full-range failure where everything else yields four to six — and why stopping when ' +
+      'full reps stop is leaving most of the set behind.</p></div>';
+  }
+  if (ex.plate === 'balls') {
+    out += '<div class="call cyan"><div class="ck">Not midfoot</div><p>' +
+      'Every other movement centres the band under the <b>midfoot</b>. This one puts the ' +
+      '<b>balls of the feet</b> over the band with the heels hanging off the back edge of the plate — ' +
+      'and the heels never touch down, not even at the bottom.</p></div>';
+  }
+  if (ex.regression) {
+    out += '<div class="call violet"><div class="ck">If you cannot manage 15 slow reps</div><p><b>' +
+      esc(ex.regression.name) + '.</b> ' + esc(ex.regression.note) + '</p></div>';
+  }
+  if (ex.perSide) {
+    out += '<div class="call"><div class="ck">One side at a time</div><p>' +
+      'Two sets, one leg each, counted as a single movement: take one leg to complete fatigue, ' +
+      'then do the other. The rear leg is balance, never power.</p></div>';
+  }
+  return out;
+}
+
+function bodyHTML(ex) {
+  var partials = ex.partials ? (ex.partials[0] + '–' + ex.partials[1]) : '4–6';
+  var floor = ex.floorFrac ? Math.round(ex.floorFrac * 100) : 0;
+
+  /* ORDER MATTERS HERE, for two separate reasons.
+
+     Reading: the setup steps say "double the band" and "balls of the feet", so
+     the routing and the plate position have to be established before them, not
+     after. The band row therefore comes first, immediately under the name.
+
+     The D-pad: a card is about 1300 design px tall and a screen is 1080, so the
+     two stops in it have to be one at the TOP and one at the BOTTOM for the two
+     positions they scroll to to cover the whole card between them. Put both
+     stops together at the bottom and the top third of every card is only ever
+     glimpsed in passing on the way somewhere else — which is menus audit D7,
+     content the remote can scroll past but never pause on. */
+  return bandRowHTML(ex) +
+
+    callsHTML(ex) +
+
+    '<div class="call' + (ex.curve === 'mid' ? ' amber' : '') + '">' +
+      '<div class="ck">Strength curve</div>' +
+      '<p><b>' + esc(CURVE[ex.curve] || CURVE.top) + '.</b> ' + esc(ex.range) + '. ' +
+      'Expect <b>' + partials + ' partials</b> once full range breaks down' +
+      (floor ? ', and note that the start position already carries about <b>' + floor +
+               '% of this movement’s peak force</b> before the first rep' : '') +
+      '.</p></div>' +
+
+    /* The one deliberately unescaped field on the page: ex.cue carries <b>
+       around the word that matters, and losing it costs the cue its point. */
+    '<div class="call"><div class="ck">The cue</div><p>' + ex.cue + '</p></div>' +
+
+    '<div class="cols">' +
+      listHTML('Initial setup', 'setup', ex.setupSteps, true) +
+      listHTML('Execution & mechanics', 'mech', ex.mechanics, false) +
+    '</div>' +
+
+    (ex.faults && ex.faults.length
+      ? '<div class="faults"><h4>What goes wrong</h4><div class="faultlist">' +
+          ex.faults.map(function (f) { return '<div class="fault">' + esc(f) + '</div>'; }).join('') +
+        '</div></div>'
+      : '') +
+
+    '<div class="launch">Train it — launches pre-configured for this movement and band</div>' +
+    '<div class="games" data-nav-row>' +
+      (ex.games || []).map(function (g) {
+        var G = (EXD.games && EXD.games[g]) || { name: g, sub: '' };
+        return '<a class="gm g-' + g + '" data-nav data-nav-id="gm-' + ex.slug + '-' + g + '" href="' +
+          esc(EXD.gameUrl(g, { from: 'lib', band: BAND.get(ex.slug), tempo: '3000', ex: ex.slug })) + '">' +
+          '<span class="gn">' + esc(G.name) + '</span>' +
+          '<span class="gu">' + esc(G.sub) + '</span></a>';
+      }).join('') +
+    '</div>';
+}
+
+function cardHTML(ex) {
+  var day = ex.day === 'pull' ? 'PULL' : 'PUSH';
+  var meta = [ex.muscle,
+              ex.joint === 'multi' ? 'Multi-joint — goes before single-joint work'
+                                   : 'Single-joint — never before a lift that needs it'];
+  if (ex.unlockWeek) meta.push('Unlocks in week ' + ex.unlockWeek);
+  if (ex.officialSlug && ex.officialSlug !== ex.slug) {
+    meta.push('Official name: ' + ex.officialSlug.replace(/-/g, ' '));
+  }
+
+  var cls = 'ex' + (ex.curve === 'mid' ? ' mid' : '') + (ex.substituteFor ? ' sub' : '');
+
+  var head =
+    '<div class="exhead">' +
+      '<div class="exid">' + day + ' ' + ex.order + '</div>' +
+      '<div class="exttl"><div class="mname">' + esc(ex.name) + '</div>' +
+        '<div class="msc">' + esc(meta.join(' · ')) + '</div></div>' +
+      '<div class="verb">' + esc(ex.verb || '') + '</div>' +
+    '</div>';
+
+  /* The substitute is gated rather than listed. See the .gaterow comment in the
+     stylesheet: presenting it as an equal option tells a healthy shoulder to do
+     the movement the source calls biomechanically inferior. */
+  if (ex.substituteFor) {
+    var of = EXD.get(ex.substituteFor);
+    return '<article class="' + cls + '" id="' + ex.slug + '" data-slug="' + ex.slug + '">' + head +
+      '<div class="call hot"><div class="ck">A substitute, not an addition</div><p>' +
+        'This replaces the <b>' + esc(of ? of.name : ex.substituteFor) + '</b>, and only for people ' +
+        'whose shoulders cannot press overhead. The source is unusually direct: biomechanically it ' +
+        'is <b>not the better exercise</b> — but if damaged shoulders are the mobility you have, ' +
+        'this is what is left. Because you are already compromised, pull only to <b>mid-chest</b>, ' +
+        'never to the chin, and use a light band.</p></div>' +
+      '<div class="gaterow" data-nav-row>' +
+        '<button class="gatebtn" type="button" data-gate="' + ex.slug + '" data-nav data-nav-id="gate-' + ex.slug + '">' +
+          (gateOpen ? 'Hide the upright row' : 'Show it anyway — I cannot press overhead') +
+        '</button></div>' +
+      '<div class="exbody"' + (gateOpen ? '' : ' hidden') + '>' + bodyHTML(ex) + '</div>' +
+    '</article>';
+  }
+
+  return '<article class="' + cls + '" id="' + ex.slug + '" data-slug="' + ex.slug + '">' + head + bodyHTML(ex) + '</article>';
+}
+
+/* Kept as a global function called `render`, because tools/func-test/func.js
+   re-runs a page's own renderer by that name after seeding localStorage. */
+function render() {
+  if (!EXD || !EXD.groups) {
+    $('lib').innerHTML = '<div class="panel"><h2>The movement data did not load</h2>' +
+      '<div class="lead">x3f-exercises.js is missing, so there is nothing to show. ' +
+      'Everything else on this screen still works.</div></div>';
+    return;
+  }
+
+  $('lib').innerHTML = EXD.groups.map(function (g, gi) {
+    var cat = g[0], slugs = g[1];
+    return '<section class="grp" data-group="' + gi + '">' +
+      '<div class="cathead"><div class="cat">' + esc(cat) + '</div>' +
+      '<div class="catnote">' + esc(GROUP_NOTE[gi] || '') + '</div></div>' +
+      slugs.map(function (s) { var ex = EXD.get(s); return ex ? cardHTML(ex) : ''; }).join('') +
+    '</section>';
+  }).join('');
+
+  bind();
+  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+}
+
+/* ── in-place repaint ────────────────────────────────────────────────────
+   Changing a band used to rebuild all eleven cards, which threw the D-pad
+   cursor to the top of the page (menus audit D1) and cost a full layout of a
+   very long document on a 1 GB SoC. Only the numbers and the launch URLs
+   actually change, so only those are written. The cursor never moves because
+   the elements it can be sitting on are never replaced. */
+function paintCard(slug) {
+  var ex = EXD && EXD.get(slug);
+  var card = document.querySelector('.ex[data-slug="' + slug + '"]');
+  if (!ex || !card) return;
+
+  var band = BAND.get(slug);
+  var row = card.querySelector('.bandrow');
+  if (row) {
+    var fresh = document.createElement('div');
+    fresh.innerHTML = bandRowHTML(ex);
+    var next = fresh.firstChild;
+    /* The <select> itself is deliberately kept: it may be the focused element,
+       and replacing the node the ring is on is the whole bug this avoids. */
+    var live = row.querySelector('select');
+    var incoming = next.querySelector('select');
+    if (live && incoming) {
+      incoming.parentNode.replaceChild(live, incoming);
+      if (live.value !== band) live.value = band;
+    }
+    row.parentNode.replaceChild(next, row);
+  }
+
+  var links = card.querySelectorAll('.games .gm');
+  (ex.games || []).forEach(function (g, i) {
+    if (!links[i]) return;
+    links[i].setAttribute('href',
+      EXD.gameUrl(g, { from: 'lib', band: band, tempo: '3000', ex: slug }));
+  });
+
+  bind();
+  if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+}
+
+/* ── handlers ─────────────────────────────────────────────────────────── */
+
+function bind() {
+  var sels = $('lib').querySelectorAll('select');
+  for (var i = 0; i < sels.length; i++) {
+    sels[i].onchange = function () { BAND.set(this.dataset.n, this.value); };
+  }
+  var gates = $('lib').querySelectorAll('[data-gate]');
+  for (var j = 0; j < gates.length; j++) {
+    gates[j].onclick = function () {
+      gateOpen = !gateOpen;
+      var card = this.closest('.ex');
+      var body = card ? card.querySelector('.exbody') : null;
+      if (body) body.hidden = !gateOpen;
+      this.textContent = gateOpen ? 'Hide the upright row'
+                                  : 'Show it anyway — I cannot press overhead';
+      if (window.X3FNav) { try { X3FNav.refresh(); } catch (e) {} }
+    };
+  }
+}
+
+/* x3f-band.js is the single writer, so the single change notification is the
+   right place to repaint from — including when another module (Calibrate,
+   a game returning) moved the band while this page was open. */
+if (window.X3FBand && X3FBand.onChange) {
+  X3FBand.onChange(function (slug) {
+    if (slug) paintCard(slug); else render();
+  });
+}
+
+function renderJump() {
+  if (!EXD || !EXD.groups) return;
+  var SHORT = ['Push day', 'Pull day', 'Week 5+', 'Substitute'];
+  $('jump').innerHTML = '<span class="jlabel">Jump to</span>' +
+    EXD.groups.map(function (g, gi) {
+      return '<button class="jbtn" type="button" data-jump="' + gi + '" data-nav ' +
+        (gi === 0 ? 'data-nav-first ' : '') +
+        'data-nav-id="jump-' + gi + '">' + esc(SHORT[gi] || g[0]) +
+        ' <span class="n">' + g[1].length + '</span></button>';
+    }).join('');
+
+  var btns = $('jump').querySelectorAll('[data-jump]');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].onclick = function () {
+      var g = document.querySelector('.grp[data-group="' + this.dataset.jump + '"]');
+      if (!g) return;
+      try { g.scrollIntoView({ block: 'start' }); } catch (e) { g.scrollIntoView(); }
+      /* Seat WITHOUT scrolling, so the group's heading stays at the top of the
+         screen instead of the ring's own reveal pulling it back off. */
+      var t = g.querySelector('[data-nav]');
+      if (t && window.X3FNav) { try { X3FNav.refresh(); X3FNav.seat(t); } catch (e) {} }
+    };
+  }
+}
+
+/* ── boot ─────────────────────────────────────────────────────────────── */
+
+(function boot() {
+  try { renderIntro(); } catch (e) {}
+  try { renderJump(); } catch (e) {}
+  render();
+
+  /* Ambience is the first thing sacrificed if anything goes wrong with it. */
+  try { if (window.X3FFX && X3FFX.mount) X3FFX.mount({ image: 'assets/ui/aurora.jpg' }); } catch (e) {}
+  try {
+    if (window.X3FMusic && X3FMusic.attach) {
+      X3FMusic.attach({ mood: 'menu', buttonHost: $('topbar'), buttonClass: 'navbtn' });
+    }
+  } catch (e) {}
+
+  /* The music toggle is injected into the top bar after this script runs, so the
+     nav has to be told the row grew a control. Without it the button is visible
+     and unreachable, which the audit reports as UNREACHABLE. */
+  try { if (window.X3FNav) X3FNav.refresh(); } catch (e) {}
+
+  /* Something must always have focus on a TV; a screen with nothing focused is
+     a dead remote. It also has to be focus the user can SEE, which rules out the
+     first movement's band picker — that sits below the fold, so the ring would
+     be lit on something off screen and the remote would look broken. The first
+     contents chip is on screen at load, says what pressing OK will do, and Down
+     from it walks the whole reference. */
+  /* The home screen's movement cards already link here as
+     X3F_Library.html#<slug> (app.html renderRails). Nothing on this page ever
+     answered that, so those cards landed at the top of the reference and the
+     user had to find the movement by hand. Each card carries its slug as an id
+     now, and arriving with one seats the cursor on that movement. */
+  function hashCard() {
+    try {
+      var h = location.hash ? decodeURIComponent(location.hash.slice(1)) : '';
+      var card = h ? document.getElementById(h) : null;
+      return (card && card.classList.contains('ex')) ? card : null;
+    } catch (e) { return null; }
+  }
+
+  /* Run more than once, on purpose. The bundled face loads asynchronously, and
+     when it swaps in every line box on a 16,000-design-px page changes height —
+     so an offset measured before the swap points at a different movement
+     afterwards. Re-seeking costs nothing and is skipped the moment the user
+     touches the remote, so it can never yank the page out from under them. */
+  function seek() {
+    var card = hashCard();
+    if (!card) return;
+    try { if (window.X3FNav && X3FNav.engaged()) return; } catch (e) {}
+    try { card.scrollIntoView({ block: 'start' }); } catch (e) { card.scrollIntoView(); }
+  }
+
+  var target = null;
+  var landed = hashCard();
+  if (landed) { seek(); target = landed.querySelector('[data-nav]'); }
+
+  try {
+    if (window.X3FNav && !X3FNav.current()) {
+      if (!target) target = document.querySelector('#jump [data-nav]') ||
+                            document.querySelector('#lib select');
+      if (target) X3FNav.set(target, false);
+    }
+  } catch (e) {}
+
+  if (landed) {
+    addEventListener('load', seek);
+    try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(seek); } catch (e) {}
+    setTimeout(seek, 400);
+  }
+})();
 </script>
-<script src="x3f-music.js"></script>
-<script>/* menus hum too - idles low, lifts when you press something */
-addEventListener("load",function(){try{X3FMusic.attach({mood:"menu",buttonHost:document.querySelector(".top")});}catch(e){}});</script>
-<script src="x3f-fx.js"></script>
-<script>/* one ambient loop per menu page - the games keep their own */
-addEventListener("load",function(){try{X3FFX.mount({image:"assets/ui/aurora.jpg"});}catch(e){}});</script>
-<script src="x3f-nav.js"></script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
-</body></html>
+
+</body>
+</html>

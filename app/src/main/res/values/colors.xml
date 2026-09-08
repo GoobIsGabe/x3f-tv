@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The one colour the native side and the web side both have to agree on.
+
+  It matches the bg token in web/x3f-ui.css. The previous value (#05030F) was darker than
+  a TV panel can actually render, so everything in the bottom of the tonal range crushed to
+  the same flat black; #0F1114 is the darkest tone a TV renders honestly.
+
+  It is used in three places that must stay in step, or a cold launch flashes:
+    1. android:windowBackground on the theme  (what the system paints first)
+    2. WebView.setBackgroundColor in MainActivity (what the WebView paints before the page)
+    3. the bg token in the pages themselves
+-->
+<resources>
+    <color name="x3f_bg">#FF0F1114</color>
+</resources>

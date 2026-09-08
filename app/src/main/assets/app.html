@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<!-- X3F HOME — the leanback home screen.
+
+     A NEW FILE ON PURPOSE. The old launcher (index.html / launcher.html) stays
+     exactly where it is and keeps working while this is proven on the actual
+     television. When it is, the shell's LAUNCHER constant points here and the
+     old one is deleted. A big-bang swap of the screen the whole app starts from
+     is not worth the risk.
+
+     WHY THIS IS SHAPED THE WAY IT IS
+     ────────────────────────────────
+     The old home is a flat four-column grid of eleven identical cards with emoji
+     icons. It gives Workout — the entire point of the product — exactly the same
+     visual weight as Rhythm. It also has no idea what day it is.
+
+     A television home is a different thing:
+
+       INITIAL FOCUS ON START. The single most likely action costs ZERO D-pad
+       presses. This is the highest-leverage decision on the screen and it is
+       one line of code.
+
+       THREE OR FOUR ROWS, NOT A GRID. Google's own guidance is that a TV screen
+       should carry a phone's information density, not a desktop's. Rows also
+       give the D-pad an unambiguous mental model: left/right within a thing,
+       up/down between things.
+
+       THE HERO ANSWERS "WHAT AM I DOING TODAY". Push Day, week 6, four
+       movements, about twelve minutes. Not a menu — an answer.
+
+       THE LAST CARD BLEEDS PAST THE SAFE EDGE so a row reads as scrollable
+       without needing an arrow.
+
+     Everything is sized in rem against :root{font-size:calc(100vw/120)}, so 1rem
+     is 16 design px on a 1920 canvas — identical on the panel whether the
+     WebView hands us a 960 or a 1920 CSS-pixel viewport. See x3f-ui.css. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>X3F</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="x3f-ui.css">
+<style>
+/* Only what is specific to this screen. Everything shared lives in x3f-ui.css. */
+
+/* The whole page is ONE scroll container, with the hero in the flow rather than
+   pinned above a separately-scrolling rail area. Two reasons:
+
+     - A pinned hero plus an inner scroller means two scroll contexts, and the
+       D-pad has to guess which one a Down belongs to. Cards ended up scrolling
+       underneath the hero and getting clipped in half.
+     - It is the pattern every leanback interface uses, so it is what a remote
+       user already expects.
+
+   scroll-padding-top keeps a row's heading visible when the cursor lands on a
+   card in that row, instead of scrolling the label off the top. */
+.shell{position:relative;z-index:1;height:100dvh;overflow-y:auto;overflow-x:hidden;
+  padding:0 0 0 var(--safe-x);scrollbar-width:none;scroll-padding-top:8rem;
+  scroll-padding-bottom:4rem}
+.shell::-webkit-scrollbar{display:none}
+
+/* ── top bar ─────────────────────────────────────────────────────────────
+   Stays put: the bar's connection state and the way back to settings must be
+   reachable from anywhere on the page. */
+.top{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:var(--s-3);
+  padding:var(--safe-y) var(--safe-x) var(--s-2) 0;flex:none;
+  background:linear-gradient(var(--bg) 62%,rgba(15,17,20,0))}
+.brand{font-size:var(--t-h2);font-weight:var(--w-bold);letter-spacing:.06em}
+.brand b{color:var(--accent)}
+.topmeta{margin-left:auto;display:flex;align-items:center;gap:var(--s-2)}
+
+.chip{display:inline-flex;align-items:center;gap:var(--s-1);font-size:var(--t-min);
+  font-weight:var(--w-bold);padding:var(--s-1) var(--s-3);border-radius:var(--r-pill);
+  background:var(--surface-2);border:.125rem solid var(--line-2);color:var(--txt-2);
+  white-space:nowrap;cursor:pointer;position:relative;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.chip .dot{width:.85rem;height:.85rem;border-radius:50%;background:var(--dim);flex:none}
+.chip.live .dot{background:var(--mint)}
+.chip.warn .dot{background:var(--gold)}
+.chip.low  .dot{background:var(--hot)}
+
+/* ── hero ────────────────────────────────────────────────────────────── */
+.hero{display:flex;align-items:flex-end;gap:var(--s-6);
+  padding:var(--s-3) var(--safe-x) var(--s-4) 0}
+.heroL{min-width:0;flex:1 1 auto}
+.heroKicker{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent-2);margin-bottom:var(--s-1)}
+.heroTitle{font-size:var(--t-hero);font-weight:var(--w-bold);line-height:1.02;
+  letter-spacing:-.015em}
+.heroSub{font-size:var(--t-h2);color:var(--txt-2);margin-top:var(--s-2)}
+.heroWhy{font-size:var(--t-min);color:var(--dim);margin-top:var(--s-2);max-width:44rem;line-height:1.45}
+.heroR{flex:none;display:flex;flex-direction:column;gap:var(--s-2);align-items:stretch;min-width:22rem}
+
+.big{font-family:var(--font-display);font-size:var(--t-h1);font-weight:var(--w-bold);
+  color:#0B0813;background:var(--accent);border:.25rem solid transparent;
+  border-radius:var(--r-2);padding:var(--s-3) var(--s-5);cursor:pointer;text-align:center;
+  position:relative;text-decoration:none;display:block;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.big.sec{background:var(--surface-2);color:var(--txt);border-color:var(--line-2);
+  font-size:var(--t-body);padding:var(--s-2) var(--s-4)}
+/* A focused secondary button becomes primary-coloured. Changing the FILL, not
+   just the ring, is what makes focus readable at a glance across a room. */
+.big.sec.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+.card.foc .art{filter:none}
+.chip.foc{background:var(--accent);color:#0B0813}
+.chip.foc .dot{background:#0B0813}
+
+/* ── rails ───────────────────────────────────────────────────────────── */
+/* No scrolling of its own — the shell owns the one scroll context. */
+.rails{padding-bottom:var(--s-6)}
+.railwrap{margin-bottom:var(--s-4)}
+.railhead{font-size:var(--t-h2);font-weight:var(--w-bold);color:var(--txt-2);
+  margin:0 0 var(--s-2) 0;scroll-margin-top:7rem}
+.rail{display:flex;gap:var(--s-3);overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+  padding:var(--s-1) var(--safe-x) var(--s-2) 0}
+.rail::-webkit-scrollbar{display:none}
+
+.card{flex:none;width:20rem;background:var(--surface);border:.125rem solid var(--line);
+  border-radius:var(--r-2);overflow:hidden;cursor:pointer;text-decoration:none;color:inherit;
+  position:relative;display:flex;flex-direction:column;
+  transition:transform var(--focus-ms) var(--ease),border-color var(--focus-ms) linear,
+             background-color var(--focus-ms) linear}
+.card .art{height:9rem;background:var(--surface-2);position:relative;flex:none;
+  background-size:cover;background-position:center}
+.card .art .glyph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:3.5rem;opacity:.9}
+/* Fixed body height so a two-line subtitle ("time under tension") cannot make
+   one card taller than its neighbours and break the row's baseline. */
+.card .body{padding:var(--s-2) var(--s-3) var(--s-3);height:7rem;overflow:hidden}
+.card .t{font-size:var(--t-body);font-weight:var(--w-bold);line-height:1.15}
+.card .s{font-size:var(--t-min);color:var(--dim);margin-top:.25rem}
+
+/* A movement card in today's workout carries its band and its state.
+   The plates are 4:3 full-body figures, so the art area is TALLER than a game
+   card's and anchored to the top: a short 16:9 crop of a standing figure keeps
+   the legs and throws the head away, which is the half that identifies the
+   movement. */
+.card.move .art{height:11rem;background-position:center 18%;background-size:cover}
+.card.move.done{opacity:.55}
+.card.move.done .art::after{content:'';position:absolute;inset:0;background:rgba(51,226,174,.14)}
+.cardband{position:absolute;left:var(--s-2);bottom:var(--s-2)}
+
+/* ── the week strip ──────────────────────────────────────────────────── */
+.week{display:flex;gap:.4rem;align-items:flex-end;margin-top:var(--s-1)}
+.wd{width:1.6rem;height:1.6rem;border-radius:.35rem;background:rgba(236,238,242,.08)}
+.wd.done{background:var(--mint)}
+.wd.rest{background:rgba(236,238,242,.18)}
+.wd.today{outline:.2rem solid var(--accent);outline-offset:.15rem}
+
+/* ── modal ───────────────────────────────────────────────────────────── */
+.scrim{position:fixed;inset:0;background:rgba(8,10,14,.88);z-index:50;
+  display:flex;align-items:center;justify-content:center;padding:var(--safe-y) var(--safe-x);
+  opacity:0;pointer-events:none;transition:opacity 160ms linear}
+.scrim.show{opacity:1;pointer-events:auto}
+.modal{background:var(--surface);border:.125rem solid var(--line-2);border-radius:var(--r-3);
+  padding:var(--s-5);max-width:60rem;width:100%;max-height:100%;overflow:auto;scrollbar-width:none}
+.modal::-webkit-scrollbar{display:none}
+.modal h2{font-size:var(--t-title);font-weight:var(--w-bold);margin-bottom:var(--s-2)}
+.modal p{font-size:var(--t-body);color:var(--txt-2);line-height:1.45;margin-bottom:var(--s-3)}
+.row{display:flex;gap:var(--s-2);flex-wrap:wrap;margin-top:var(--s-3)}
+
+.code{font-family:var(--font-num);font-size:var(--t-hero);font-weight:var(--w-bold);
+  letter-spacing:.14em;color:var(--gold);text-align:center;margin:var(--s-3) 0}
+
+/* ── the notice strip ────────────────────────────────────────────────────
+   One line, above the rails, for the two things worth interrupting a home
+   screen for: a finished week, and a calibration that has gone stale. Both are
+   things the app knows and the user cannot - and a stale band max silently
+   skews every intensity reading in the app, which is the worst kind of wrong
+   because nothing looks broken. */
+.notice{display:flex;align-items:center;gap:var(--s-2);flex-wrap:wrap;
+  background:var(--surface);border:.125rem solid var(--line-2);border-left:.5rem solid var(--gold);
+  border-radius:var(--r-2);padding:var(--s-2) var(--s-3);
+  margin:0 var(--safe-x) var(--s-3) 0;font-size:var(--t-min)}
+.notice.review{border-left-color:var(--mint)}
+.notice b{font-size:var(--t-body)}
+.notice .say{color:var(--txt-2);flex:1 1 20rem;line-height:1.35}
+.notice .act{font-family:var(--font-display);font-size:var(--t-min);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-pill);padding:var(--s-1) var(--s-3);cursor:pointer;position:relative;
+  text-decoration:none;white-space:nowrap;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.notice .act.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+
+/* ── onboarding ──────────────────────────────────────────────────────── */
+.ob-card{max-width:64rem;width:100%;display:flex;flex-direction:column;gap:var(--s-3)}
+.ob-step{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent-2)}
+.ob-title{font-size:var(--t-title);font-weight:var(--w-bold);line-height:1.1}
+.ob-body{font-size:var(--t-body);color:var(--txt-2)}
+.ob-prose p{margin-bottom:var(--s-2);line-height:1.45;max-width:46rem}
+.ob-note{font-size:var(--t-min);color:var(--dim);margin-top:var(--s-2);max-width:46rem;line-height:1.4}
+.ob-choices{display:flex;flex-wrap:wrap;gap:var(--s-2);margin-bottom:var(--s-2)}
+.ob-choice{font-family:var(--font-display);font-size:var(--t-body);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-2);padding:var(--s-2) var(--s-3);cursor:pointer;position:relative;
+  display:flex;flex-direction:column;align-items:flex-start;gap:var(--s-1);min-width:16rem;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.ob-choice.on{border-color:var(--mint);background:var(--surface-3)}
+.ob-choice.on::after{content:'✓';position:absolute;top:var(--s-1);right:var(--s-2);color:var(--mint)}
+.ob-choice.foc{background:var(--accent);color:#0B0813}
+.ob-sub{font-size:var(--t-min);font-weight:var(--w-body);color:var(--dim)}
+.ob-choice.foc .ob-sub{color:#0B0813;opacity:.75}
+.ob-actions{display:flex;gap:var(--s-2);margin-top:var(--s-2)}
+.ob-btn{font-family:var(--font-display);font-size:var(--t-body);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-2);padding:var(--s-2) var(--s-5);cursor:pointer;position:relative;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.ob-btn.primary{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+.ob-btn.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+
+.endcap{height:.25rem;background:var(--line);border-radius:var(--r-pill);
+  margin:var(--s-4) var(--safe-x) 0 0}
+.pad{height:6rem}
+</style>
+<script>
+/* --- Android TV bundle (x3f-tv) --- launch targets use the bundle's filenames */
+window.X3FFILES={bloom:'bloom.html',splash:'splash.html',nova:'nova.html',flow:'flow.html',
+ zone:'arena.html',max:'arena.html',boss:'arena.html',duel:'duel.html',rhythm:'rhythm.html',
+ ascent:'ascent.html'};
+</script>
+<script>
+/* the remote has nothing focused until the first D-pad press - fix that */
+addEventListener('load',function(){setTimeout(function(){
+  try{ if(window.X3FNav && !X3FNav.current()) X3FNav.focusFirst(); }catch(e){}
+},180)});
+</script>
+</head>
+<body>
+
+<div class="shell">
+  <div class="top">
+    <div class="brand">X3<b>F</b></div>
+    <div class="topmeta">
+      <div class="chip" id="barChip" data-nav tabindex="0"><span class="dot"></span><span id="barTxt">Connecting…</span></div>
+      <div class="chip" id="settingsChip" data-nav tabindex="0">⚙ Settings</div>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="heroL">
+      <div class="heroKicker" id="heroKicker">Today</div>
+      <div class="heroTitle" id="heroTitle">Push Day</div>
+      <div class="heroSub" id="heroSub">Four movements · about 12 minutes</div>
+      <div class="heroWhy" id="heroWhy"></div>
+      <div class="week" id="week"></div>
+    </div>
+    <div class="heroR">
+      <a class="big" id="startBtn" data-nav href="routine.html">Start</a>
+      <a class="big sec" id="secondBtn" data-nav href="progress.html">Your progress</a>
+    </div>
+  </div>
+
+  <div id="notices"></div>
+
+  <div class="rails" id="rails"></div>
+</div>
+
+<!-- Overlays. Kept as siblings of .shell, not children, so nothing inherits a
+     stacking context from the scrolling rail container. -->
+<div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
+<div class="scrim" id="obScrim"></div>
+
+<script>
+/* Claim the focus class BEFORE x3f-nav.js loads. Otherwise it installs its own
+   ring — a green box-shadow inherited from the old palette — and the screen ends
+   up with two focus vocabularies. x3f-ui.css owns .foc, so there is exactly one
+   ring in the app and it is the one the design system defines. */
+window.X3FNAV_CLASS = 'foc';
+</script>
+<script src="x3f-firebase-config.js"></script>
+<script src="x3f-exercises.js"></script>
+<script src="x3f-band.js"></script>
+<script src="x3f-art.js"></script>
+<script src="x3f-cal.js"></script>
+<!-- The get-set delay lives here, and Settings edits it. Without this the panel
+     reported a hardcoded 10 and both buttons silently did nothing. -->
+<script src="x3f-calflow.js"></script>
+<script src="x3f-progress.js"></script>
+<script src="x3f-graduate.js"></script>
+<script src="x3f-sync.js"></script>
+<script src="x3f-onboard.js"></script>
+<script src="x3f-nav.js"></script>
+<script src="x3f-fx.js"></script>
+<script src="x3f-music.js"></script>
+<script>
+/* ────────────────────────────────────────────────────────────────────────
+   Every module below is optional. If a script fails to load the home screen
+   must still render and still be navigable — a decorative or analytical
+   module is never allowed to blank the page. That is not hypothetical: the
+   ambient layer could leave the whole app at opacity:0 if its mount threw,
+   and the Progress page had no guard on its engine at all.
+   ──────────────────────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+
+/* Everything this page interpolates into a template literal is machine-made — a
+   code from a fixed alphabet, a Firebase uid, an error string. The error string
+   is the one that comes off the wire, so it gets escaped like anything else
+   would: the rule is that nothing reaches innerHTML unescaped, not that this
+   particular value looked safe on the day it was written. */
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const has = n => { try { return !!window[n]; } catch (e) { return false; } };
+const EX = has('X3FEX') ? window.X3FEX : null;
+const PROG = has('X3FProg') ? window.X3FProg : null;
+
+/* The TV bundle ships lowercase filenames; the web build ships X3F_*.html.
+   sync-from-web.py injects window.X3FFILES before this script runs. */
+function file(key, def) { const m = window.X3FFILES; return (m && m[key]) || def; }
+
+/* ── what is today ────────────────────────────────────────────────────── */
+
+function today() {
+  /* Derived from what you have DONE, not from the calendar — the program's own
+     instruction is "you can put those workouts on whatever days you want", so a
+     missed Tuesday shifts the plan instead of desyncing it. */
+  let day = 'push', week = 1, phase = null, streak = 0;
+  try {
+    if (PROG && PROG.program) {
+      const p = PROG.program();
+      if (p) { day = p.day || day; week = p.week || week; }
+    }
+    if (PROG && PROG.streak) { const s = PROG.streak(); streak = (s && (s.days ?? s.current)) || 0; }
+  } catch (e) {}
+  try { if (EX && EX.phaseForWeek) phase = EX.phaseForWeek(week); } catch (e) {}
+  return { day, week, phase, streak };
+}
+
+function movesForToday(t) {
+  try {
+    if (EX && EX.forDay) return EX.forDay(t.day, t.week);
+  } catch (e) {}
+  return [];
+}
+
+function estimateMinutes(n) {
+  /* One set per movement, 15-40 slow reps at 4-6 s each, plus setup and a short
+     rest. The program calls weeks 5-12 "10 minute workouts", so this lands in
+     the right place rather than being invented. */
+  return Math.max(8, Math.round(n * 2.6));
+}
+
+/* ── render ───────────────────────────────────────────────────────────── */
+
+function renderHero() {
+  const t = today();
+  const moves = movesForToday(t);
+  const label = t.day === 'push' ? 'Push Day' : 'Pull Day';
+
+  $('heroKicker').textContent = t.phase
+    ? `Week ${t.week} · ${t.phase.name}`
+    : `Week ${t.week}`;
+  $('heroTitle').textContent = label;
+  $('heroSub').textContent = moves.length
+    ? `${moves.length} movements · about ${estimateMinutes(moves.length)} minutes · one set each`
+    : 'One set each, to complete fatigue';
+
+  /* The phase's own teaching point, so a second cycle through the program says
+     something new instead of repeating the same three tips forever. */
+  $('heroWhy').textContent = t.phase ? t.phase.teaches : '';
+
+  $('startBtn').href = file('routine', 'X3F_Routine.html') + '?day=' + encodeURIComponent(t.day);
+  $('startBtn').textContent = 'Start ' + label;
+
+  renderWeek(t);
+  return { t, moves };
+}
+
+function renderWeek(t) {
+  const el = $('week');
+  el.innerHTML = '';
+  let pattern = ['push','pull','rest','push','pull','rest','rest'];
+  try { if (t.phase && t.phase.pattern) pattern = t.phase.pattern; } catch (e) {}
+  let doneSet = null;
+  try { if (PROG && PROG.recentDays) doneSet = PROG.recentDays(7); } catch (e) {}
+  pattern.forEach((k, i) => {
+    const d = document.createElement('div');
+    d.className = 'wd' + (k === 'rest' ? ' rest' : '');
+    if (doneSet && doneSet[i]) d.className += ' done';
+    d.title = k === 'rest' ? 'Rest' : (k === 'push' ? 'Push' : 'Pull');
+    el.appendChild(d);
+  });
+}
+
+function bandChip(band) {
+  const s = document.createElement('span');
+  s.className = 'x3f-band cardband';
+  s.setAttribute('data-band', band || 'White');
+  s.innerHTML = '<span class="pip"></span>';
+  s.appendChild(document.createTextNode(band || 'White'));
+  return s;
+}
+
+function card(opts) {
+  const a = document.createElement('a');
+  a.className = 'card' + (opts.cls ? ' ' + opts.cls : '');
+  a.setAttribute('data-nav', '');
+  a.href = opts.href || '#';
+  const art = document.createElement('div');
+  art.className = 'art';
+  /* The glyph is ALWAYS present underneath, and generated art simply covers it.
+     Drawing it only as an else-branch meant that when an art file 404'd — which
+     is every card until the assets are generated — verifyArt() cleared the
+     background and left an empty grey box with nothing in it. A missing asset
+     has to degrade to something, not to nothing. */
+  if (opts.glyph) art.innerHTML = `<div class="glyph">${opts.glyph}</div>`;
+  var drew = false;
+  try {
+    if (window.X3FArt) {
+      if (opts.plate) { X3FArt.css(art, X3FArt.plate(opts.plate)); drew = true; }
+      else if (opts.gen) { X3FArt.css(art, X3FArt.card(opts.gen)); drew = true; }
+    }
+  } catch (e) {}
+  if (drew) art.innerHTML = '';
+  if (opts.art) art.dataset.upgrade = opts.art;
+  if (!drew && opts.art) art.style.backgroundImage = `url("${opts.art}")`;
+  if (opts.band) art.appendChild(bandChip(opts.band));
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.innerHTML = `<div class="t"></div><div class="s"></div>`;
+  body.querySelector('.t').textContent = opts.title || '';
+  body.querySelector('.s').textContent = opts.sub || '';
+  a.appendChild(art); a.appendChild(body);
+  if (opts.onclick) a.addEventListener('click', e => { e.preventDefault(); opts.onclick(); });
+  return a;
+}
+
+function rail(title, cards) {
+  if (!cards.length) return null;
+  const w = document.createElement('div');
+  w.className = 'railwrap';
+  const h = document.createElement('div');
+  h.className = 'railhead';
+  h.textContent = title;
+  const r = document.createElement('div');
+  r.className = 'rail';
+  cards.forEach(c => r.appendChild(c));
+  w.appendChild(h); w.appendChild(r);
+  return w;
+}
+
+/* Art is generated per docs/ART-DIRECTION.md. Until a file exists the card
+   falls back to a glyph rather than an empty box — a missing asset must never
+   look like a broken screen. */
+/* WebP, not JPEG. Android WebView has supported lossy WebP since API 14 and
+   this app's minSdk is 24, and at these sizes it is roughly half the bytes at
+   the same quality — which matters twice, because an image costs memory when it
+   is DECODED as well as disk when it is stored, against a 30-40 MB graphics
+   budget on a 1 GB television. The .jpg of every asset is still on disk beside
+   it as a fallback for anything that predates this. */
+function artFor(dir, key) { return `assets/${dir}/${key}.webp`; }
+
+const GAME_GLYPH = {
+  bloom:'🌱', splash:'💧', nova:'✦', flow:'∿', duel:'⚔', rhythm:'♪', ascent:'▲',
+  max:'◎', zone:'⏱', boss:'⬢'
+};
+
+function renderRails(ctx) {
+  const rails = $('rails');
+  rails.innerHTML = '';
+
+  /* ── today's movements ── */
+  const moveCards = ctx.moves.map(ex => {
+    let band = 'White';
+    try { if (window.X3FBand) band = window.X3FBand.forMovement(ex.slug); } catch (e) {}
+    let sub = ex.muscle || '';
+    try {
+      const lbl = EX && EX.forceLabel ? EX.forceLabel(band, ex.slug) : '';
+      if (lbl) sub = lbl;
+    } catch (e) {}
+    return card({
+      cls: 'move',
+      title: ex.name,
+      sub: sub,
+      band: band,
+      plate: ex.slug,
+      art: artFor('moves', ex.slug),
+      href: file('library', 'X3F_Library.html') + '#' + ex.slug
+    });
+  });
+  const r1 = rail(`Today — ${ctx.t.day === 'push' ? 'Push' : 'Pull'}`, moveCards);
+  if (r1) rails.appendChild(r1);
+
+  /* ── train ── */
+  const trainCards = [
+    card({ title:'Workout', sub:'guided session', gen:'workout', art:artFor('cards','workout'), href:file('routine','X3F_Routine.html') }),
+    card({ title:'Library', sub:'every movement', gen:'zone', href:file('library','X3F_Library.html') }),
+    card({ title:'Calibrate', sub:'set your range', gen:'max', href:file('calibrate','X3F_Calibrate.html') }),
+    card({ title:'Progress', sub:'your training', gen:'rhythm', href:file('progress','X3F_Progress.html') })
+  ];
+  rails.appendChild(rail('Train', trainCards));
+
+  /* ── play ── */
+  const games = EX && EX.games ? EX.games : {};
+  /* Ordered by how well each one serves the method, not alphabetically. Bloom
+     and Flow model a real X3 set; Max Effort and Hold the Zone measure
+     something the program actually asks for; the arcade games come last.
+     "arena" is not a key — Arena ships as three genuinely different modes. */
+  const order = ['bloom','flow','max','zone','boss','nova','splash','duel','rhythm'];
+  const gameCards = order.filter(k => games[k]).map(k => {
+    const g = games[k];
+    return card({
+      title: g.name, sub: g.sub, glyph: GAME_GLYPH[k] || '●',
+      gen: k, art: artFor('cards', k),
+      href: EX.gameUrl ? EX.gameUrl(k, { from:'home' }) : (g.file || '#')
+    });
+  });
+  rails.appendChild(rail('Play', gameCards));
+
+  const cap = document.createElement('div'); cap.className = 'endcap'; rails.appendChild(cap);
+  const pad = document.createElement('div'); pad.className = 'pad'; rails.appendChild(pad);
+}
+
+/* UPGRADE a generated card to a photographic one where one exists, without ever
+   showing an empty box in between. Probing with Image() rather than
+   fetch() because a file:// page cannot XHR a sibling file — that is an
+   invariant of this bundle, not an oversight. */
+function verifyArt() {
+  document.querySelectorAll('.card .art').forEach(el => {
+    const url = el.dataset.upgrade;
+    if (!url) return;
+    const img = new Image();
+    img.onload = () => {
+      el.style.backgroundImage = `url("${url}")`;
+      /* Remove ONLY the glyph. innerHTML = '' also deleted the band chip, which
+         is a child of the same element - so every movement card lost its band
+         the moment its photograph finished loading. */
+      const g = el.querySelector('.glyph');
+      if (g) g.remove();
+    };
+    img.src = url;
+  });
+}
+
+/* ── notices ──────────────────────────────────────────────────────────── */
+
+function notice(cls, title, say, actLabel, onAct) {
+  const n = document.createElement('div');
+  n.className = 'notice' + (cls ? ' ' + cls : '');
+  const b = document.createElement('b'); b.textContent = title;
+  const t = document.createElement('div'); t.className = 'say'; t.textContent = say;
+  n.appendChild(b); n.appendChild(t);
+  if (actLabel) {
+    const a = document.createElement('button');
+    a.className = 'act'; a.textContent = actLabel; a.setAttribute('data-nav', '');
+    a.onclick = onAct;
+    n.appendChild(a);
+  }
+  return n;
+}
+
+function renderNotices() {
+  const host = $('notices');
+  host.innerHTML = '';
+  if (!PROG) return;
+
+  /* A week that finished and has not been acknowledged. Deliberately not gated
+     on it being the seventh evening - the television is often off that night,
+     and a review nobody ever sees is not a feature. */
+  try {
+    const r = PROG.weekReview && PROG.weekReview();
+    if (r && r.due) {
+      host.appendChild(notice('review', 'Week ' + r.week + ' done',
+        r.sentence, 'See the week', function () { weekModal(r); }));
+    }
+  } catch (e) {}
+
+  /* Band graduation. The one thing the app can see that you cannot: that this
+     movement has now hit 40 full reps twice, which is X3's own trigger for
+     moving up. Safety prompts sort first - a band that is too heavy is the one
+     that hurts you. */
+  try {
+    const g = (window.X3FGraduate && X3FGraduate.all && X3FGraduate.all()) || [];
+    if (g.length) {
+      const p0 = g[0];
+      const cls = (p0.confidence === 'safety') ? '' : 'review';
+      const n = notice(cls, p0.title, p0.message,
+        p0.actions && p0.actions[0] ? p0.actions[0].label : 'OK',
+        function () { gradModal(p0); });
+      host.appendChild(n);
+    }
+  } catch (e) {}
+
+  /* Roadmap item 1. Calibrate deliberately does not log a training set, so
+     nothing ever recorded WHEN a band was last measured - and every force
+     percentage in the app is a fraction of that measurement. */
+  try {
+    const stale = PROG.staleCalibrations && PROG.staleCalibrations();
+    if (stale && stale.length) {
+      const s0 = stale[0];
+      const more = stale.length > 1 ? ' (' + stale.length + ' movements are due)' : '';
+      host.appendChild(notice('', 'Worth re-measuring',
+        s0.name + ' on ' + s0.band + ' was last calibrated ' + s0.phrase + more +
+        '. Every force reading for it is a fraction of that number.',
+        'Recalibrate', function () {
+          location.href = file('calibrate', 'X3F_Calibrate.html') +
+            '?ex=' + encodeURIComponent(s0.ex) + '&band=' + encodeURIComponent(s0.band);
+        }));
+    }
+  } catch (e) {}
+}
+
+/* The prompt in full, with its actions. Deliberately NEVER changes a band by
+   itself: you change bands with your hands, so the app is making a claim, not
+   an adjustment. */
+function gradModal(p) {
+  const conf = p.confidence === 'safety'
+      ? '<p class="x3f-small" style="color:var(--hot)">X3 states this one as a safety rule.</p>'
+    : p.confidence === 'ours'
+      ? '<p class="x3f-small" style="color:var(--dim)">This is this app’s suggestion. The program does not address it.</p>'
+    : p.confidence === 'mixed'
+      ? '<p class="x3f-small" style="color:var(--dim)">X3’s own statements pull different ways here, so this is a choice rather than an instruction.</p>'
+      : '<p class="x3f-small" style="color:var(--dim)">This is X3’s own printed rule.</p>';
+  const btns = (p.actions || []).map(function (a, i) {
+    return '<button class="big sec" data-nav id="gr' + i + '">' + a.label + '</button>';
+  }).join('');
+  openModal('<h2>' + p.title + '</h2><p>' + p.message + '</p>' + conf +
+            '<div class="row">' + btns + '</div>',
+    function () {
+      (p.actions || []).forEach(function (a, i) {
+        const b = $('gr' + i);
+        if (!b) return;
+        b.onclick = function () {
+          try {
+            if (a.id === 'accept') X3FGraduate.accept(p.slug);
+            else if (a.id === 'decline') X3FGraduate.decline(p.slug);
+            else if (a.id === 'later') X3FGraduate.later(p.slug);
+            else X3FGraduate.decline(p.slug);
+          } catch (e) {}
+          closeModal();
+          try { renderNotices(); renderRails(renderHero()); verifyArt(); } catch (e) {}
+          try { if (window.X3FNav) window.X3FNav.refresh(); } catch (e) {}
+        };
+      });
+    });
+}
+
+function weekModal(r) {
+  /* newPBs() returns one entry per METRIC that improved - reps, full reps,
+     partials, peak - so a movement that got better at all four appears four
+     times.
+
+     Three shapes were tried before this one. Listing every entry reads as a
+     stutter ("Chest Press, Chest Press, Chest Press"). Listing each movement
+     with everything that improved reads as a paragraph. Listing each movement
+     with its single best improvement reads as "Chest Press - partials past
+     failure, Tricep Press - partials past failure, ..." - the same three words
+     four times.
+
+     Grouping by WHAT IMPROVED is the one that reads like a sentence, and it
+     also happens to be the more useful framing: "you went past failure on four
+     movements" is a fact about your week; "chest press improved" is four
+     separate facts about four lifts. Ordered by the program's own priority -
+     what you do after full-range failure counts for most. */
+  var pb = null;
+  if (r.newPBs && r.newPBs.length) {
+    var RANK = { part: 0, peak: 1, full: 2, reps: 3 };
+    var best = {}, names = [];
+    r.newPBs.forEach(function (p) {
+      var n = p.name || p.ex || '';
+      if (!n) return;
+      if (!best[n]) { best[n] = p; names.push(n); return; }
+      if ((RANK[p.metric] != null ? RANK[p.metric] : 9) < (RANK[best[n].metric] != null ? RANK[best[n].metric] : 9)) best[n] = p;
+    });
+    var groups = {}, gOrder = [];
+    names.forEach(function (n) {
+      var lbl = best[n].label || best[n].metric || 'improved';
+      if (!groups[lbl]) { groups[lbl] = { rank: (RANK[best[n].metric] != null ? RANK[best[n].metric] : 9), list: [] }; gOrder.push(lbl); }
+      groups[lbl].list.push(n);
+    });
+    gOrder.sort(function (a, b) { return groups[a].rank - groups[b].rank; });
+    pb = gOrder.map(function (lbl) {
+      var l = groups[lbl].list;
+      var shown = l.slice(0, 4).join(', ');
+      if (l.length > 4) shown += ' and ' + (l.length - 4) + ' more';
+      return '<b>' + lbl.charAt(0).toUpperCase() + lbl.slice(1) + ':</b> ' + shown;
+    }).join('<br>');
+  }
+
+  openModal(
+    '<h2>Week ' + r.week + '</h2>' +
+    '<p>' + r.sentence + '</p>' +
+    '<div class="row" style="gap:3.5rem;margin-bottom:1rem;flex-wrap:nowrap">' +
+      '<div><div class="x3f-eyebrow">Sessions</div><div class="x3f-hero num">' + r.days + '<span style="font-size:1.75rem;color:var(--dim)">/' + r.target + '</span></div></div>' +
+      '<div><div class="x3f-eyebrow">Full reps</div><div class="x3f-hero num">' + Math.round(r.fullReps) + '</div></div>' +
+      '<div><div class="x3f-eyebrow">Past failure</div><div class="x3f-hero num" style="color:var(--amber)">' + Math.round(r.partials) + '</div></div>' +
+      '<div><div class="x3f-eyebrow">Peak</div><div class="x3f-hero num">' + Math.round(r.peak) + '</div></div>' +
+    '</div>' +
+    (pb ? '<p style="color:var(--gold);line-height:1.5">' + pb + '</p>' : '') +
+    '<div class="row"><button class="big sec" data-nav id="wrClose">Got it</button></div>',
+    function () {
+      $('wrClose').onclick = function () {
+        try { if (PROG.markReviewSeen) PROG.markReviewSeen(); } catch (e) {}
+        closeModal();
+        renderNotices();
+        try { if (window.X3FNav) window.X3FNav.refresh(); } catch (e) {}
+      };
+    });
+}
+
+/* ── the bar chip ─────────────────────────────────────────────────────── */
+
+function setBar(txt, cls) {
+  $('barTxt').textContent = txt;
+  $('barChip').className = 'chip' + (cls ? ' ' + cls : '');
+}
+window.X3FBarStatus = setBar;   /* native calls this */
+
+(function watchBar() {
+  /* The shell injects force as window.__x3fForce. If it is moving, we are live —
+     which is more honest than a status flag that four games got stuck on
+     "Offline" forever because their tare state machine never ran on the TV. */
+  let last = null, still = 0;
+  setInterval(() => {
+    const f = window.__x3fForce;
+    if (typeof f !== 'number') return;
+    if (last === null) { last = f; return; }
+    if (Math.abs(f - last) > 0.01) { still = 0; setBar('Bar connected', 'live'); }
+    else if (++still > 20 && $('barTxt').textContent === 'Connecting…') { /* leave it */ }
+    last = f;
+  }, 500);
+})();
+
+/* ── overlays ─────────────────────────────────────────────────────────── */
+
+let overlayOpen = false;
+function openModal(html, onOpen) {
+  $('modal').innerHTML = html;
+  $('scrim').classList.add('show');
+  overlayOpen = true;
+  /* Tell native BEFORE the key can arrive — evaluateJavascript is async, and
+     without this Back drops the whole app to the TV home screen instead of
+     closing the dialog. */
+  try { if (window.X3F && window.X3F.setOverlay) window.X3F.setOverlay(true); } catch (e) {}
+  if (onOpen) onOpen();
+  try { if (window.X3FNav) window.X3FNav.focusFirst(); } catch (e) {}
+}
+function closeModal() {
+  endPairWatch();
+  $('scrim').classList.remove('show');
+  overlayOpen = false;
+  try { if (window.X3F && window.X3F.setOverlay) window.X3F.setOverlay(false); } catch (e) {}
+  try { if (window.X3FNav) window.X3FNav.refresh(); } catch (e) {}
+}
+window.X3FCloseOverlay = closeModal;
+
+/* "paired" is what x3f-sync.js calls "this device belongs to a household", and
+   on the TELEVISION that is true the moment it makes its own household - before
+   any phone exists. Reporting that word here read as "a phone is connected",
+   which was a lie the first time somebody opened this panel, and the button that
+   would have made it true had already been swapped out for "Sync now".
+
+   So: the button to invite a device is ALWAYS offered while sync is configured
+   (there is no such thing as being done pairing - households gain phones), and
+   the word describes what this device is actually doing. */
+function syncWord(s) {
+  if (s.state === 'unavailable' || s.state === 'unconfigured') return 'not set up';
+  if (s.state === 'waiting') return 'waiting for a TV to confirm';
+  if (!s.household) return 'on, nothing paired yet';
+  return s.lastSync ? 'on' : 'on, not synced yet';
+}
+
+function settings() {
+  const s = (window.X3FSync && window.X3FSync.status) ? window.X3FSync.status() : { state: 'unavailable' };
+  const off = s.state === 'unavailable' || s.state === 'unconfigured';
+  const gs = (window.X3FCalFlow && window.X3FCalFlow.getSetMs) ? Math.round(window.X3FCalFlow.getSetMs() / 1000) : 10;
+  openModal(`
+    <h2>Settings</h2>
+    <p>Get-set delay before a calibration starts: <b>${gs} seconds</b>. This is how long you
+       have to put the remote down and get into position before the hold begins.</p>
+    <div class="row">
+      <button class="big sec" data-nav id="gsDown">Shorter</button>
+      <button class="big sec" data-nav id="gsUp">Longer</button>
+    </div>
+    <p style="margin-top:2rem">Phone sync: <b>${syncWord(s)}</b>${s.pending ? ` · ${s.pending} sets waiting to upload` : ''}</p>
+    <div class="row">
+      ${off
+        ? '<span class="x3f-small">Not configured — see docs/FIREBASE-SETUP.md</span>'
+        : `<button class="big sec" data-nav id="pairBtn">Pair a phone</button>
+           ${s.household ? '<button class="big sec" data-nav id="syncNow">Sync now</button>' : ''}`}
+      <button class="big sec" data-nav id="closeBtn">Close</button>
+    </div>`, () => {
+    const gsSet = d => {
+      if (!window.X3FCalFlow) return;
+      window.X3FCalFlow.setGetSetMs(window.X3FCalFlow.getSetMs() + d);
+      settings();
+    };
+    const b = id => $(id);
+    if (b('gsDown')) b('gsDown').onclick = () => gsSet(-2000);
+    if (b('gsUp')) b('gsUp').onclick = () => gsSet(2000);
+    if (b('closeBtn')) b('closeBtn').onclick = closeModal;
+    if (b('pairBtn')) b('pairBtn').onclick = pair;
+    if (b('syncNow')) b('syncNow').onclick = () => { window.X3FSync.sync(); closeModal(); };
+  });
+}
+
+/* The pairing dialog polls a remote node, so it owns a timer that MUST die when
+   the dialog does. Closing an overlay is not the only way out of one either —
+   Back is handled natively — so the stop is hung off closeModal rather than off
+   any particular button. */
+let pairStop = null;
+function endPairWatch() { if (pairStop) { try { pairStop(); } catch (e) {} pairStop = null; } }
+
+function pairFailed(err) {
+  endPairWatch();
+  openModal(`<h2>Pair a phone</h2><p>${esc(String(err && err.message || err))}</p>
+    <div class="row"><button class="big sec" data-nav id="closeBtn">Close</button></div>`,
+    () => { $('closeBtn').onclick = closeModal; });
+}
+
+function pair() {
+  openModal('<h2>Pair a phone</h2><p>Getting a code…</p>');
+  window.X3FSync.startPairing().then(r => {
+    const host = r.url.replace(/^https?:\/\//, '').split('#')[0];
+    openModal(`
+      <h2>Pair a phone</h2>
+      <p>On your phone, open <b>${esc(host)}</b>, tap <b>Sync with TV</b>, and enter this code.
+         It expires in five minutes.</p>
+      <div class="code">${esc(r.code)}</div>
+      <p>Waiting for the phone… nothing is shared until you allow it here.</p>
+      <div class="row"><button class="big sec" data-nav id="closeBtn">Close</button></div>`,
+      () => { $('closeBtn').onclick = closeModal; });
+
+    /* The phone claiming a code grants it NOTHING — that is the whole point of
+       the rules. What it buys is the right to appear on this screen, in front of
+       somebody holding the remote who can see who they just read the code out
+       to. Physical presence is doing the work an unforgeable token would do if
+       there were anywhere to mint one. */
+    endPairWatch();
+    pairStop = window.X3FSync.watchInvite(r.code, uid => {
+      endPairWatch();
+      openModal(`
+        <h2>A phone is asking to join</h2>
+        <p>It will be able to see and add to this household's training history.
+           Only allow this if it is your phone, or someone you handed the code to.</p>
+        <div class="code" style="font-size:3rem;letter-spacing:.05em">${esc(String(uid).slice(0, 12))}…</div>
+        <div class="row">
+          <button class="big" data-nav data-nav-first id="allowBtn">Allow</button>
+          <button class="big sec" data-nav id="denyBtn">Not now</button>
+        </div>`, () => {
+        $('denyBtn').onclick = closeModal;
+        $('allowBtn').onclick = () => {
+          openModal('<h2>A phone is asking to join</h2><p>Letting it in…</p>');
+          window.X3FSync.confirm(r.code, uid).then(() => {
+            try { window.X3FSync.sync(); } catch (e) {}
+            openModal(`<h2>Paired</h2>
+              <p>Your phone can now see this history, and anything you log there comes back here.</p>
+              <div class="row"><button class="big sec" data-nav id="closeBtn">Close</button></div>`,
+              () => { $('closeBtn').onclick = closeModal; });
+          }).catch(pairFailed);
+        };
+      });
+    });
+  }).catch(pairFailed);
+}
+
+$('settingsChip').addEventListener('click', settings);
+$('barChip').addEventListener('click', () => {
+  if (window.X3F && window.X3F.rescan) { try { window.X3F.rescan(); setBar('Scanning…', 'warn'); } catch (e) {} }
+});
+
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Escape' || e.key === 'Backspace') && overlayOpen) { e.preventDefault(); closeModal(); }
+});
+
+/* ── boot ─────────────────────────────────────────────────────────────── */
+
+(function boot() {
+  let ctx;
+  try { ctx = renderHero(); }
+  catch (e) { ctx = { t: { day:'push', week:1, phase:null }, moves: [] }; }
+  try { renderNotices(); } catch (e) {}
+  try { renderRails(ctx); } catch (e) {}
+  try { verifyArt(); } catch (e) {}
+
+  /* Ambience is the first thing sacrificed if anything goes wrong with it. */
+  try { if (window.X3FFX && window.X3FFX.mount) window.X3FFX.mount({ image: 'assets/ui/backdrop.webp' }); } catch (e) {}
+  try { if (window.X3FMusic && window.X3FMusic.attach) window.X3FMusic.attach('menu'); } catch (e) {}
+  try { if (window.X3FSync && window.X3FSync.available()) window.X3FSync.auto(true); } catch (e) {}
+
+  /* First run. Mounted AFTER the home has rendered, so pressing Skip reveals a
+     finished screen rather than an empty one - and so a failure anywhere in the
+     onboarding module leaves a working home behind it rather than a blank page. */
+  var onboarding = false;
+  try {
+    if (window.X3FOnboard && X3FOnboard.needed()) {
+      onboarding = true;
+      X3FOnboard.start($('obScrim'), { onDone: seatCursor });
+    }
+  } catch (e) { onboarding = false; }
+
+  /* THE HIGHEST-LEVERAGE LINE ON THIS SCREEN: the most likely action costs zero
+     D-pad presses. Deferred while onboarding owns the screen, because two things
+     claiming the cursor is how you get two focus rings and one of them lying. */
+  function seatCursor() {
+    try {
+      if (window.X3FNav) { window.X3FNav.refresh(); window.X3FNav.set($('startBtn')); }
+      else $('startBtn').focus();
+    } catch (e) { try { $('startBtn').focus(); } catch (e2) {} }
+  }
+  if (!onboarding) seatCursor();
+
+  /* Report the real coordinate system once, so the 10-foot type scale can be
+     confirmed on the actual panel rather than assumed. */
+  try {
+    console.log('[x3f] viewport', {
+      innerWidth: window.innerWidth,
+      dpr: window.devicePixelRatio,
+      screenW: window.screen && window.screen.width,
+      physical: Math.round(window.innerWidth * (window.devicePixelRatio || 1)),
+      rootFontPx: parseFloat(getComputedStyle(document.documentElement).fontSize)
+    });
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

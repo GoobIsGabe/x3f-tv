@@ -1,0 +1,191 @@
+// X3F household sync — Realtime Database security rules.
+//
+// Paste into: Firebase console → Realtime Database → Rules → Publish.
+// (Firebase's rules parser accepts // comments; this file is intentionally
+//  "JSON with comments", which is what the Firebase CLI expects for
+//  database.rules.json. Do not strip them — they are the design record.)
+//
+// Rules changes take up to 1 minute to affect new queries and up to 10 MINUTES
+// to fully propagate to ACTIVE listeners. The TV holds a long-lived SSE stream,
+// so expect the longer figure there when testing.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// THE SHAPE OF THE PROBLEM
+// ─────────────────────────────────────────────────────────────────────────────
+// Two devices must share one household and nothing else, with NO SERVER. Cloud
+// Functions are Blaze-only, so there is nowhere to run trusted code, and
+// therefore no custom tokens and no custom claims. Every authorization decision
+// has to be expressible against data the rules can already read. That single
+// constraint produces the whole design below.
+//
+// THE KEY IDEA. Rules cannot express "this invite code was minted for THIS
+// person" — anyone who guesses a live code can claim it. So claiming is split
+// from joining: a claim writes one field onto an invite and grants NOTHING.
+// Membership is granted by an existing member pressing OK on the television, in
+// front of a human who can see who they just gave the code to. That converts an
+// unforgeable-token problem into a physical-presence problem, which is the right
+// shape for a household.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// KNOWN LIMITATIONS, ACCEPTED KNOWINGLY
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. Any member can delete the whole household. The cascading write grant makes
+//    this unavoidable without giving every subtree its own grant. For a
+//    household app that is fine; if you disagree, the first thing to add is an
+//    owner-only guard on `members` and `meta`.
+// 2. `"$other": {".validate": false}` is a key allowlist idiom — RTDB has no
+//    hasOnly(). It relies on literal child names taking precedence over the `$`
+//    wildcard at the same level. TEST THIS EXPLICITLY in the emulator: write a
+//    node containing an unexpected key and assert it is rejected.
+// 3. No rate limiting is possible without a server. A 6-character code from a
+//    32-character alphabet is ~1.07 billion possibilities and lives 5 minutes,
+//    and guessing one still only lets someone knock on the door.
+
+{
+  "rules": {
+    // Rules default to deny. These two lines are documentation, not
+    // enforcement — they exist so a future reader cannot mistake absence of a
+    // rule for permission.
+    ".read": false,
+    ".write": false,
+
+    // A convenience pointer so a device can answer "which household am I in?"
+    // in one read instead of a scan.
+    //
+    // DELIBERATELY UNVERIFIED DATA: a client may point its own entry at any
+    // household id it likes. That is harmless, because authorization is gated
+    // by households/$hid/members/$uid and NEVER by this. Do not later "harden"
+    // it into a security boundary — it is not one, and treating it as one would
+    // itself be the bug.
+    "userIndex": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.isString() && newData.val().length >= 16 && newData.val().length <= 64"
+      }
+    },
+
+    "households": {
+      "$hid": {
+        // One grant covers every subtree, because .read/.write CASCADE to
+        // children. The nested .validate rules below still constrain the SHAPE
+        // of anything written — .validate does not cascade.
+        //
+        // THE SECOND CLAUSE IS THE BOOTSTRAP, and leaving it out made the whole
+        // system unusable in a way no amount of reading could reveal — only a
+        // live database could. "You may write here if you are already a member"
+        // is correct for every write except the FIRST one: when you create your
+        // household you are not yet a member of it, so creating it was denied
+        // and nobody could ever pair anything.
+        //
+        // So: an existing household may only be written by its members, and a
+        // household that does NOT yet exist may be created by anyone who makes
+        // themselves its owner in the same write. That is safe because the id is
+        // 22 random base62 characters (~131 bits) chosen by the creator — the
+        // only thing an attacker can do with it is create their own empty
+        // household at an id nobody was using, which is what the sign-up button
+        // does anyway. An id that already exists fails `!data.exists()`.
+        ".read": "auth != null && data.child('members').child(auth.uid).exists()",
+        ".write": "auth != null && ( data.child('members').child(auth.uid).exists() || (!data.exists() && newData.child('members').child(auth.uid).child('role').val() === 'owner') )",
+
+        "meta": {
+          "createdAt": { ".validate": "newData.val() === now" },
+          "$other": { ".validate": false }
+        },
+
+        "members": {
+          "$uid": {
+            ".validate": "newData.hasChildren(['role','addedAt'])",
+            "role": { ".validate": "newData.isString() && (newData.val() === 'owner' || newData.val() === 'member')" },
+            "addedAt": { ".validate": "newData.val() === now" },
+            "name": { ".validate": "newData.isString() && newData.val().length <= 40" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        // Household profiles. Same-band head-to-head only; there is
+        // deliberately no cross-household leaderboard, because force numbers
+        // are not comparable across bands, body weight or bar setup, so the
+        // ranking would be noise dressed as competition.
+        "profiles": {
+          "$pid": {
+            ".validate": "newData.hasChildren(['name'])",
+            "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40" },
+            "color": { ".validate": "newData.isString() && newData.val().length <= 16" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        // Bucketed by yyyymm so a client fetches one month in a single shallow
+        // GET rather than pulling the whole history. RTDB bills DOWNLOADED
+        // BYTES — including protocol and SSL overhead, and including traffic
+        // for requests the rules reject — so read shape matters more here than
+        // write shape does.
+        "sets": {
+          "$bucket": {
+            ".validate": "$bucket.matches(/^[0-9]{6}$/)",
+            "$setId": {
+              ".validate": "newData.hasChildren(['profileId','exercise','reps','ts','by'])",
+              "profileId": { ".validate": "newData.isString() && newData.val().length <= 32" },
+              "exercise": { ".validate": "newData.isString() && newData.val().length <= 48" },
+              "band": { ".validate": "newData.isString() && newData.val().length <= 16" },
+              "reps": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
+
+              // The three tiers of an X3 set: full range, then mid-range
+              // partials, then weak-range partials. Optional, because a real
+              // user's existing history predates them.
+              "full": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
+              "mid": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
+              "weak": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
+
+              "peak": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000" },
+              "tut": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000" },
+              "strong": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000" },
+              "ecc": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 600" },
+              "game": { ".validate": "newData.isString() && newData.val().length <= 24" },
+              "note": { ".validate": "newData.isString() && newData.val().length <= 240" },
+
+              // Either the server stamp, or a time in the past — a set logged
+              // offline and flushed hours later must keep the time it actually
+              // happened, not the time it reached the network.
+              "ts": { ".validate": "newData.val() === now || (newData.isNumber() && newData.val() > 0 && newData.val() <= now)" },
+
+              // Stamps every set with its true author. Not access control —
+              // any member may write any set — but an audit trail that cannot
+              // be forged.
+              "by": { ".validate": "newData.val() === auth.uid" },
+
+              "$other": { ".validate": false }
+            }
+          }
+        }
+      }
+    },
+
+    // A three-way disjunction:
+    //   MINT   — creator must already be a member of the household they name,
+    //            and may not pre-set claimedBy
+    //   CLAIM  — unclaimed, within 300s of the SERVER-stamped createdAt, and
+    //            the claimer may not alter any other field
+    //   DELETE — creator only
+    //
+    // Expiry compares createdAt + 300000 against the rules engine's own `now`.
+    // No client clock is trusted anywhere, so a skewed device cannot shorten or
+    // extend a code's life.
+    "invites": {
+      "$code": {
+        ".read": "auth != null && (data.child('invitedBy').val() === auth.uid || data.child('claimedBy').val() === auth.uid)",
+
+        ".write": "auth != null && ( (!data.exists() && newData.exists() && newData.child('invitedBy').val() === auth.uid && !newData.hasChild('claimedBy') && root.child('households').child(newData.child('householdId').val()).child('members').child(auth.uid).exists()) || (data.exists() && newData.exists() && !data.hasChild('claimedBy') && data.child('createdAt').val() + 300000 > now && newData.child('claimedBy').val() === auth.uid && newData.child('householdId').val() === data.child('householdId').val() && newData.child('invitedBy').val() === data.child('invitedBy').val() && newData.child('createdAt').val() === data.child('createdAt').val()) || (data.child('invitedBy').val() === auth.uid && !newData.exists()) )",
+
+        ".validate": "newData.hasChildren(['householdId','invitedBy','createdAt'])",
+        "householdId": { ".validate": "newData.isString() && newData.val().length >= 16 && newData.val().length <= 64" },
+        "invitedBy": { ".validate": "newData.isString() && newData.val().length <= 128" },
+        "claimedBy": { ".validate": "newData.isString() && newData.val().length <= 128" },
+        "createdAt": { ".validate": "newData.val() === now" },
+        "claimedAt": { ".validate": "newData.val() === now" },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

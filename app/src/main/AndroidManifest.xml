@@ -19,18 +19,51 @@
         android:usesPermissionFlags="neverForLocation" tools:targetApi="s"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
 
+    <!--
+      allowBackup stays true: the WebView localStorage under this app's data directory is
+      the user's whole training history and it SHOULD survive a new TV. The two rule files
+      exclude the one thing that must not travel - SharedPreferences "x3f", which holds the
+      MAC of the bar this particular TV last talked to. See res/xml/backup_rules.xml.
+
+      largeHeap: the games are full-screen canvases and the bundle decodes aurora.jpg,
+      badge-*.jpg and bloom/bg.jpg into memory on devices whose default heap ceiling can be
+      as low as a few tens of MB. Without it the renderer is the first thing the system
+      reaps, which is the failure MainActivity.onRenderProcessGone now has to catch.
+    -->
     <application
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:largeHeap="true"
         android:label="@string/app_name"
         android:icon="@drawable/icon"
         android:banner="@drawable/banner"
         android:hardwareAccelerated="true"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        android:theme="@style/Theme.X3F">
+
+        <!--
+          Safe Browsing does network work and costs real milliseconds of WebView startup,
+          all of it pointless for a file:// bundle that is now forbidden from touching the
+          network at all (see shouldInterceptRequest). Turning it off here is the only way
+          to skip the init, rather than merely the per-load check.
+        -->
+        <meta-data android:name="android.webkit.WebView.EnableSafeBrowsing" android:value="false"/>
+
+        <!--
+          configChanges was orientation|screenSize|keyboardHidden, which left the common TV
+          config changes uncovered: a Google TV flipping between day and night mode, an HDMI
+          resolution change or a display-size change all recreated the activity MID-SET.
+          The WebView was destroyed and rebuilt at the launcher (there is no saved-state
+          restore), the GATT connection was closed, and the in-progress run and the unlogged
+          set were simply gone. Handling them in place costs nothing here - the layout is
+          one full-bleed WebView.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:banner="@drawable/banner"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|navigation|touchscreen|uiMode|density|fontScale|layoutDirection|colorMode"
             android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>

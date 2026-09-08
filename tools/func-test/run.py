@@ -26,14 +26,22 @@ ASSETS = REPO / "app" / "src" / "main" / "assets"
 HERE = Path(__file__).resolve().parent
 
 SCREENS = ["launcher", "routine", "library", "progress", "bloom", "flow", "splash",
-           "bloomtv"]
+           "bloomtv", "calibrate", "calibratetv"]
 
 # Scenarios that are a bundled page seen through a different lens. "bloomtv" is
 # Bloom with the SHELL'S OWN bootstrap injected, because the TV drives `force`
 # down a completely different path from the browser build and the two have now
 # silently diverged twice.
-AS_PAGE = {"bloomtv": "bloom"}
-BOOTSTRAPPED = {"bloomtv"}
+AS_PAGE = {"bloomtv": "bloom", "calibratetv": "calibrate"}
+BOOTSTRAPPED = {"bloomtv", "calibratetv"}
+
+# Some scenarios live in their own file. Calibrate is the page that WRITES the
+# data every other page reads, and it had no functional coverage at all - the
+# exact gap the reported band bug fell through. Its assertions load INSTEAD of
+# cases.js, not alongside: both call F.report(), and two reports in one document
+# give the parser two "FUNC" markers, so it reads the first and the other
+# scenario's results vanish silently.
+CASES = {"calibrate": "cases-cal.js", "calibratetv": "cases-cal.js"}
 
 BROWSERS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -105,7 +113,7 @@ def main():
             shutil.copy2(f, stage / f.name)
         else:
             shutil.copytree(f, stage / f.name, dirs_exist_ok=True)
-    for f in ("func.js", "cases.js"):
+    for f in ("func.js", "cases.js", "cases-cal.js"):
         shutil.copy2(HERE / f, stage / f)
 
     # Most scenarios get no BOOTSTRAP on purpose: it auto-starts a run and drives
@@ -134,7 +142,8 @@ def main():
         boot = '<script src="bootstrap.js"></script>' if name in BOOTSTRAPPED else ""
         html = src.read_text(encoding="utf-8").replace(
             "</body>", boot + '<script src="func.js"></script>'
-                              '<script src="cases.js" data-scenario="%s"></script></body>' % name)
+                              '<script src="%s" data-scenario="%s"></script></body>'
+                              % (CASES.get(name, "cases.js"), name))
         page = stage / ("func_" + name + ".html")
         page.write_text(html, encoding="utf-8")
 

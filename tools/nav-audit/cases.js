@@ -28,6 +28,28 @@
       });
     }
 
+    /* The new single-document home (app.html). It is not the launcher as far as
+       the shell is concerned - MainActivity.isLauncher() matches launcher.html
+       and index.html only - so it DOES get the bootstrap, exactly like the other
+       menu pages, and x3f-nav.js claims __x3fNav before the bootstrap's fallback
+       can install. Checked here before 'routine', because this page links to
+       X3F_Routine.html and a substring dispatch has no idea which is which.
+
+       Two states worth walking: the home itself, where the whole design bet is
+       that the cursor starts on Start and the rows are reachable across, and the
+       settings dialog, which is the one overlay on the page and therefore the
+       one place the cursor can escape from. */
+    if (page.indexOf('app') >= 0) {
+      A.audit('home: hero + rows');
+      var gear = document.getElementById('settingsChip');
+      if (!gear) return A.report();
+      gear.click();
+      return later(function () {
+        A.audit('home: settings dialog open');
+        A.report();
+      });
+    }
+
     if (page.indexOf('routine') >= 0) {
       A.audit('routine: day list');
       // guided coach

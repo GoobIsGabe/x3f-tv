@@ -1,12 +1,30 @@
 name: Build APK
 
+# Builds the TV APK, publishes it to the "latest" release, and mirrors it plus
+# version.txt to the dist branch, which is what the in-app updater reads.
+#
+# paths-ignore, because this workflow force-pushes to dist and moves the "latest"
+# release tag - i.e. every run changes what the TV offers to download. Editing a
+# markdown file should not do that. Anything that can end up inside the APK
+# (app/, web/, tools/, gradle config) still triggers it.
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+# Two pushes a minute apart used to race: the second job could finish first and
+# publish, then the first job force-pushed ITS version.txt over the top - leaving
+# the updater comparing against a version number from a different build than the
+# APK sitting on the release. Serialise, and drop superseded runs.
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -14,6 +32,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # The bundle in app/src/main/assets/ is GENERATED from web/. Nothing has
+      # ever enforced that, so an APK could be built - and offered to the TV by
+      # the updater - from assets that no longer match the source they came from.
+      # That is worse than a red build: it ships. One second, no browser needed.
+      # Fix a failure by running `python tools/sync-from-web.py` and committing.
+      - name: Bundle is in sync with web/
+        run: python3 tools/sync-from-web.py --check
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

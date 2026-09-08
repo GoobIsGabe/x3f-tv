@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cloud backup rules for API 30 and below (android:fullBackupContent).
+
+  Backup stays ON deliberately: the WebView's localStorage under the app's data directory
+  is the user's ENTIRE training history — every set, every PB, every calibration — and
+  restoring it onto a replacement TV is exactly what you want to happen.
+
+  The one thing that must not travel is SharedPreferences "x3f", whose only key is
+  `lastBar`: the MAC address of the bar this particular TV last connected to. Restored onto
+  a different device that address is a bar that does not exist there, and it is the FIRST
+  thing tryKnownDevices() attempts on every launch — so a restored install would spend its
+  watchdog window chasing a ghost before it ever started scanning.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="x3f.xml"/>
+</full-backup-content>

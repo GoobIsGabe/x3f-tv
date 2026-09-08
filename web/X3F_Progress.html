@@ -1,365 +1,1390 @@
 <!DOCTYPE html>
-<!-- X3F PROGRESS - the program dashboard. Local only: everything is derived from
- localStorage by x3f-progress.js, so there is no account, no server, no cost and
- nothing that can collide with another project. Export/import moves your history
- between devices as a plain file. -->
+<!-- X3F PROGRESS — the program dashboard.
+
+     Local only: everything on this screen is derived from localStorage by
+     x3f-progress.js, so there is no account, no server, no cost and nothing that
+     can collide with another project. Export/import moves the log between
+     devices as a plain file.
+
+     WHAT CHANGED IN THIS REBUILD, AND WHY
+     ─────────────────────────────────────
+     The page used to carry its own private copy of the design language — one of
+     four copies that had drifted apart (different accents, different type
+     scales, different panel values; docs/audit/menus.md D20). That copy is gone.
+     Everything visual now comes from x3f-ui.css, and every size on this page is
+     in rem/vw/vh against `:root{font-size:calc(100vw/120)}`, so 1rem is 16 design
+     px on a 1920 canvas and the layout is IDENTICAL whether the TV WebView hands
+     us a 960 or a 1920 CSS-pixel viewport. There is not one raw px below; a raw
+     px is half the intended size on a TV that reports 960, which is the single
+     most likely way a TV web app looks wrong.
+
+     The behaviour is deliberately unchanged. What is fixed is everything the
+     audit found wrong with how that behaviour was PRESENTED on a television:
+
+       D5   confirm() auto-answers YES and alert() is invisible in the TV
+            WebView (MainActivity onJsAlert/onJsConfirm call r.confirm()). Every
+            dialog on this page is now drawn in the page. "Reset achievements" is
+            a two-press in-page confirmation seated on Cancel; removing a set is
+            instant and UNDOABLE, which is the honest TV answer to a destructive
+            action a remote can trigger with one OK; import/export report into a
+            status line instead of an alert nobody sees.
+       D7   the D-pad used to teleport from the challenge card straight to the
+            recent-sets ✕ several thousand pixels down, because six whole
+            sections carried no focusable element at all. Every section now has
+            exactly one focus stop: its action where it has one, and otherwise
+            the panel itself — on a remote, being able to STOP on a section is
+            the only way to read it.
+       D13  no guard on X3FProg, so one script failure blanked the entire page.
+            Every renderer is now individually guarded and the engine is optional.
+       D14  the unlock celebration fired before x3f-fx.js had loaded, so the one
+            moment it exists for never showed it. The module loads first now, and
+            the unlock is also NAMED on screen — a particle burst is not a message.
+       D16  the charts and the 84-day grid were readable only through `title`
+            tooltips. A television has no hover and a remote cannot reach one, so
+            those three sections were decorative shapes. Every bar, every week row
+            and both axes now print their numbers on screen at ≥28 design px.
+       D17  export silently did nothing on the TV: a.click() on a blob: URL
+            returns normally with no DownloadListener registered, so the promised
+            fallback was dead code on the one platform that needed it. The TV path
+            no longer pretends.
+       D18  sub-11px text throughout. Nothing here is below --t-min (28 design px).
+       D19  text sat directly on the animated aurora. Every piece of text on this
+            page now sits inside an opaque --surface panel, including its heading.
+
+     NEW, because the engine now provides it and nothing had ever shown it:
+
+       * calibration age — X3FCal.age/stale. "White band, last calibrated six
+         weeks ago" was roadmap item 1 and the number that scales every force
+         reading in the app had no expiry date anywhere in the UI.
+       * the three-tier set — full range / mid-range partials / weak-range
+         partials are counted separately now. The program is explicit that what
+         you do AFTER full-range failure is the part that counts most, so the
+         personal-bests table leads with FULL and gives MID and WEAK their own
+         columns instead of folding them into a total.
+       * both halves of the band rule — X3FCal.bandAdvice returns "go heavier" at
+         40+ full reps AND "go lighter" under 15. Only the first half was shown.
+
+     BAND IDENTITY IS NEVER A COLOUR SWATCH. White / Light Gray / Dark Gray /
+     Black / Elite Black is a purely luminance-based palette sitting in exactly
+     the near-white and near-black regions a TV renders worst, and it is invisible
+     to a portion of viewers. Bands appear through .x3f-band: name in text, plus a
+     distinct shape, and only then a hue — with the real published pound range
+     from X3FEX.forceLabel next to it, which is far more useful than any colour.
+-->
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>X3F Progress</title>
-<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0F1114"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="x3f-ui.css">
 <style>
-:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--cyan:#37d6ff;--violet:#8f7dff;--hot:#ff5d78;--navring:#2ff0b0;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);--e:cubic-bezier(.2,.9,.25,1)}
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html{scroll-behavior:smooth}
-body{font-family:var(--d);color:var(--txt);background:radial-gradient(120vw 60vh at 80% -10%,rgba(47,240,176,.09),transparent 60%),var(--bg);min-height:100dvh;padding:calc(16px + var(--sat)) 16px calc(28px + var(--sab));-webkit-user-select:none;user-select:none}
-.wrap{max-width:880px;margin:0 auto}
-.top{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-.brand{font-weight:800;font-size:19px;letter-spacing:2px}.brand b{color:var(--accent)}
-.spacer{flex:1}
-a.home,button.home{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 14px;cursor:pointer;transition:border-color .18s}
-a.home:hover,button.home:hover{border-color:var(--accent)}
-h2{font-family:var(--n);font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--dim);margin:22px 2px 10px;font-weight:700;display:flex;align-items:center;gap:10px}
-h2:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--brd),transparent)}
-.card{background:var(--panel);border:1px solid var(--brd);border-radius:16px;padding:14px}
-.today{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;background:linear-gradient(180deg,rgba(47,240,176,.1),rgba(255,255,255,.03));border:1px solid var(--brd);border-radius:18px;padding:16px}
-.tday{font-size:clamp(20px,5vw,27px);font-weight:800;line-height:1.1}
-.tday small{display:block;font-family:var(--n);font-size:12.5px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);margin-bottom:4px}
-.tmeta{font-family:var(--n);font-size:12.5px;color:var(--dim);margin-top:6px}
-.flame{text-align:center;min-width:96px}
-.flame .n{font-family:var(--n);font-weight:700;font-size:34px;color:var(--gold);line-height:1}
-.flame .k{font-family:var(--n);font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim)}
-.bar{height:7px;border-radius:7px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:10px}
-.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--cyan));transition:width .5s var(--e)}
-.chal{display:flex;gap:12px;align-items:flex-start;border-left:3px solid var(--gold)}
-.chal.done{border-left-color:var(--accent)}
-.chal .ic{font-size:26px;line-height:1}
-.chal h3{font-size:17px;font-weight:800}
-.chal p{font-family:var(--n);font-size:13px;color:var(--dim);line-height:1.5;margin-top:3px}
-.chal .tag{display:inline-block;font-family:var(--n);font-size:10.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;border-radius:100px;padding:4px 10px;margin-top:8px;color:var(--gold);border:1px solid rgba(255,211,92,.35)}
-.chal.done .tag{color:var(--accent);border-color:rgba(47,240,176,.4)}
-.grid12{display:flex;flex-direction:column;gap:4px}
-.growrow{display:flex;gap:4px;align-items:center}
-.growrow .wk{font-family:var(--n);font-size:10px;color:var(--dim);width:26px;flex:0 0 auto}
-.cell{flex:1;aspect-ratio:1;border-radius:4px;background:rgba(255,255,255,.06);max-width:26px}
-@supports not (aspect-ratio:1/1){.cell{height:18px}}
-.cell.done{background:var(--accent);box-shadow:0 0 10px rgba(47,240,176,.45)}
-.cell.future{background:rgba(255,255,255,.02)}
-.cell.today{outline:2px solid var(--gold);outline-offset:1px}
-.vol{display:flex;gap:5px;align-items:flex-end;height:88px}
-.vol div{flex:1;border-radius:4px 4px 0 0;min-height:2px}
-.vol.reps div{background:linear-gradient(180deg,var(--cyan),rgba(55,214,255,.25))}
-.vol.force div{background:linear-gradient(180deg,var(--gold),rgba(255,211,92,.22))}
-.vollab{display:flex;gap:5px;font-family:var(--n);font-size:9.5px;color:var(--dim);margin-top:4px}
-.vollab span{flex:1;text-align:center}
-.pbs{display:flex;flex-direction:column;gap:7px}
-.pbrow{display:grid;grid-template-columns:1fr auto auto auto auto;gap:10px;align-items:center;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:10px 12px}
-.pbrow .nm{font-weight:800;font-size:14.5px}
-.pbrow .bd{font-family:var(--n);font-size:11px;color:var(--dim)}
-.pbrow .v{font-family:var(--n);font-weight:700;font-size:16px;text-align:right;min-width:44px}
-.pbrow .v small{display:block;font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);font-weight:600}
-.advice{border-left:3px solid var(--gold);margin-bottom:8px}
-.advice b{color:var(--gold)}
-.advice p{font-family:var(--n);font-size:12.5px;color:var(--dim);line-height:1.5;margin-top:4px}
-.achhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-.achhead .cnt{font-family:var(--n);font-weight:700;font-size:15px;color:var(--accent)}
-.achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:10px}
-.ach{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));border:1px solid var(--brd);border-radius:16px;padding:14px 10px 12px;text-align:center;opacity:.5;overflow:hidden;transition:opacity .25s var(--e),border-color .25s,transform .18s var(--e),box-shadow .25s}
-.ach:hover{transform:translateY(-2px)}
-/* the medallion is a photograph on a black field; screen-blending drops the black
-   and leaves the metal glowing on whatever the card sits on */
-.medal{position:relative;width:72px;height:72px;margin:0 auto 9px}
-.medal i{position:absolute;inset:0;background-size:contain;background-repeat:no-repeat;background-position:center;
- mix-blend-mode:screen;filter:grayscale(.85) brightness(.55);transition:filter .35s var(--e)}
-.medal span{position:absolute;inset:0;display:grid;place-items:center;font-size:26px;line-height:1;
- filter:drop-shadow(0 2px 6px rgba(0,0,0,.8));opacity:.55;transition:opacity .35s}
+/* Only what is specific to this screen. Everything shared — tokens, the focus
+   ring, .x3f-band, the type scale — lives in x3f-ui.css. */
+
+/* `html body`, not `body`, and this is not decoration.
+
+   tools/sync-from-web.py injects TV_TYPE into every menu page's <head> AFTER
+   this block, and TV_TYPE contains `body{font-size:17px}` inside a
+   (min-width:1200px) query. Same specificity, later in the cascade: it would
+   win, and a raw-px body size is precisely the thing the rem coordinate system
+   exists to prevent. Two element selectors outrank one, so this survives the
+   injection without the sync script needing to know this page exists.
+
+   Everything else TV_TYPE sets keys off class names this page deliberately does
+   not use — .wrap, .cwrap, .note, .day, .mini, .set, .play, .cta, .go, .detail,
+   .exhint, .muscle, .prog, .exname, .cname — and it has no <select> to resize.
+   Renaming a class into that list is how this page would silently start looking
+   wrong on the TV and nowhere else. */
+html body{font-size:var(--t-body)}
+
+/* ── the one scroll context ──────────────────────────────────────────────
+   x3f-ui.css puts overflow:hidden on <body> on purpose (a TV must never scroll
+   horizontally), so the dashboard owns a single vertical scroller. One scroller
+   and not two: with a pinned header plus an inner scrolling area the D-pad has
+   to guess which one a Down belongs to, and x3f-nav's scrollPage() walks to the
+   nearest scrollable ancestor — two of them is two answers.
+
+   scroll-padding-top keeps the sticky bar from covering whatever the cursor
+   just landed on. */
+/* 100vh first, then 100dvh: dvh needs Chrome 108 and the TV WebView is commonly
+   several releases behind. An unrecognised height declaration is DROPPED, and a
+   dropped height here means the shell grows to its content inside a body that
+   x3f-ui.css gives overflow:hidden — i.e. everything below the fold silently
+   clipped, with no scrollbar to say so. */
+.shell{position:relative;z-index:1;height:100vh;height:100dvh;
+  overflow-y:auto;overflow-x:hidden;
+  padding:0 var(--safe-x);scrollbar-width:none;
+  scroll-padding-top:10rem;scroll-padding-bottom:4rem}
+.shell::-webkit-scrollbar{display:none}
+
+/* ── top bar ─────────────────────────────────────────────────────────────
+   Sticky: the way out of the dashboard has to be reachable from anywhere in a
+   page this long. The gradient is what keeps the bar's text off the moving
+   aurora underneath it (D19). */
+.top{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:var(--s-2);
+  padding:var(--safe-y) 0 var(--s-3);
+  background:linear-gradient(var(--bg) 82%,rgba(15,17,20,0))}
+.brand{font-size:var(--t-h2);font-weight:var(--w-bold);letter-spacing:.06em;white-space:nowrap}
+.brand b{color:var(--accent)}
+.topspace{flex:1 1 auto}
+.topbtn{font-family:var(--font-display);font-size:var(--t-min);font-weight:var(--w-bold);
+  color:var(--txt-2);text-decoration:none;background:var(--surface-2);
+  border:.125rem solid var(--line-2);border-radius:var(--r-pill);
+  padding:var(--s-1) var(--s-3);cursor:pointer;position:relative;white-space:nowrap;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+/* A focused control changes its FILL, not only its ring. Four changes at once —
+   ring, size, background luminance, border — is what makes focus readable across
+   a room, in a bright room, and to someone who cannot separate the accent hue. */
+.topbtn.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+/* x3f-music.js injects its toggle into .top with class `topbtn x3fm-btn`; its own
+   stylesheet is inserted at the head of <head>, so these rules win. */
+.top .x3fm-btn{font-family:var(--font-display);font-size:var(--t-min)}
+
+/* ── section panels ──────────────────────────────────────────────────────
+   Every section is ONE opaque panel that contains its own heading. That is the
+   whole fix for D19: x3f-fx.js paints an animated aurora at z-index:-1, and the
+   nine section headings used to be 12px dim text sitting directly on it, with
+   their effective contrast changing frame to frame. Nothing on this page reads
+   against the ambience any more. */
+.panel{position:relative;background:var(--surface);border:.125rem solid var(--line);
+  border-radius:var(--r-2);padding:var(--s-3) var(--s-4);margin-bottom:var(--s-3);
+  scroll-margin-top:10rem;scroll-margin-bottom:var(--s-4);
+  transition:transform var(--focus-ms) var(--ease),
+             border-color var(--focus-ms) linear,
+             background-color var(--focus-ms) linear}
+/* The design system's default focus scale is 1.06, which is right for a card in
+   a rail and wrong for an element as wide as the safe area: 6% of 1728 design px
+   pushes 52px out of each side and the ring lands under the overscan crop. The
+   ring, the background lift and the border still change — this only trims the
+   size step to something a full-width block can afford. */
+.panel.foc{transform:scale(1.01)}
+.phead{display:flex;align-items:baseline;gap:var(--s-3);margin-bottom:var(--s-2)}
+.phead h2{font-size:var(--t-h2);font-weight:var(--w-bold);color:var(--txt-2);letter-spacing:.01em}
+.pnum{margin-left:auto;font-family:var(--font-num);font-size:var(--t-min);
+  color:var(--txt-2);text-align:right;white-space:nowrap}
+
+/* Never wider than about 60 characters: at 10 feet the eye loses the return
+   sweep on a long line, and there is no thumb to scroll back with. */
+.prose{font-size:var(--t-min);color:var(--txt-2);line-height:1.45;max-width:52rem}
+
+/* ── buttons ─────────────────────────────────────────────────────────── */
+.pbtn{font-family:var(--font-display);font-size:var(--t-body);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-pill);padding:var(--s-2) var(--s-4);cursor:pointer;
+  position:relative;text-decoration:none;display:inline-flex;align-items:center;
+  gap:var(--s-1);white-space:nowrap;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.pbtn.primary{background:var(--accent);border-color:var(--accent-2);color:#0B0813}
+.pbtn.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+/* The primary button is ALREADY accent-filled, so the shared ring would be
+   accent on accent: the fill stops changing, and worse, a focused secondary
+   button becomes indistinguishable from the unfocused primary. Lift the fill a
+   step and put the ring in ink instead. Still one ring, owned by .foc — only its
+   colour changes, which is the "3:1 against what is adjacent to it" half of the
+   focus requirement rather than a second focus vocabulary. */
+.pbtn.primary.foc{background:var(--accent-2);outline-color:var(--txt);border-color:var(--txt)}
+/* Destructive actions carry the failure colour on the BORDER and on the focus
+   fill, and keep --txt for the label. --hot on --surface-2 is 5.7:1, which is
+   fine for a large numeral and not fine for a word somebody has to read from a
+   sofa — the 7:1 target is not negotiable for text, so the state is carried by
+   the outline and by what the button says. */
+.pbtn.danger{border-color:rgba(255,99,118,.6)}
+.pbtn.danger.foc{background:var(--hot);color:#20070C;border-color:var(--hot)}
+.pbtn.small{font-size:var(--t-min);padding:var(--s-1) var(--s-3)}
+
+/* A row the D-pad treats as ONE horizontal line. The CONTAINER is full width
+   even when its children are not, and that is the entire point: Up/Down score
+   against the row's rect, so the cursor drops INTO the row instead of sailing
+   past a cluster of narrow right-aligned controls. Getting this wrong is what
+   made 28 Library game links unreachable (docs/audit/phase1-verify.md S-2).
+   nowrap because data-nav-row means one line — a wrapped row can never be
+   traversed vertically. */
+.prow{display:flex;flex-wrap:nowrap;align-items:center;gap:var(--s-2);margin-top:var(--s-3)}
+
+/* ── today ───────────────────────────────────────────────────────────── */
+.tgrid{display:flex;gap:var(--s-5);align-items:flex-start}
+.tmain{flex:1 1 auto;min-width:0}
+.tkick{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--accent-2)}
+.tday{font-size:var(--t-title);font-weight:var(--w-bold);line-height:1.08;margin-top:var(--s-1)}
+.tmeta{font-size:var(--t-body);color:var(--txt-2);margin-top:var(--s-1)}
+.bar{height:1rem;border-radius:var(--r-pill);background:rgba(236,238,242,.12);
+  overflow:hidden;margin-top:var(--s-2);max-width:46rem}
+/* scaleX, not width. The old bar animated `width`, which is a layout property:
+   every frame of it costs a re-layout of the panel it sits in, on a SoC with a
+   ~10 ms frame budget. transform is the compositor's job and free. */
+.bar i{display:block;height:100%;width:100%;background:var(--accent);
+  transform-origin:0 50%;transform:scaleX(0);
+  transition:transform .5s var(--ease)}
+.tside{flex:none;display:flex;gap:var(--s-2)}
+.stat{min-width:12rem;text-align:center;background:var(--surface-2);
+  border:.125rem solid var(--line);border-radius:var(--r-2);padding:var(--s-2) var(--s-3)}
+.stat .n{font-family:var(--font-num);font-size:var(--t-hero);font-weight:var(--w-bold);
+  line-height:1;color:var(--gold)}
+.stat.calm .n{color:var(--txt)}
+.stat .k{font-size:var(--t-min);letter-spacing:.06em;text-transform:uppercase;
+  color:var(--txt-2);margin-top:var(--s-1)}
+.tnote{font-size:var(--t-min);color:var(--txt-2);line-height:1.45;margin-top:var(--s-2);max-width:56rem}
+/* The week's three-tier totals. Full range, then what happened after full-range
+   failure — which the source says is the part that counts most, so it is not
+   allowed to hide inside a single "reps" number. */
+.tiers{display:flex;gap:var(--s-4);margin-top:var(--s-3);flex-wrap:wrap}
+.tier{min-width:9rem}
+.tier b{display:block;font-family:var(--font-num);font-size:var(--t-h1);
+  font-weight:var(--w-bold);line-height:1}
+.tier span{display:block;font-size:var(--t-min);letter-spacing:.05em;
+  text-transform:uppercase;color:var(--txt-2);margin-top:.2rem}
+.tier.full b{color:var(--txt)}
+.tier.mid  b{color:var(--amber)}
+.tier.weak b{color:var(--hot)}
+.tier.pk   b{color:var(--gold)}
+
+/* ── challenge ───────────────────────────────────────────────────────── */
+.chalbody{display:flex;gap:var(--s-3);align-items:flex-start}
+.chalic{font-size:var(--t-title);line-height:1;flex:none}
+.chaltitle{font-size:var(--t-h1);font-weight:var(--w-bold);line-height:1.15}
+.chaldetail{font-size:var(--t-body);color:var(--txt-2);line-height:1.4;margin-top:var(--s-1);max-width:56rem}
+.tag{display:inline-block;font-size:var(--t-min);font-weight:var(--w-bold);
+  letter-spacing:.08em;text-transform:uppercase;border-radius:var(--r-pill);
+  padding:var(--s-1) var(--s-3);margin-top:var(--s-2);
+  color:var(--gold);border:.125rem solid rgba(255,201,74,.45)}
+.tag.done{color:var(--mint);border-color:rgba(51,226,174,.5)}
+
+/* ── the 84-day grid ─────────────────────────────────────────────────────
+   Twelve rows of seven. Every row prints its own count and its own date span,
+   because on a television the `title` tooltip these used to depend on does not
+   exist and a remote cannot reach one (D16). */
+.grid12{display:flex;flex-direction:column;gap:.4rem}
+.growrow{display:flex;gap:.4rem;align-items:center}
+.growrow .wk{font-family:var(--font-num);font-size:var(--t-min);color:var(--txt-2);
+  width:5.5rem;flex:0 0 auto}
+/* margin-left:auto, because the cells cannot grow past their max-width and the
+   leftover space would otherwise pool at the END of the row, leaving the counts
+   and dates stranded in the middle of the panel. */
+.growrow .ct{font-family:var(--font-num);font-size:var(--t-min);color:var(--txt);
+  width:5rem;flex:0 0 auto;text-align:right;margin-left:auto}
+.growrow .dt{font-size:var(--t-min);color:var(--txt-2);width:14rem;flex:0 0 auto;
+  text-align:right;white-space:nowrap}
+.growrow.now .wk,.growrow.now .ct{color:var(--gold)}
+.cell{flex:1 1 0;height:1.9rem;border-radius:.35rem;background:rgba(236,238,242,.10);
+  max-width:5rem;min-width:1rem}
+.cell.done{background:var(--mint)}
+/* Days that have not happened yet are drawn as an outline rather than a fill, so
+   "nothing there yet" and "you missed it" are different SHAPES and not two
+   shades of the same grey. */
+.cell.future{background:transparent;box-shadow:inset 0 0 0 .125rem rgba(236,238,242,.14)}
+.cell.today{outline:.25rem solid var(--gold);outline-offset:.15rem}
+.legend{display:flex;gap:var(--s-4);margin-top:var(--s-3);flex-wrap:wrap;
+  font-size:var(--t-min);color:var(--txt-2)}
+.legend span{display:inline-flex;align-items:center;gap:var(--s-1)}
+.legend i{width:1.4rem;height:1.4rem;border-radius:.3rem;display:inline-block;flex:none}
+.legend i.d{background:var(--mint)}
+.legend i.r{background:rgba(236,238,242,.10)}
+.legend i.f{box-shadow:inset 0 0 0 .125rem rgba(236,238,242,.14)}
+.legend i.t{outline:.2rem solid var(--gold);outline-offset:.1rem;background:rgba(236,238,242,.10)}
+
+/* ── the weekly charts ───────────────────────────────────────────────────
+   The bars are the only <div>s inside #vol / #pk — the value and the week label
+   live in the separate label row underneath. That keeps "twelve bars" literally
+   true in the DOM, and it puts the numbers on screen where a chart on a TV needs
+   them: printed, not hidden behind a hover that cannot happen. */
+.vol{display:flex;gap:var(--s-1);align-items:flex-end;height:15rem}
+.vol>div{flex:1 1 0;min-height:.3rem;border-radius:.35rem .35rem 0 0}
+.vol.reps>div{background:linear-gradient(180deg,var(--cyan),rgba(53,216,245,.38))}
+.vol.force>div{background:linear-gradient(180deg,var(--gold),rgba(255,201,74,.38))}
+.vollab{display:flex;gap:var(--s-1);margin-top:var(--s-2)}
+.vollab>span{flex:1 1 0;text-align:center;line-height:1.2;min-width:0}
+.vollab b{display:block;font-family:var(--font-num);font-size:var(--t-min);
+  font-weight:var(--w-bold);color:var(--txt)}
+.vollab i{display:block;font-style:normal;font-size:var(--t-min);color:var(--txt-2)}
+.vollab .now b{color:var(--accent-2)}
+
+/* ── data rows: personal bests and recent sets ───────────────────────── */
+.pbs{display:flex;flex-direction:column;gap:var(--s-2)}
+.pbrow{display:flex;align-items:center;gap:var(--s-3);background:var(--surface-2);
+  border:.125rem solid var(--line);border-radius:var(--r-1);
+  padding:var(--s-2) var(--s-3);position:relative}
+.pbname{flex:1 1 auto;min-width:0}
+.pbname .nm{font-size:var(--t-body);font-weight:var(--w-bold);line-height:1.2}
+.pbname .bd{display:flex;align-items:center;gap:var(--s-2);flex-wrap:wrap;
+  margin-top:var(--s-1);font-size:var(--t-min);color:var(--txt-2)}
+.v{flex:none;text-align:right;min-width:7rem}
+.v b{display:block;font-family:var(--font-num);font-size:var(--t-h2);
+  font-weight:var(--w-bold);line-height:1;color:var(--txt)}
+.v span{display:block;font-size:var(--t-min);letter-spacing:.05em;
+  text-transform:uppercase;color:var(--txt-2);margin-top:.2rem}
+.v.mid b{color:var(--amber)}
+.v.weak b{color:var(--hot)}
+.v.peak b{color:var(--gold)}
+.v.off b{color:var(--dim)}
+.rmeta{flex:1 1 auto;min-width:0;text-align:right;font-family:var(--font-num);
+  font-size:var(--t-min);color:var(--txt-2);line-height:1.35}
+.undorow{display:flex;align-items:center;gap:var(--s-3);
+  background:var(--surface-3);border:.125rem solid var(--accent-2);
+  border-radius:var(--r-1);padding:var(--s-2) var(--s-3);position:relative}
+.undorow .u{flex:1 1 auto;font-size:var(--t-min);color:var(--txt)}
+
+/* ── band coaching + calibration ─────────────────────────────────────── */
+.advice{background:var(--surface-2);border:.125rem solid var(--line);
+  border-left:.4rem solid var(--gold);border-radius:var(--r-1);
+  padding:var(--s-2) var(--s-3);margin-bottom:var(--s-2)}
+.advice.down{border-left-color:var(--hot)}
+.advice h3{font-size:var(--t-body);font-weight:var(--w-bold)}
+.advice p{font-size:var(--t-min);color:var(--txt-2);line-height:1.45;margin-top:var(--s-1);max-width:60rem}
+.calrow{display:flex;align-items:center;gap:var(--s-3);background:var(--surface-2);
+  border:.125rem solid var(--line);border-radius:var(--r-1);
+  padding:var(--s-2) var(--s-3);margin-bottom:var(--s-2)}
+.calrow .cn{flex:1 1 auto;min-width:0;font-size:var(--t-body);font-weight:var(--w-bold)}
+/* x3f-ui.css colours the pip per band NAME. An entry whose band string is not
+   one of the five (an old log, an imported file) would otherwise get an
+   invisible hole where the emblem goes. */
+.x3f-band .pip{background:var(--surface-3)}
+/* Fixed widths, so the five fields line up into columns down the list. Five
+   right-aligned fields of varying width read as noise at ten feet; a column
+   reads as a table. */
+.calrow .x3f-band{min-width:15rem;justify-content:center}
+.calrow .rng{font-family:var(--font-num);font-size:var(--t-min);color:var(--txt-2);
+  white-space:nowrap;flex:0 0 auto;text-align:right}
+.calrow .rng.lb{width:9rem}
+.calrow .rng.sp{width:17rem}
+.calrow .age{font-size:var(--t-min);color:var(--txt-2);white-space:nowrap;width:27rem;text-align:right}
+/* State by a rule down the left edge AND by the words in the age column — never
+   by the text colour alone, which is both a contrast problem and invisible to a
+   portion of viewers. */
+.calrow.stale{border-left:.4rem solid var(--gold)}
+.calrow.stale .age{color:var(--gold);font-weight:var(--w-bold)}
+.calrow.never{border-left:.4rem solid var(--amber)}
+.calrow.never .age{color:var(--txt)}
+
+/* ── achievements ────────────────────────────────────────────────────── */
+.achfilters{display:flex;flex-wrap:nowrap;align-items:center;gap:var(--s-2);margin:var(--s-2) 0 var(--s-3)}
+.chip{font-family:var(--font-display);font-size:var(--t-min);font-weight:var(--w-bold);
+  background:var(--surface-2);border:.125rem solid var(--line-2);color:var(--txt);
+  border-radius:var(--r-pill);padding:var(--s-1) var(--s-3);cursor:pointer;position:relative;
+  white-space:nowrap;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.chip.on{background:var(--accent-2);border-color:transparent;color:#0B0813}
+.chip.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+.achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(21rem,1fr));gap:var(--s-2)}
+.ach{background:var(--surface-2);border:.125rem solid var(--line);border-radius:var(--r-2);
+  padding:var(--s-3) var(--s-2);text-align:center;opacity:.55;position:relative;overflow:hidden}
+.ach.got{opacity:1;border-color:rgba(124,108,255,.45)}
+.ach.t4.got{border-color:rgba(255,201,74,.5)}
+/* The medallion is a photograph on a black field; screen-blending drops the
+   black and leaves the metal glowing on whatever the card sits on.
+   The old sheen keyframe is gone on purpose: an animation on 117 cards promotes
+   117 compositor layers, and a full-screen layer costs 7.9 MiB against a 1 GB
+   TV's 30-40 MiB graphics budget. A locked/unlocked difference that is already
+   carried by opacity, border and glyph does not need a moving highlight too. */
+.medal{position:relative;width:6.5rem;height:6.5rem;margin:0 auto var(--s-1)}
+.medal i{position:absolute;inset:0;background-size:contain;background-repeat:no-repeat;
+  background-position:center;mix-blend-mode:screen;filter:grayscale(.85) brightness(.55)}
+.medal em{position:absolute;inset:0;display:grid;place-items:center;font-style:normal;
+  font-size:2.6rem;line-height:1;opacity:.55}
 .ach.got .medal i{filter:none}
-.ach.got .medal span{opacity:1}
-.ach.got{opacity:1;border-color:rgba(47,240,176,.35)}
-/* an unlocked medallion catches the light once when it comes into view */
-.ach.got::after{content:'';position:absolute;inset:0;pointer-events:none;
- background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.10) 50%,transparent 62%);
- transform:translateX(-120%);animation:achSheen 3.4s ease-out .2s 1}
-@keyframes achSheen{to{transform:translateX(120%)}}
-@media (prefers-reduced-motion:reduce){.ach.got::after{display:none}}
-.ach .an{font-weight:800;font-size:13.5px;line-height:1.25}
-.ach .ad{font-family:var(--n);font-size:11px;color:var(--dim);line-height:1.4;margin-top:3px}
-.ach .at{display:inline-block;font-family:var(--n);font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;margin-top:6px;color:var(--dim)}
+.ach.got .medal em{opacity:1}
+.an{font-size:var(--t-body);font-weight:var(--w-bold);line-height:1.2}
+.ad{font-size:var(--t-min);color:var(--txt-2);line-height:1.35;margin-top:.25rem}
+.at{display:inline-block;font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.08em;
+  text-transform:uppercase;margin-top:var(--s-1);color:var(--txt-2)}
 .ach.got .at{color:var(--gold)}
-.ach.t4.got{border-color:rgba(255,211,92,.55);box-shadow:0 0 30px -12px var(--gold)}
-.filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
-.chip{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);border:1px solid var(--brd2);color:var(--txt);border-radius:100px;padding:8px 12px;cursor:pointer}
-.chip.on{background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;border-color:transparent}
-.note{color:var(--dim);font-size:12.5px;line-height:1.5;margin-top:12px;text-align:center;font-family:var(--n)}
-.note a{color:var(--accent)}
-.row{display:flex;gap:8px;flex-wrap:wrap}
-textarea{width:100%;min-height:70px;font-family:var(--n);font-size:12px;background:var(--bg2);color:var(--txt);border:1px solid var(--brd2);border-radius:12px;padding:10px;margin-top:8px}
-.empty{font-family:var(--n);font-size:13px;color:var(--dim);line-height:1.6}
-/* end of a scrollable list: breathing room plus a hairline, so hitting the
-   bottom reads as the bottom instead of the page just refusing to move */
-.endcap{height:1px;width:min(140px,40%);margin:30px auto calc(80px + var(--sab));background:linear-gradient(90deg,transparent,var(--brd2),transparent)}
-</style></head>
+.achnew{font-size:var(--t-min);font-weight:var(--w-bold);color:var(--gold)}
+
+/* ── import / export ─────────────────────────────────────────────────── */
+textarea{display:block;width:100%;min-height:11rem;font-family:var(--font-num);
+  font-size:var(--t-min);background:var(--bg);color:var(--txt);
+  border:.125rem solid var(--line-2);border-radius:var(--r-1);
+  padding:var(--s-2);margin-top:var(--s-3);resize:none;
+  user-select:text;-webkit-user-select:text}
+.msg{font-size:var(--t-min);color:var(--accent-2);line-height:1.45;
+  margin-top:var(--s-3);max-width:60rem}
+.msg.warn{color:var(--gold)}
+
+/* ── empty states ────────────────────────────────────────────────────── */
+.empty{font-size:var(--t-min);color:var(--txt-2);line-height:1.5;max-width:60rem}
+
+/* End of a long page: breathing room plus a hairline, so hitting the bottom
+   reads as the bottom rather than the page refusing to move. */
+.endcap{height:.25rem;background:var(--line);border-radius:var(--r-pill);margin-top:var(--s-4)}
+.pad{height:8rem}
+</style>
+</head>
 <body>
-<div class="wrap">
-<div class="top"><div class="brand">X3F <b>PROGRESS</b></div><div class="spacer"></div>
-<a class="home" href="X3F_Routine.html" data-nav data-nav-first>Routines</a>
-<a class="home" href="X3F_Library.html" data-nav>Library</a>
-<a class="home" href="index.html" data-nav data-nav-back>All games</a></div>
 
-<div class="today" id="today"></div>
+<div class="shell" id="shell">
 
-<h2>Today's challenge</h2>
-<div class="card chal" id="chal"></div>
-
-<h2>The 12-week program</h2>
-<div class="card"><div class="grid12" id="grid"></div>
-  <div class="note" style="margin-top:10px;text-align:left" id="gridNote"></div></div>
-
-<h2>Reps per week</h2>
-<div class="card"><div class="vol reps" id="vol"></div><div class="vollab" id="volLab"></div></div>
-
-<h2>Peak force per week</h2>
-<div class="card"><div class="vol force" id="pk"></div><div class="vollab" id="pkLab"></div></div>
-
-<h2>Band coaching</h2>
-<div id="advice"></div>
-
-<h2>Personal bests</h2>
-<div class="pbs" id="pbs"></div>
-
-<h2>Recent sets</h2>
-<div class="pbs" id="recent"></div>
-
-<h2>Achievements</h2>
-<div class="achhead"><span class="cnt" id="achCnt"></span></div>
-<div class="filters" id="achFilters"></div>
-<div class="achs" id="achs"></div>
-
-<h2>Move your history between devices</h2>
-<div class="card">
-  <div class="empty">No account, no server — your log lives in this browser. Export writes a file; import merges one back in, skipping anything you already have.</div>
-  <div class="row" style="margin-top:10px">
-    <button class="home" id="expBtn" data-nav>⬇ Export my history</button>
-    <button class="home" id="impBtn" data-nav>⬆ Import from text</button>
-    <button class="home" id="wipeBtn" data-nav>Reset achievements</button>
+  <!-- The header row. One data-nav-row, so Left/Right stays inside it and cannot
+       escape sideways into the page, and Up/Down treats the whole bar as a
+       single band. x3f-music.js appends its toggle here at load. -->
+  <div class="top" data-nav-row="top">
+    <div class="brand">X3<b>F</b> PROGRESS</div>
+    <div class="topspace"></div>
+    <a class="topbtn" id="navRoutine" href="X3F_Routine.html" data-nav data-nav-first>Workout</a>
+    <a class="topbtn" id="navLibrary" href="X3F_Library.html" data-nav>Library</a>
+    <a class="topbtn" id="navHome" href="index.html" data-nav data-nav-back>Home</a>
   </div>
-  <textarea id="impBox" placeholder="Paste an exported history here, then press Import again." style="display:none"></textarea>
+
+  <!-- ── 1. today ───────────────────────────────────────────────────────
+       Every cross-page link on this page is a STATIC anchor, never one built in
+       JavaScript. sync-from-web.py renames the menu pages by rewriting the
+       literal href="X3F_Routine.html" text in the file, so a link assembled at
+       runtime is invisible to it — and window.X3FFILES only carries the GAME
+       filenames, so there is nothing to look the menus up in either. A JS-built
+       menu link is a dead link on the TV, silently. -->
+  <section class="panel" id="today">
+    <div class="phead"><h2>Today</h2><div class="pnum" id="todayNum"></div></div>
+    <div id="todayBody"></div>
+    <div class="prow" data-nav-row="todayact">
+      <a class="pbtn primary" id="startLink" href="X3F_Routine.html" data-nav>Start today's workout</a>
+    </div>
+  </section>
+
+  <!-- ── 2. today's challenge ─────────────────────────────────────────── -->
+  <section class="panel" id="chal" role="region" aria-label="Today's challenge">
+    <div class="phead"><h2>Today's challenge</h2></div>
+    <div id="chalBody"></div>
+    <div class="prow" id="chalRow" data-nav-row="chal" hidden>
+      <button class="pbtn" id="chalDone" data-nav>Mark done</button>
+    </div>
+  </section>
+
+  <!-- ── 3. the 12-week program ───────────────────────────────────────── -->
+  <section class="panel" id="gridPanel" data-nav role="region" aria-label="The 12-week program">
+    <div class="phead"><h2>The 12-week program</h2><div class="pnum" id="gridNum"></div></div>
+    <div class="grid12" id="grid"></div>
+    <div class="legend">
+      <span><i class="d"></i>trained</span>
+      <span><i class="r"></i>rest or missed</span>
+      <span><i class="f"></i>still to come</span>
+      <span><i class="t"></i>today</span>
+    </div>
+    <div class="prose" id="gridNote"></div>
+  </section>
+
+  <!-- ── 4. reps per week ─────────────────────────────────────────────── -->
+  <section class="panel" id="volPanel" data-nav role="region" aria-label="Reps per week">
+    <div class="phead"><h2>Reps per week</h2><div class="pnum" id="volMax"></div></div>
+    <div class="vol reps" id="vol"></div>
+    <div class="vollab" id="volLab"></div>
+    <div class="prose">Total reps logged in each of the last twelve weeks — oldest on the left, this week on the right.</div>
+  </section>
+
+  <!-- ── 5. peak force per week ───────────────────────────────────────── -->
+  <section class="panel" id="pkPanel" data-nav role="region" aria-label="Peak force per week">
+    <div class="phead"><h2>Peak force per week</h2><div class="pnum" id="pkMax"></div></div>
+    <div class="vol force" id="pk"></div>
+    <div class="vollab" id="pkLab"></div>
+    <div class="prose">The single hardest pull or press of each week. Volume is not the progress axis in this program — band is — so this is the line that says whether you are actually getting stronger.</div>
+  </section>
+
+  <!-- ── 6. band coaching ─────────────────────────────────────────────── -->
+  <section class="panel" id="advicePanel" data-nav role="region" aria-label="Band coaching">
+    <div class="phead"><h2>Band coaching</h2></div>
+    <div id="advice"></div>
+  </section>
+
+  <!-- ── 7. calibration ───────────────────────────────────────────────── -->
+  <section class="panel" id="calPanel" role="region" aria-label="Calibration">
+    <div class="phead"><h2>Calibration</h2><div class="pnum" id="calNum"></div></div>
+    <div id="calib"></div>
+    <div class="prose">Your measured range for a movement on a band is what every force reading in the app is scaled from. It drifts as you get stronger, so a measurement older than six weeks is flagged.</div>
+    <div class="prow" data-nav-row="calact">
+      <a class="pbtn" id="calLink2" href="X3F_Calibrate.html" data-nav>Measure a band</a>
+    </div>
+  </section>
+
+  <!-- ── 8. personal bests ────────────────────────────────────────────── -->
+  <section class="panel" id="pbPanel" data-nav role="region" aria-label="Personal bests">
+    <div class="phead"><h2>Personal bests</h2><div class="pnum">full · mid · weak · peak · negative</div></div>
+    <div class="pbs" id="pbs"></div>
+    <div class="prose" id="pbNote"></div>
+  </section>
+
+  <!-- ── 9. recent sets ───────────────────────────────────────────────── -->
+  <section class="panel" id="recentPanel" role="region" aria-label="Recent sets">
+    <div class="phead"><h2>Recent sets</h2></div>
+    <div class="pbs" id="recent"></div>
+  </section>
+
+  <!-- ── 10. move your history ────────────────────────────────────────── -->
+  <section class="panel" id="dataPanel" role="region" aria-label="Move your history between devices">
+    <div class="phead"><h2>Move your history between devices</h2></div>
+    <div class="empty" id="dataLede">No account, no server — your log lives in this browser. Export writes it out; import merges one back in, skipping anything you already have.</div>
+    <div id="syncBox"></div>
+    <div class="prow" data-nav-row="data">
+      <button class="pbtn" id="expBtn" data-nav>Export my history</button>
+      <button class="pbtn" id="impBtn" data-nav>Import from text</button>
+      <button class="pbtn danger" id="wipeBtn" data-nav>Reset achievements</button>
+    </div>
+    <!-- The in-page replacement for confirm(). On the TV every confirm() is
+         auto-answered YES and never drawn, so "Reset achievements" was one OK
+         press away from wiping your badges with no warning at all (D5). -->
+    <div id="wipeAsk" hidden>
+      <div class="msg warn">This clears your unlocked badges and your challenge history. Your training log is kept.</div>
+      <div class="prow" data-nav-row="wipe">
+        <button class="pbtn" id="wipeNo" data-nav>Keep them</button>
+        <button class="pbtn danger" id="wipeYes" data-nav>Yes, reset badges</button>
+      </div>
+    </div>
+    <div class="msg" id="dataMsg"></div>
+    <textarea id="impBox" placeholder="Paste an exported history here, then press Import again." style="display:none"></textarea>
+  </section>
+
+  <!-- ── 11. achievements ─────────────────────────────────────────────────
+       Last on the page on purpose. It is a wall of a hundred-odd cards that are
+       not individually actionable, and with nothing focusable below it a Down
+       press has nothing to teleport TO — x3f-nav falls through to scrollPage()
+       and simply scrolls the wall, which is the correct behaviour for long
+       non-interactive content on a remote. Put the export card after it (where
+       it used to be) and Down from the filters jumps two thousand pixels. -->
+  <section class="panel" id="achPanel" role="region" aria-label="Achievements">
+    <div class="phead"><h2>Achievements</h2><div class="pnum" id="achCnt"></div></div>
+    <div class="achnew" id="achNew"></div>
+    <div class="achfilters" id="achFilters" data-nav-row="achfilters"></div>
+    <div class="achs" id="achs"></div>
+  </section>
+
+  <div class="endcap"></div>
+  <div class="pad"></div>
 </div>
 
-<div class="note">Everything here is computed from your own logged sets. Train from <a href="X3F_Routine.html" data-nav>Routines</a> and it fills itself in.</div>
-<div class="endcap"></div>
-</div>
+<script>
+/* Claim the focus class BEFORE x3f-nav.js loads. Otherwise it installs its own
+   ring — a green box-shadow inherited from the palette this page just stopped
+   using — and the screen ends up with two focus vocabularies, one of them
+   lying. x3f-ui.css owns .foc, so there is exactly one ring in the app. */
+window.X3FNAV_CLASS = 'foc';
+</script>
 <script src="x3f-exercises.js"></script>
+<script src="x3f-band.js"></script>
+<script src="x3f-cal.js"></script>
 <script src="x3f-progress.js"></script>
+<!-- Sync is OPTIONAL and loaded last of the data modules, so a build with no
+     Firebase config, or a phone with no network, degrades to exactly the page
+     that existed before it: local history, export and import. -->
+<script src="x3f-firebase-config.js"></script>
+<script src="x3f-sync.js"></script>
+<!-- x3f-fx.js loads BEFORE the page script, not after it. D14: the dashboard
+     asked for its unlock celebration at parse time and the module was still
+     three script tags away, so the one moment the burst exists for — opening the
+     dashboard and seeing what last night's workout unlocked — was exactly the
+     moment X3FFX was undefined, and the catch swallowed it. -->
+<script src="x3f-fx.js"></script>
+<script src="x3f-music.js"></script>
+<script src="x3f-nav.js"></script>
 <script>
 "use strict";
-const $=id=>document.getElementById(id);
-const P=window.X3FProg, EX=window.X3FEX;
-const nameOf=slug=>{const e=EX&&EX.get(slug);return e?e.name:(slug||'—')};
 
-function renderToday(){
-  const pr=P.program(), st=P.streak();
-  const label=pr.active?('Week '+pr.week+' · '+pr.phase):'Not started yet';
-  const day=pr.doneToday?'Done for today':(pr.nextType+' day');
-  $('today').innerHTML=
-    '<div><div class="tday"><small>'+label+'</small>'+day+'</div>'+
-    '<div class="tmeta">'+(pr.active
-      ? pr.thisWeek+' of '+pr.perWeek+' workouts this week · '+pr.workouts+' training days total'
-      : 'Run one set and the 12-week program starts tracking itself.')+'</div>'+
-    '<div class="bar"><i style="width:'+Math.round(pr.weekProgress*100)+'%"></i></div></div>'+
-    '<div class="flame"><div class="n">'+st.current+'</div><div class="k">day streak</div>'+
-    (pr.active&&pr.thisWeek>=pr.perWeek?'<div class="k" style="color:var(--accent);margin-top:4px">rest earned</div>':'')+
-    (st.best>st.current?'<div class="k" style="margin-top:4px">best '+st.best+'</div>':'')+'</div>';
+/* ────────────────────────────────────────────────────────────────────────
+   D13: every module below is OPTIONAL. This page used to do
+   `const P = window.X3FProg` and then call P.program() from an unguarded
+   top-level refresh(), so a single failed script — an interrupted first load,
+   the service worker handing back index.html for a missing .js — left a list of
+   section headings over empty boxes, with the export buttons never wired up.
+   Nothing here may take the page down with it.
+   ──────────────────────────────────────────────────────────────────────── */
+function $(id) { return document.getElementById(id); }
+function mod(n) { try { return window[n] || null; } catch (e) { return null; } }
+
+var P   = mod('X3FProg');
+var EX  = mod('X3FEX');
+var CAL = mod('X3FCal');
+
+/* Whether we are inside the TV shell. MainActivity exposes the X3F bridge and
+   the bootstrap sets __x3fNative; either one means "no file system, no
+   downloads, no system dialogs the user can see". */
+var ONTV = !!(window.X3F || window.__x3fNative);
+
+function nameOf(slug) {
+  try { var e = EX && EX.get(slug); if (e) return e.name; } catch (er) {}
+  return slug || '—';
 }
 
-function renderChal(){
-  const c=P.challenge();
-  $('chal').className='card chal'+(c.done?' done':'');
-  $('chal').innerHTML='<div class="ic">'+(c.done?'✅':'🎯')+'</div><div style="flex:1">'+
-    '<h3>'+c.title+'</h3><p>'+c.detail+'</p>'+
-    '<span class="tag">'+(c.done?'Complete':(c.metric==='sets'?'One set':c.target+' '+c.metric))+'</span>'+
-    (c.done?'':' <button class="home" id="chalDone" data-nav style="margin-top:8px">Mark done</button>')+
-    '</div>';
-  const b=$('chalDone'); if(b)b.onclick=()=>{P.markChallenge();refresh()};
+/* Everything below goes through innerHTML, and an imported history can carry
+   arbitrary strings in ex / g / band. Escaping is cheap; not escaping is a
+   defect waiting for the first shared export file. */
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function n0(v) {
+  var n = Math.round(+v || 0);
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-function renderGrid(){
-  const g=P.grid(), t=P.today();
-  let html='';
-  for(let w=0;w<12;w++){
-    html+='<div class="growrow"><span class="wk">'+(w+1)+'</span>';
-    for(let d=0;d<7;d++){
-      const c=g[w*7+d];
-      html+='<div class="cell'+(c.done?' done':'')+(c.future?' future':'')+(c.day===t?' today':'')+'" title="'+c.day+'"></div>';
-    }
-    html+='</div>';
+var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/* Day keys are 'YYYY-MM-DD' strings the engine owns. Parsed as text rather than
+   handed to Date(), because `new Date('2026-09-08')` is UTC midnight and prints
+   as the previous day west of Greenwich. */
+function dayLabel(k) {
+  var p = String(k || '').split('-');
+  var out = (MON[(+p[1] || 1) - 1] || '?') + ' ' + (+p[2] || 1);
+  /* The year only when it is not this one. A dashboard that prints "Sep 8" for a
+     set logged fourteen months ago is lying by omission, and printing 2026 on
+     every row is noise. */
+  var yr = new Date().getFullYear();
+  return (+p[0] && +p[0] !== yr) ? (out + ' ' + p[0]) : out;
+}
+function spanLabel(a, b) {
+  var pa = String(a || '').split('-'), pb = String(b || '').split('-');
+  if (pa[1] === pb[1]) return dayLabel(a) + '–' + (+pb[2] || 1);
+  return dayLabel(a) + ' – ' + dayLabel(b);
+}
+
+/* Band identity: the NAME, a SHAPE, then a hue — never the swatch alone. The
+   band palette is pure luminance (White → Elite Black), which is the one thing a
+   TV renders worst and a portion of viewers cannot see at all. .x3f-band in
+   x3f-ui.css owns the shape-per-band mapping. */
+function bandChip(band) {
+  if (!band) return '<span class="x3f-band">no band</span>';
+  return '<span class="x3f-band" data-band="' + esc(band) + '"><span class="pip"></span>' +
+         esc(band) + '</span>';
+}
+/* The real published pound range for the configuration this movement actually
+   uses (singled vs doubled), which tells you far more than a colour does. */
+function forceLabel(band, slug) {
+  try { return (EX && EX.forceLabel) ? (EX.forceLabel(band, slug) || '') : ''; } catch (e) { return ''; }
+}
+
+/* A section must always have exactly ONE place the D-pad can stop, or the
+   dashboard is unreadable from the sofa (D7). Where the section has an action,
+   the action is that stop. Where it has none, the PANEL is focusable — on a
+   remote, being able to rest the ring on a block of information is the only way
+   to pause on it at all, and x3f-nav gives it the same ring and the same
+   scroll-into-view as any control. */
+function stopOn(el, on) {
+  if (!el) return;
+  if (on) el.setAttribute('data-nav', '');
+  else el.removeAttribute('data-nav');
+}
+
+/* ══════════════════════════════════════════════════════════ today ═════ */
+
+function renderToday() {
+  var pr = P.program(), st = P.streak();
+  var kicker = pr.active ? ('Week ' + pr.week + ' · ' + pr.phase) : 'Not started yet';
+  var day = pr.doneToday ? 'Done for today' : (pr.nextType + ' day');
+
+  $('todayNum').textContent = pr.active
+    ? (pr.workouts + ' training days total')
+    : '';
+
+  var meta = pr.active
+    ? (pr.thisWeek + ' of ' + pr.perWeek + ' workouts this week')
+    : 'Run one set and the 12-week program starts tracking itself.';
+
+  var side =
+    '<div class="stat"><div class="n">' + st.current + '</div><div class="k">day streak</div></div>';
+  if (st.best > st.current) {
+    side += '<div class="stat calm"><div class="n">' + st.best + '</div><div class="k">best ever</div></div>';
   }
-  $('grid').innerHTML=html;
-  const done=g.filter(c=>c.done).length;
-  $('gridNote').textContent=done
-    ? done+' training days in the last 12 weeks. Gaps are shown on purpose — one rest day a week keeps a streak alive.'
+
+  var html =
+    '<div class="tgrid"><div class="tmain">' +
+      '<div class="tkick">' + esc(kicker) + '</div>' +
+      '<div class="tday">' + esc(day) + '</div>' +
+      '<div class="tmeta">' + esc(meta) + '</div>' +
+      '<div class="bar"><i style="transform:scaleX(' +
+        Math.max(0, Math.min(1, pr.weekProgress || 0)).toFixed(3) + ')"></i></div>' +
+    '</div><div class="tside">' + side + '</div></div>';
+
+  /* The week so far, in the program's own three tiers. weekReview() is the
+     engine's own summary of YOUR week (the seventh day of the program week you
+     are in, not a calendar Sunday), and it already headlines full reps and what
+     came after full-range failure rather than a single total. */
+  var wr = null;
+  try { wr = P.weekReview ? P.weekReview() : null; } catch (e) {}
+  if (wr) {
+    html +=
+      '<div class="tiers">' +
+        '<div class="tier full"><b>' + n0(wr.fullReps) + '</b><span>full range</span></div>' +
+        '<div class="tier mid"><b>' + n0(wr.partials) + '</b><span>past failure</span></div>' +
+        '<div class="tier pk"><b>' + n0(wr.peak) + '</b><span>peak force</span></div>' +
+        '<div class="tier"><b>' + n0(wr.sets) + '</b><span>sets, week ' + wr.week + '</span></div>' +
+      '</div>' +
+      '<div class="tnote">' + esc(wr.sentence) + '</div>';
+  }
+
+  if (pr.active && pr.thisWeek >= pr.perWeek) {
+    html += '<div class="tnote">You have earned a rest day. One a week keeps the streak alive.</div>';
+  }
+
+  /* Roadmap item 1, surfaced where it is actually actionable. The measured range
+     for a movement on a band scales every force reading the games draw, and it
+     had no expiry date anywhere in the interface. */
+  try {
+    var old = P.staleCalibrations ? P.staleCalibrations() : [];
+    if (old.length) {
+      var w = old[0];
+      html += '<div class="tnote">' + esc(w.name) + ' on the ' + esc(w.band) + ' band was ' +
+        esc(w.phrase) + (old.length > 1 ? ', and ' + (old.length - 1) + ' more are as old' : '') +
+        '. Everything the games scale from that band is drifting — see Calibration below.</div>';
+    }
+  } catch (e) {}
+
+  $('todayBody').innerHTML = html;
+
+  /* The static anchor's TEXT changes; its href never does. See the comment on
+     the markup above for why a JS-built menu link is a dead link on the TV. */
+  $('startLink').textContent = pr.doneToday
+    ? ('Train again — ' + pr.nextType)
+    : ('Start ' + pr.nextType + ' day');
+}
+
+/* ══════════════════════════════════════════════════════ challenge ════ */
+
+function renderChal() {
+  var c = P.challenge();
+  var target = c.done ? 'Complete'
+    : (c.metric === 'sets' ? 'One set' : (c.target + ' ' + c.metric));
+  $('chalBody').innerHTML =
+    '<div class="chalbody"><div class="chalic">' + (c.done ? '✅' : '🎯') + '</div><div>' +
+      '<div class="chaltitle">' + esc(c.title) + '</div>' +
+      '<div class="chaldetail">' + esc(c.detail) + '</div>' +
+      '<span class="tag' + (c.done ? ' done' : '') + '">' + esc(target) + '</span>' +
+    '</div></div>';
+  /* One stop per section: the button when there is something to press, the panel
+     itself when the challenge is already done. */
+  $('chalRow').hidden = !!c.done;
+  stopOn($('chal'), !!c.done);
+}
+
+/* ═══════════════════════════════════════════════════ the 84-day grid ═ */
+
+function renderGrid() {
+  var g = P.grid(), t = P.today(), html = '', done = 0, w, d, c, row, hit, isNow;
+  for (w = 0; w < 12; w++) {
+    row = ''; hit = 0; isNow = false;
+    for (d = 0; d < 7; d++) {
+      c = g[w * 7 + d] || { day: '', done: false, future: true };
+      if (c.done) { hit++; done++; }
+      if (c.day === t) isNow = true;
+      row += '<div class="cell' + (c.done ? ' done' : '') + (c.future ? ' future' : '') +
+             (c.day === t ? ' today' : '') + '"></div>';
+    }
+    /* D16: the count and the dates are PRINTED. They used to live in a `title`
+       attribute, which on a television is a tooltip that cannot be summoned by
+       any input the room contains. */
+    html += '<div class="growrow' + (isNow ? ' now' : '') + '">' +
+              '<span class="wk">Wk ' + (w + 1) + '</span>' + row +
+              '<span class="ct">' + hit + '/7</span>' +
+              '<span class="dt">' + esc(spanLabel(g[w * 7].day, g[w * 7 + 6].day)) + '</span>' +
+            '</div>';
+  }
+  $('grid').innerHTML = html;
+  $('gridNum').textContent = done + ' of 84 days';
+  $('gridNote').textContent = done
+    ? done + ' training days in the last 12 weeks. Gaps are shown on purpose — one rest day a week keeps a streak alive.'
     : 'Twelve weeks, one square a day. It fills in as you train.';
 }
 
-/* two weekly views: volume, and whether you are actually getting stronger */
-function weekly(pick){
-  const t=P.today(), out=new Array(12).fill(0);
-  P.sets().forEach(e=>{
-    const g=P.daysBetween(P.dayKey(e.t),t);
-    if(g<0||g>=84)return;
-    const i=11-Math.floor(g/7), v=pick(e);
-    if(pick.max){ if(v>out[i])out[i]=v; } else out[i]+=v;
+/* ═════════════════════════════════════════════════════════ charts ════ */
+
+/* Two weekly views: how much you did, and whether you are actually getting
+   stronger. `pick.max` switches the bucket from a sum to a maximum. */
+function weekly(pick) {
+  var t = P.today(), out = new Array(12), i;
+  for (i = 0; i < 12; i++) out[i] = 0;
+  P.sets().forEach(function (e) {
+    var g = P.daysBetween(P.dayKey(e.t), t);
+    if (g < 0 || g >= 84) return;
+    var k = 11 - Math.floor(g / 7), v = pick(e);
+    if (pick.max) { if (v > out[k]) out[k] = v; } else out[k] += v;
   });
   return out;
 }
-function bars(el,lab,vals,unit){
-  const max=Math.max(1,...vals);
-  $(el).innerHTML=vals.map(v=>'<div style="height:'+Math.round(v/max*100)+'%" title="'+Math.round(v)+' '+unit+'"></div>').join('');
-  $(lab).innerHTML=vals.map((v,i)=>'<span>'+(i===11?'now':(i%2?'':(12-i)+'w'))+'</span>').join('');
-}
-function renderCharts(){
-  const reps=(e)=>(+e.reps||0);
-  const peak=(e)=>(+e.peak||0); peak.max=true;
-  bars('vol','volLab',weekly(reps),'reps');
-  bars('pk','pkLab',weekly(peak),'peak');
+
+/* The bars are the ONLY <div>s inside the chart element. Every label is a <span>
+   in the row beneath, so "twelve bars" stays literally true in the DOM while the
+   numbers are on screen where a TV needs them. */
+function bars(el, lab, cap, vals, unit) {
+  var max = 1, i;
+  for (i = 0; i < vals.length; i++) if (vals[i] > max) max = vals[i];
+  $(el).innerHTML = vals.map(function (v) {
+    return '<div style="height:' + Math.round(v / max * 100) + '%"></div>';
+  }).join('');
+  $(lab).innerHTML = vals.map(function (v, i2) {
+    var when = i2 === 11 ? 'now' : ((12 - i2) + 'w');
+    return '<span' + (i2 === 11 ? ' class="now"' : '') + '>' +
+             '<b>' + (v > 0 ? n0(v) : '–') + '</b><i>' + when + '</i></span>';
+  }).join('');
+  $(cap).textContent = max > 1 ? ('best week ' + n0(max) + ' ' + unit) : '';
 }
 
-function renderAdvice(){
-  const a=P.bandAdvice();
-  $('advice').innerHTML=a.length
-    ? a.map(x=>'<div class="card advice"><b>Move '+x.name+' up to '+x.to+'</b><p>'+x.why+'</p></div>').join('')
-    : '<div class="card"><div class="empty">Nothing to change yet. When a movement passes 40 full reps on its band, that band has stopped being heavy in your strong range — this will say so, and which band to move to.</div></div>';
+function renderCharts() {
+  var reps = function (e) { return +e.reps || 0; };
+  var peak = function (e) { return +e.peak || 0; };
+  peak.max = true;
+  bars('vol', 'volLab', 'volMax', weekly(reps), 'reps');
+  bars('pk', 'pkLab', 'pkMax', weekly(peak), 'peak');
 }
 
-function renderPBs(){
-  const rows=P.pbTable().sort((a,b)=>b.reps-a.reps);
-  $('pbs').innerHTML=rows.length
-    ? rows.map(r=>'<div class="pbrow"><div><div class="nm">'+nameOf(r.ex)+'</div><div class="bd">'+r.band+' band · '+r.count+' set'+(r.count>1?'s':'')+'</div></div>'+
-        '<div class="v">'+r.reps+'<small>reps</small></div>'+
-        '<div class="v">'+(r.part||'–')+'<small>partials</small></div>'+
-        '<div class="v">'+(Math.round(r.peak)||'–')+'<small>peak</small></div>'+
-        '<div class="v">'+(r.ecc?(+r.ecc).toFixed(1)+'s':'–')+'<small>negative</small></div></div>').join('')
-    : '<div class="card"><div class="empty">No sets logged yet. Play any game from Routines or the Library and your bests appear here, per movement and per band.</div></div>';
+/* ══════════════════════════════════════════════════ band coaching ════ */
+
+function renderAdvice() {
+  var a = P.bandAdvice();
+  if (!a.length) {
+    var pr = (EX && EX.protocol) || { repsMin: 15, repsMax: 40 };
+    $('advice').innerHTML =
+      '<div class="empty">Nothing to change yet. The rule has two halves and this ' +
+      'section shows both: pass <b>' + pr.repsMax + ' full-range reps</b> on a band and it has ' +
+      'stopped being heavy, so go up. Fall under <b>' + pr.repsMin + '</b> and it is too heavy ' +
+      'for the range you are working in, so go down — that half matters more, because a band ' +
+      'that is too heavy is the one that hurts you.</div>';
+    return;
+  }
+  /* Both directions. Only "go heavier" was ever rendered, which is the half the
+     source cares about least. */
+  $('advice').innerHTML = a.map(function (x) {
+    var down = x.dir === 'down';
+    return '<div class="advice' + (down ? ' down' : '') + '">' +
+             '<h3>Move ' + esc(x.name) + (down ? ' down to ' : ' up to ') + esc(x.to) + '</h3>' +
+             '<p>' + esc(x.why || x.message) + '</p>' +
+           '</div>';
+  }).join('');
 }
 
-let achFilter='all';
-/* One medallion per tier, one glyph per family. The id prefixes come straight from
-   the generator in x3f-progress.js. */
-function achGlyph(id){
-  const map=[['streak','🔥'],['week','📅'],['chal','🎯'],['sess','⚡'],['guided','📋'],
-             ['part','🔥'],['exburn','🔥'],['band','🎽'],['peak','💥'],['ecc','🐢'],
-             ['tut','⏱'],['days','📆'],['fullweek','✅'],['fullday','🗂'],['comeback','↩'],
-             ['breadth','🌐'],['set','💪'],['reps','💪'],['ex-','🏋']];
-  for(const [k,g] of map) if(id.indexOf(k)===0) return g;
+/* ═══════════════════════════════════════════════════ calibration ═════ */
+
+/* Roadmap item 1. The measured range for a movement on a band is the input to
+   every force percentage in the app, and until now nothing anywhere said when it
+   was taken — so a White band measured six weeks and two bands ago silently
+   skewed every intensity reading with nothing to say so. */
+function renderCalib() {
+  var rows = [], stale = 0, never = 0;
+  try {
+    rows = P.pbTable().slice().sort(function (a, b) { return b.last - a.last; }).slice(0, 6);
+  } catch (e) { rows = []; }
+
+  if (!rows.length) {
+    $('calib').innerHTML = '<div class="empty">Nothing measured yet. Until a movement is ' +
+      'calibrated the app uses a per-movement estimate — defensible, but an estimate.</div>';
+    $('calNum').textContent = '';
+    return;
+  }
+
+  $('calib').innerHTML = rows.map(function (r) {
+    var st = null, rng = null;
+    try { st = P.calibrationStatus ? P.calibrationStatus(r.ex, r.band) : null; } catch (e) {}
+    try { rng = CAL && CAL.range ? CAL.range(r.ex, r.band) : null; } catch (e) {}
+    var unmeasured = !st;
+    if (unmeasured) never++;
+    else if (st.stale) stale++;
+    /* The engine words this ("last calibrated 6 weeks ago"); the leading "last"
+       is dead weight in a fixed-width column read from a sofa. "redo" is words,
+       not just the gold rule down the left edge — colour alone never carries a
+       meaning on this screen. */
+    var age = unmeasured
+      ? 'never measured'
+      : st.phrase.replace(/^last /, '') + (st.stale ? ' · redo' : '');
+    var lbs = forceLabel(r.band, r.ex);
+    /* Two different numbers sit next to each other here and they must not be
+       confusable: the published band force for this movement's configuration,
+       and YOUR measured span for it — which is either a real capture or the
+       per-movement estimate the app falls back to. Say which. */
+    var span = rng
+      ? (n0(rng.lo) + '–' + n0(rng.hi) + ((rng.auto || rng.est) ? ' estimated' : ' measured'))
+      : '';
+    return '<div class="calrow' + (unmeasured ? ' never' : '') + ((st && st.stale) ? ' stale' : '') + '">' +
+             '<span class="cn">' + esc(nameOf(r.ex)) + '</span>' +
+             bandChip(r.bandKnown ? r.band : '') +
+             '<span class="rng lb">' + esc(lbs) + '</span>' +
+             '<span class="rng sp">' + esc(span) + '</span>' +
+             '<span class="age">' + esc(age) + '</span>' +
+           '</div>';
+  }).join('');
+  /* Say what is actually true. "all current" while four movements have never
+     been measured at all is the kind of reassuring lie a dashboard must not
+     tell — the numbers those four are scaled from are guesses. */
+  var flags = [];
+  if (stale) flags.push(stale + ' worth redoing');
+  if (never) flags.push(never + ' never measured');
+  $('calNum').textContent = flags.length ? flags.join(' · ') : 'all current';
+}
+
+/* ══════════════════════════════════════════════════ personal bests ═══ */
+
+/* Three tiers, three columns. The engine counts full-range reps, mid-range
+   partials and weak-range partials separately now, and the program is explicit
+   that what you do AFTER full-range failure is the part that counts most — so
+   folding them into one "reps" number was throwing away the headline. */
+function valCell(v, cls, label) {
+  return '<div class="v ' + cls + (v ? '' : ' off') + '"><b>' + (v ? n0(v) : '–') +
+         '</b><span>' + label + '</span></div>';
+}
+
+function renderPBs() {
+  var rows = P.pbTable().slice().sort(function (a, b) {
+    return (b.full - a.full) || (b.reps - a.reps);
+  });
+  if (!rows.length) {
+    $('pbs').innerHTML = '<div class="empty">No sets logged yet. Play any movement from ' +
+      'Workout or the Library and your bests appear here, per movement and per band.</div>';
+    $('pbNote').textContent = '';
+    return;
+  }
+  /* Sets logged before the set reporter could tell the two partial ranges apart
+     carry only a combined `part`. Splitting it by guesswork would be inventing
+     numbers, so those rows show a dash in mid and weak and the combined figure
+     stays in the subtitle — and the table says so underneath rather than looking
+     broken. */
+  var legacy = 0;
+  $('pbs').innerHTML = rows.map(function (r) {
+    var lbs = forceLabel(r.band, r.ex);
+    if (r.part > 0 && !r.mid && !r.weak) legacy++;
+    return '<div class="pbrow">' +
+             '<div class="pbname"><div class="nm">' + esc(nameOf(r.ex)) + '</div>' +
+               '<div class="bd">' + bandChip(r.bandKnown ? r.band : '') +
+                 (lbs ? '<span>' + esc(lbs) + '</span>' : '') +
+                 '<span>' + r.count + ' set' + (r.count > 1 ? 's' : '') + '</span>' +
+                 '<span>' + n0(r.reps) + ' reps best</span>' +
+                 (r.part ? '<span>' + n0(r.part) + ' past failure</span>' : '') +
+               '</div></div>' +
+             valCell(r.full, 'full', 'full') +
+             valCell(r.mid, 'mid', 'mid') +
+             valCell(r.weak, 'weak', 'weak') +
+             valCell(Math.round(r.peak), 'peak', 'peak') +
+             '<div class="v' + (r.ecc ? '' : ' off') + '"><b>' +
+               (r.ecc ? (+r.ecc).toFixed(1) + 's' : '–') + '</b><span>negative</span></div>' +
+           '</div>';
+  }).join('');
+  $('pbNote').textContent = legacy
+    ? 'Mid and weak are dashed on ' + legacy + ' movement' + (legacy > 1 ? 's' : '') +
+      ' because those sets were logged before the two partial ranges were counted apart. ' +
+      'Their partials are still in "past failure".'
+    : 'Full range first, then what you did after full-range failure — which the program is ' +
+      'explicit is the part that counts most.';
+}
+
+/* ═══════════════════════════════════════════════════ recent sets ═════ */
+
+/* D5, the delete path. On the TV `confirm()` is auto-answered YES and never
+   drawn, so the guard this used to have was worse than none: it looked like a
+   safety net in the source and removed the set instantly on the couch.
+   The honest answer to a destructive action a remote can reach in one press is
+   not a dialog it will never see — it is to do the thing and offer it back. */
+var undoSnap = null;
+
+function renderRecent() {
+  var rows = P.sets().slice(-12).reverse();
+  var html = '';
+
+  if (undoSnap) {
+    html += '<div class="undorow" data-nav-row="undo">' +
+              '<span class="u">Removed ' + esc(undoSnap.label) + '</span>' +
+              '<button class="pbtn small" id="undoBtn" data-nav data-nav-id="undoBtn">Undo</button>' +
+            '</div>';
+  }
+
+  if (!rows.length) {
+    html += '<div class="empty">Nothing logged yet.</div>';
+    $('recent').innerHTML = html;
+    stopOn($('recentPanel'), !undoSnap);
+    bindRecent();
+    return;
+  }
+  stopOn($('recentPanel'), false);
+
+  html += rows.map(function (r) {
+    var bits = [];
+    var tr = P.tiers ? P.tiers(r) : { full: +r.reps || 0, mid: 0, weak: 0, part: +r.part || 0 };
+    if (tr.full) bits.push(tr.full + ' full');
+    if (tr.mid) bits.push(tr.mid + ' mid');
+    if (tr.weak) bits.push(tr.weak + ' weak');
+    if (!tr.mid && !tr.weak && tr.part) bits.push(tr.part + ' partials');
+    if (r.peak) bits.push(Math.round(r.peak) + ' peak');
+    if (r.tut) bits.push(Math.round(r.tut) + 's tension');
+    if (r.ecc) bits.push((+r.ecc).toFixed(1) + 's negative');
+    if (!bits.length && r.score) bits.push(r.score + ' score');
+    var band = r.band || r.b || '';
+    /* Each row is its own data-nav-row. The container is full width even though
+       the only control in it is a narrow ✕ at the far right — which is exactly
+       the shape that made 28 Library links unreachable when it was NOT marked
+       (phase1-verify S-2): Up/Down scores against the row rect, so the cursor
+       drops into the row instead of walking a column of ✕s or missing them. */
+    return '<div class="pbrow" data-nav-row="rec' + r.t + '">' +
+             '<div class="pbname"><div class="nm">' + esc(nameOf(r.ex) === '—' ? (r.g || 'set') : nameOf(r.ex)) +
+               (r.k === 'roll' ? ' <span class="ad">· ' + (+r.n || 0) + ' sets rolled up</span>' : '') + '</div>' +
+               '<div class="bd">' + bandChip(band) +
+                 '<span>' + esc(dayLabel(P.dayKey(r.t))) + '</span>' +
+                 (r.g ? '<span>' + esc(r.g) + '</span>' : '') +
+               '</div></div>' +
+             '<div class="rmeta">' + esc(bits.join(' · ') || '—') + '</div>' +
+             '<button class="pbtn small danger" data-del="' + r.t + '" data-nav ' +
+               'data-nav-id="del' + r.t + '" aria-label="Remove this set">✕</button>' +
+           '</div>';
+  }).join('');
+
+  $('recent').innerHTML = html;
+  bindRecent();
+}
+
+function bindRecent() {
+  var u = $('undoBtn');
+  if (u) u.onclick = function () {
+    if (!undoSnap) return;
+    /* Restore the exact array we captured. There is no "add a set" on the
+       engine (logSet would mint a NEW timestamp and a different entry), so the
+       only truthful undo is the log as it stood one press ago. */
+    try { localStorage.setItem('x3f_history', undoSnap.json); } catch (e) {}
+    try { P.bust(); } catch (e) {}
+    undoSnap = null;
+    setMsg('Put it back.');
+    refresh();
+  };
+  var list = $('recent').querySelectorAll('[data-del]');
+  for (var i = 0; i < list.length; i++) {
+    list[i].onclick = function () {
+      var t = +this.getAttribute('data-del');
+      var e = null, all = P.sets();
+      for (var j = all.length - 1; j >= 0; j--) if (all[j].t === t) { e = all[j]; break; }
+      var label = e ? (nameOf(e.ex) + ' · ' + dayLabel(P.dayKey(e.t))) : 'that set';
+      try { undoSnap = { json: localStorage.getItem('x3f_history') || '[]', label: label }; }
+      catch (er) { undoSnap = null; }
+      P.removeSet(t);
+      refresh();
+    };
+  }
+}
+
+/* ══════════════════════════════════════════════════ achievements ═════ */
+
+var achFilter = 'all';
+
+/* One glyph per family. The id prefixes come straight from the generator in
+   x3f-progress.js, and the first match wins. */
+function achGlyph(id) {
+  var map = [['streak', '🔥'], ['week', '📅'], ['chal', '🎯'], ['sess', '⚡'], ['guided', '📋'],
+             ['part', '🔥'], ['exburn', '🔥'], ['band', '🎽'], ['peak', '💥'], ['ecc', '🐢'],
+             ['tut', '⏱'], ['days', '📆'], ['fullweek', '✅'], ['fullday', '🗂'], ['comeback', '↩'],
+             ['breadth', '🌐'], ['set', '💪'], ['reps', '💪'], ['ex-', '🏋']];
+  for (var i = 0; i < map.length; i++) if (id.indexOf(map[i][0]) === 0) return map[i][1];
   return '🏅';
 }
-function renderRecent(){
-  const rows=P.sets().slice(-12).reverse();
-  $('recent').innerHTML=rows.length
-    ? rows.map(r=>{
-        const when=new Date(r.t), day=P.dayKey(r.t);
-        const bits=[];
-        if(r.reps)bits.push(r.reps+' reps');
-        if(r.part)bits.push(r.part+' partials');
-        if(r.peak)bits.push(Math.round(r.peak)+' peak');
-        if(r.tut)bits.push(Math.round(r.tut)+'s tension');
-        if(r.ecc)bits.push((+r.ecc).toFixed(1)+'s negative');
-        if(!bits.length&&r.score)bits.push(r.score+' score');
-        return '<div class="pbrow"><div><div class="nm">'+(r.ex?nameOf(r.ex):(r.g||'set'))+
-          (r.k==='roll'?' <small style="color:var(--dim)">· '+r.n+' sets rolled up</small>':'')+'</div>'+
-          '<div class="bd">'+day+' · '+((r.band||r.b)||'no band')+(r.g?' · '+r.g:'')+'</div></div>'+
-          '<div class="bd" style="text-align:right">'+(bits.join(' · ')||'—')+'</div>'+
-          '<button class="home" data-del="'+r.t+'" data-nav title="Remove this set">✕</button></div>';
-      }).join('')
-    : '<div class="card"><div class="empty">Nothing logged yet.</div></div>';
-  $('recent').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
-    if(!confirm('Remove this set from your history?'))return;
-    P.removeSet(+b.dataset.del);refresh();
+
+var TIERNAME = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Legend'];
+
+function renderAch() {
+  var all = P.achievements();
+  var got = all.filter(function (a) { return a.got; }).length;
+  $('achCnt').textContent = got + ' of ' + all.length + ' unlocked';
+
+  var groups = [['all', 'All'], ['got', 'Unlocked'], ['locked', 'Locked']];
+  /* data-nav-id keeps the ring on the chip you pressed. Without it the filter
+     rebuild dropped the cursor and the whole page scrolled back to the top —
+     x3f-nav restores by identity first, and an id is the identity. */
+  $('achFilters').innerHTML = groups.map(function (g) {
+    return '<button class="chip' + (achFilter === g[0] ? ' on' : '') + '" data-f="' + g[0] +
+           '" data-nav data-nav-id="achf-' + g[0] + '">' + g[1] + '</button>';
+  }).join('');
+  var chips = $('achFilters').querySelectorAll('[data-f]');
+  for (var i = 0; i < chips.length; i++) {
+    chips[i].onclick = function () {
+      achFilter = this.getAttribute('data-f');
+      renderAch();
+      try { if (window.X3FNav) X3FNav.refresh(); } catch (e) {}
+    };
+  }
+
+  var shown = all.filter(function (a) {
+    return achFilter === 'all' || (achFilter === 'got' ? a.got : !a.got);
   });
+  shown.sort(function (a, b) { return (b.got - a.got) || (b.tier - a.tier); });
+
+  $('achs').innerHTML = shown.map(function (a) {
+    return '<div class="ach t' + a.tier + (a.got ? ' got' : '') + '">' +
+             '<div class="medal"><i style="background-image:url(assets/ui/badge-' + a.tier + '.webp)"></i>' +
+             '<em>' + (a.got ? achGlyph(a.id) : '🔒') + '</em></div>' +
+             '<div class="an">' + esc(a.name) + '</div>' +
+             '<div class="ad">' + esc(a.desc) + '</div>' +
+             '<span class="at">' + TIERNAME[a.tier] + '</span>' +
+           '</div>';
+  }).join('');
 }
 
-function renderAch(){
-  const all=P.achievements();
-  const got=all.filter(a=>a.got).length;
-  $('achCnt').textContent=got+' of '+all.length+' unlocked';
-  const groups=[['all','All'],['got','Unlocked'],['locked','Locked']];
-  $('achFilters').innerHTML=groups.map(([k,l])=>'<button class="chip'+(achFilter===k?' on':'')+'" data-f="'+k+'" data-nav>'+l+'</button>').join('');
-  $('achFilters').querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{achFilter=b.dataset.f;renderAch();if(window.X3FNav)X3FNav.refresh()});
-  const shown=all.filter(a=>achFilter==='all'||(achFilter==='got'?a.got:!a.got));
-  shown.sort((a,b)=>(b.got-a.got)||(b.tier-a.tier));
-  $('achs').innerHTML=shown.map(a=>'<div class="ach t'+a.tier+(a.got?' got':'')+'">'+
-    '<div class="medal"><i style="background-image:url(assets/ui/badge-'+a.tier+'.jpg)"></i>'+
-    '<span>'+(a.got?achGlyph(a.id):'🔒')+'</span></div>'+
-    '<div class="an">'+a.name+'</div><div class="ad">'+a.desc+'</div>'+
-    '<span class="at">'+['Bronze','Silver','Gold','Platinum','Legend'][a.tier]+'</span></div>').join('');
+/* ═════════════════════════════════════════════ export / import / reset ═ */
+
+function setMsg(text, warn) {
+  var m = $('dataMsg');
+  if (!m) return;
+  m.textContent = text || '';
+  m.className = 'msg' + (warn ? ' warn' : '');
 }
 
-$('expBtn').onclick=()=>{
-  const payload={v:1,at:Date.now(),history:P.history(),
-    ach:JSON.parse(localStorage.getItem('x3f_ach')||'{}'),
-    chal:JSON.parse(localStorage.getItem('x3f_chal')||'{}'),
-    bandMax:JSON.parse(localStorage.getItem('x3f_bandMax')||'{}'),
-    exCal:JSON.parse(localStorage.getItem('x3f_exCal')||'{}')};
-  try{
-    const blob=new Blob([JSON.stringify(payload,null,1)],{type:'application/json'});
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);a.download='x3f-history-'+P.today()+'.json';
-    document.body.appendChild(a);a.click();a.remove();
-  }catch(e){
-    // no download in this browser (a TV WebView, say) - show it to copy instead
-    const box=$('impBox');box.style.display='block';box.value=JSON.stringify(payload);box.select();
+function payload() {
+  function j(k) { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch (e) { return {}; } }
+  return {
+    v: 1, at: Date.now(), history: P.history(),
+    ach: j('x3f_ach'), chal: j('x3f_chal'),
+    bandMax: j('x3f_bandMax'), exCal: j('x3f_exCal')
+  };
+}
+
+/* D17. The old code wrapped CONSTRUCTION in try/catch and called that a
+   fallback: in the TV WebView `a.click()` on a blob: URL with `download` returns
+   normally, no DownloadListener is registered, nothing is saved, and the catch
+   never runs — so the copy-to-textarea path the comment promised was dead code
+   on the one platform that needed it. Do not offer a download we know cannot
+   land; say what actually happened. */
+$('expBtn').onclick = function () {
+  var data = payload();
+  var text = JSON.stringify(data);
+  var box = $('impBox');
+  box.style.display = 'block';
+  box.value = text;
+
+  if (ONTV) {
+    setMsg('This screen cannot save files — an Android TV WebView has nowhere to put one. ' +
+        'Your whole log is in the box below (' + n0(text.length) + ' characters). Open X3F in a ' +
+        'browser on a phone or a computer to export it as a file.', true);
+  } else {
+    var saved = false;
+    try {
+      var blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'x3f-history-' + P.today() + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      saved = true;
+    } catch (e) {}
+    setMsg(saved
+      ? ('Saved as x3f-history-' + P.today() + '.json. If your browser did not offer a download, ' +
+         'the same text is in the box below.')
+      : 'Your browser would not write a file. The whole log is in the box below — copy it.');
+  }
+  try { if (window.X3FNav) X3FNav.refresh(); } catch (e) {}
+};
+
+/* Two presses: reveal the box, then parse it. The func-test drives exactly this
+   contract — it sets impBox.style.display itself and clicks once — so the state
+   test stays on style.display and nothing else. */
+$('impBtn').onclick = function () {
+  var box = $('impBox');
+  if (box.style.display === 'none') {
+    box.style.display = 'block';
+    setMsg('Paste an exported history into the box, then press Import again.');
+    try { if (!ONTV) box.focus(); } catch (e) {}
+    try { if (window.X3FNav) X3FNav.refresh(); } catch (e) {}
+    return;
+  }
+  try {
+    var d = JSON.parse(box.value);
+    var mine = P.history(), theirs = d.history || [];
+    var seen = {}, added = 0;
+    mine.forEach(function (e) { seen[e.t + '|' + (e.ex || '') + '|' + (e.reps || 0)] = 1; });
+    theirs.forEach(function (e) {
+      var k = e.t + '|' + (e.ex || '') + '|' + (e.reps || 0);
+      if (!seen[k]) { mine.push(e); seen[k] = 1; added++; }
+    });
+    mine.sort(function (a, b) { return a.t - b.t; });
+    localStorage.setItem('x3f_history', JSON.stringify(mine.slice(-600)));
+    if (d.ach) {
+      var cur = JSON.parse(localStorage.getItem('x3f_ach') || '{}');
+      Object.keys(d.ach).forEach(function (k) { if (!cur[k]) cur[k] = d.ach[k]; });
+      localStorage.setItem('x3f_ach', JSON.stringify(cur));
+    }
+    if (d.bandMax) localStorage.setItem('x3f_bandMax', JSON.stringify(d.bandMax));
+    /* Per-movement ranges: keep a REAL calibration over an imported estimate. */
+    if (d.exCal) {
+      var c2 = JSON.parse(localStorage.getItem('x3f_exCal') || '{}');
+      Object.keys(d.exCal).forEach(function (k) {
+        var have = c2[k], inc = d.exCal[k];
+        if (!have || (have.auto && inc && !inc.auto)) c2[k] = inc;
+      });
+      localStorage.setItem('x3f_exCal', JSON.stringify(c2));
+    }
+    box.style.display = 'none'; box.value = '';
+    try { P.bust(); } catch (e) {}
+    undoSnap = null;
+    /* D5: this was an alert(), which the TV WebView auto-dismisses without ever
+       drawing it — so the one confirmation that the import worked was invisible
+       on the couch. */
+    setMsg(added ? ('Imported ' + added + ' new set' + (added === 1 ? '' : 's') + '.')
+              : 'Nothing new in that file — every set in it was already here.');
+    refresh();
+  } catch (e) {
+    setMsg('That did not look like an exported history. Paste the whole file, including the ' +
+        'first { and the last }.', true);
   }
 };
-$('impBtn').onclick=()=>{
-  const box=$('impBox');
-  if(box.style.display==='none'){box.style.display='block';box.focus();return;}
-  try{
-    const d=JSON.parse(box.value);
-    const mine=P.history(), theirs=(d.history||[]);
-    const seen={};mine.forEach(e=>seen[e.t+'|'+(e.ex||'')+'|'+(e.reps||0)]=1);
-    let added=0;
-    theirs.forEach(e=>{const k=e.t+'|'+(e.ex||'')+'|'+(e.reps||0);if(!seen[k]){mine.push(e);seen[k]=1;added++}});
-    mine.sort((a,b)=>a.t-b.t);
-    localStorage.setItem('x3f_history',JSON.stringify(mine.slice(-600)));
-    if(d.ach){const cur=JSON.parse(localStorage.getItem('x3f_ach')||'{}');Object.keys(d.ach).forEach(k=>{if(!cur[k])cur[k]=d.ach[k]});localStorage.setItem('x3f_ach',JSON.stringify(cur));}
-    if(d.bandMax)localStorage.setItem('x3f_bandMax',JSON.stringify(d.bandMax));
-    // per-movement ranges: keep a real calibration over an imported estimate
-    if(d.exCal){const cur=JSON.parse(localStorage.getItem('x3f_exCal')||'{}');
-      Object.keys(d.exCal).forEach(k=>{const mine=cur[k],theirs=d.exCal[k];
-        if(!mine||(mine.auto&&theirs&&!theirs.auto))cur[k]=theirs});
-      localStorage.setItem('x3f_exCal',JSON.stringify(cur));}
-    box.style.display='none';box.value='';
-    alert('Imported '+added+' new sets.');
-    refresh();
-  }catch(e){alert('That did not look like an exported history.')}
+
+/* D5: `confirm()` here auto-answered YES on the TV and was never drawn, so
+   "Reset achievements" wiped x3f_ach, x3f_chal and x3f_prog on one OK press with
+   no warning of any kind. The confirmation is in the page now, and the cursor is
+   seated on the harmless answer. */
+$('wipeBtn').onclick = function () {
+  $('wipeAsk').hidden = false;
+  setMsg('');
+  try {
+    if (window.X3FNav) { X3FNav.refresh(); X3FNav.set($('wipeNo')); }
+  } catch (e) {}
 };
-$('wipeBtn').onclick=()=>{
-  if(!confirm('Clear unlocked achievements and challenge history? Your training log is kept.'))return;
-  P.reset();refresh();
+$('wipeNo').onclick = function () {
+  $('wipeAsk').hidden = true;
+  try { if (window.X3FNav) { X3FNav.refresh(); X3FNav.set($('wipeBtn')); } } catch (e) {}
+};
+$('wipeYes').onclick = function () {
+  $('wipeAsk').hidden = true;
+  P.reset();
+  setMsg('Badges and challenge history cleared. Your training log is untouched.');
+  refresh();
+  try { if (window.X3FNav) { X3FNav.refresh(); X3FNav.set($('wipeBtn')); } } catch (e) {}
 };
 
-function refresh(){
-  // Re-evaluate badges on every refresh, not just at boot: importing a history or
-  // marking a challenge changes what has been earned, and a badge that only
-  // appears after a reload looks broken.
-  try{
-    const fresh=P.checkAchievements();
-    if(fresh.length){ try{ X3FFX.burst(null,null,'#ffd35c'); X3FFX.pulse(1); }catch(e){} }
-  }catch(e){}
-  renderToday();renderChal();renderGrid();renderCharts();renderAdvice();renderPBs();renderRecent();renderAch();
-  if(window.X3FNav)X3FNav.refresh();
+$('chalDone').onclick = function () { P.markChallenge(); refresh(); };
+
+/* ══════════════════════════════════════════════════════════ refresh ═══ */
+
+/* Each renderer is guarded on its own. One failing section must cost that
+   section and nothing else — the old page ran all eight from a single unguarded
+   statement, so a throw inside renderToday() meant no challenge, no grid, no
+   charts, no achievements and three dead buttons (D13). */
+function guarded(label, fn) {
+  try { fn(); }
+  catch (e) { try { console.warn('[x3f] progress: ' + label + ' failed', e); } catch (e2) {} }
 }
-refresh();
+
+function celebrate(fresh) {
+  /* The burst is decoration and may not exist. The NAMES are the message: a
+     particle effect on a muted television across a room is not a notification. */
+  try { if (window.X3FFX) { X3FFX.burst(null, null, '#FFC94A'); X3FFX.pulse(1); } } catch (e) {}
+  try {
+    var names = fresh.slice(0, 3).map(function (a) { return a.name; }).join(' · ');
+    $('achNew').textContent = '🏅 Just unlocked: ' + names +
+      (fresh.length > 3 ? ' and ' + (fresh.length - 3) + ' more' : '');
+  } catch (e) {}
+}
+
+function refresh() {
+  if (!P) return;
+  /* Re-evaluate badges on every refresh, not just at boot: importing a history
+     or marking a challenge changes what has been earned, and a badge that only
+     appears after a reload looks broken. */
+  guarded('achievement check', function () {
+    var fresh = P.checkAchievements();
+    if (fresh && fresh.length) celebrate(fresh);
+  });
+  guarded('today', renderToday);
+  guarded('challenge', renderChal);
+  guarded('grid', renderGrid);
+  guarded('charts', renderCharts);
+  guarded('band coaching', renderAdvice);
+  guarded('calibration', renderCalib);
+  guarded('personal bests', renderPBs);
+  guarded('recent sets', renderRecent);
+  guarded('achievements', renderAch);
+  try { if (window.X3FNav) X3FNav.refresh(); } catch (e) {}
+}
+
+/* ════════════════════════════════════════════════════ household sync ═══ */
+
+/* This panel used to open with "No account, no server", which stopped being true
+   the day sync shipped. It is still true for anyone who never pairs, so the
+   sentence is now chosen at render time instead of being baked into the markup.
+
+   THE LINK BELOW IS BUILT IN JAVASCRIPT AND ONLY WHEN NOT ON THE TV, which is
+   the exact opposite of the rule at the top of this file - deliberately. That
+   rule exists because sync-from-web.py rewrites literal hrefs and a JS-built
+   link is invisible to it. Here that is the point: X3F_Pair.html is NOT in the
+   bundle (the television has the other half of pairing inside app.html and has
+   no business typing codes into itself), so a literal href would ship to the TV
+   as a link to a page the APK does not contain. window.X3FFILES is injected
+   only into bundled pages, which makes it the one honest test for "am I on the
+   television". */
+function onTV() { return !!window.X3FFILES; }
+
+function syncLine() {
+  var box = $('syncBox'), lede = $('dataLede');
+  if (!box) return;
+  var S = window.X3FSync;
+  if (!S || !S.available() || !S.configured()) { box.innerHTML = ''; return; }
+
+  var st = S.status();
+  if (st.state === 'paired') {
+    var ago = st.lastSync
+      ? Math.max(1, Math.round((Date.now() - st.lastSync) / 60000)) + ' min ago'
+      : 'not yet';
+    if (lede) {
+      lede.textContent = 'Paired with your household - sets logged on any paired device appear ' +
+        'on all of them. Export and import still work, and still need no network.';
+    }
+    box.innerHTML = '<div class="msg">Synced: <b>' + esc(ago) + '</b>' +
+      (st.pending ? ' · <b>' + st.pending + '</b> waiting to upload' : '') +
+      (st.error ? ' · last attempt failed' : '') + '</div>' +
+      '<div class="prow" data-nav-row="syncrow"><button class="pbtn" id="syncNowBtn" data-nav>Sync now</button></div>';
+    var b = $('syncNowBtn');
+    if (b) b.onclick = function () {
+      b.disabled = true;
+      S.push().then(S.pull).then(function (r) {
+        if (r && r.merged) refresh(); else syncLine();
+      }, function () { syncLine(); });
+    };
+  } else if (st.state === 'waiting') {
+    box.innerHTML = '<div class="msg warn">A pairing request is waiting for someone to press ' +
+      '<b>Allow</b> on the television.</div>';
+  } else {
+    box.innerHTML = '<div class="msg">You can also pair this device with your X3F television and ' +
+      'skip moving files by hand.' +
+      (onTV() ? ' On the TV that is <b>Settings → Pair a phone</b> on the home screen.' : '') +
+      '</div>' +
+      (onTV() ? '' : '<div class="prow" data-nav-row="syncrow">' +
+        '<a class="pbtn" id="pairLink" data-nav>Pair with my TV</a></div>');
+    var a = $('pairLink');
+    if (a) a.href = 'X3F_Pair.html';
+  }
+  try { if (window.X3FNav) X3FNav.refresh(); } catch (e) {}
+}
+
+/* Pull on open, quietly. This is the whole answer to "how do I see last night's
+   workout on my phone": the page has to have gone and asked before it draws, or
+   the phone shows yesterday and the person concludes sync is broken. Failures
+   are silent on purpose - an unreachable network is not news on a local-first
+   page that has just finished rendering every number correctly. */
+function syncOnOpen() {
+  var S = window.X3FSync;
+  if (!S || !S.available() || !S.configured()) return;
+  try { S.openNetwork(); } catch (e) {}
+  syncLine();
+  if (S.status().state !== 'paired') return;
+  S.pull().then(function (r) { if (r && r.merged) refresh(); else syncLine(); },
+                function () { syncLine(); });
+  try { S.auto(true); } catch (e) {}
+}
+
+/* ═════════════════════════════════════════════════════════════ boot ═══ */
+
+(function boot() {
+  if (!P) {
+    /* Honest degradation instead of a page of empty boxes. */
+    $('todayBody').innerHTML = '<div class="empty">The progress engine did not load, so nothing ' +
+      'on this page can be computed. Your training log is untouched — reopen the app and it will ' +
+      'read it again.</div>';
+    ['chal', 'gridPanel', 'volPanel', 'pkPanel', 'advicePanel', 'calPanel', 'pbPanel',
+     'recentPanel', 'dataPanel', 'achPanel'].forEach(function (id) {
+      var e = $(id); if (e) e.hidden = true;
+    });
+    return;
+  }
+  refresh();
+  try { syncOnOpen(); } catch (e) {}
+})();
 </script>
-<script src="x3f-music.js"></script>
-<script>/* menus hum too - idles low, lifts when you press something */
-addEventListener("load",function(){try{X3FMusic.attach({mood:"menu",buttonHost:document.querySelector(".top")});}catch(e){}});</script>
-<script src="x3f-fx.js"></script>
-<script>/* one ambient loop per menu page - the games keep their own */
-addEventListener("load",function(){try{X3FFX.mount({image:"assets/ui/aurora.jpg"});}catch(e){}});</script>
-<script src="x3f-nav.js"></script>
+<script>
+/* Ambience and music are the first things sacrificed if anything goes wrong with
+   them; neither may ever be a reason the dashboard does not render. */
+addEventListener("load", function () {
+  try { X3FFX.mount({ image: "assets/ui/aurora.jpg" }); } catch (e) {}
+  try {
+    X3FMusic.attach({ mood: "menu", buttonClass: "topbtn",
+                      buttonHost: document.querySelector(".top") });
+  } catch (e) {}
+});
+</script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
 <script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
 </body></html>

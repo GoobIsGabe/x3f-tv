@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>X3F Games</title>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
   :root{--bg:#06080e;--panel:#141824;--brd:#2a3346;--txt:#eaf2ff;--dim:#8b97ad;--accent:#2ee6a6;--gold:#ffd35c;--navring:#2ee6a6;
     --d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -50,6 +52,18 @@
   @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
   a.card{animation:rise .42s var(--e) both;animation-delay:calc(var(--i,0) * 22ms)}
 </style>
+<script>
+/* The television prints a URL with the code in its FRAGMENT and no path, because
+   what a person can read off a screen and retype is a bare hostname. So this
+   page is where an invite link lands, and it is not the page that can do
+   anything with one. Forward, before anything paints, and with replace() so Back
+   from the pairing screen returns to wherever they actually were rather than
+   bouncing straight back into a re-forward. */
+(function () {
+  var m = /[#&]invite=([0-9A-Za-z]{4,12})/.exec(location.hash || '');
+  if (m) location.replace('X3F_Pair.html#invite=' + encodeURIComponent(m[1]));
+})();
+</script>
 </head>
 <body>
 <div class="wrap">
@@ -83,6 +97,12 @@
       <div class="title">Progress</div>
       <div class="desc">Your logged sessions charted over time — best reps, peak force, and boss stages by band.</div>
       <span class="badge">Tracking</span>
+    </a>
+    <a class="card" href="X3F_Pair.html" style="--i:4" data-nav>
+      <div class="emoji">📱</div>
+      <div class="title">Sync with TV</div>
+      <div class="desc">Pair this phone with your X3F television, so sets logged on the couch show up here and anything you log here goes back.</div>
+      <span class="badge">Optional</span>
     </a>
   </div>
 

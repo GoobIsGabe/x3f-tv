@@ -7,8 +7,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>X3F</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<!-- Bundled, not fetched. This is the file the TV BOOTS INTO, and the app's
+     stated requirement is that it works entirely offline; a render-blocking
+     request to Google's font CDN here meant a cold start with no network
+     either hung waiting or fell back to system-ui, which is a different design
+     from the one that was drawn. These two files are hand-maintained twins that
+     sync-from-web.py deliberately does not manage (UNMANAGED), which is why the
+     fix to web/ did not reach them. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
 :root{--bg:#05030f;--txt:#eee9ff;--dim:#a99fd6;--accent:#8f7dff;--cyan:#37e6ff;--mint:#39f5c4;--gold:#ffd23f;--hot:#ff5d78;
  --d:'Fredoka',system-ui,sans-serif;--n:'Space Grotesk',system-ui,sans-serif}
@@ -111,6 +117,12 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);user-select:none
 
   <div class="updrow">
     <button class="upd nav" id="updBtn" data-act="update" data-nav>⟳ Check for updates</button>
+    <!-- app.html is the new leanback home. It ships in the bundle and passes the
+         nav audit, but it is not the LAUNCHER yet: the bar picker, the device
+         list and this updater still live on this page, and losing them would be
+         a regression. So it is reachable and testable from the couch first, and
+         becomes the launcher once it carries those three things. -->
+    <a class="upd nav" href="app.html" data-nav>✦ Try the new home</a>
     <span class="updmsg" id="updMsg"></span>
     <span class="spacer"></span>
     <span class="hint" id="verHint"></span>

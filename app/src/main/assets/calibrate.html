@@ -1,111 +1,253 @@
 <!DOCTYPE html>
-<!-- X3F CALIBRATE - guided per-band max-pull capture. Sets x3f_bandMax[band]. -->
-<html lang="en"><head>
+<html lang="en">
+<!-- X3F CALIBRATE — measure one movement's range on one band.
+
+     WHAT THIS SCREEN IS FOR. Every force percentage in the app is a fraction of
+     a range: `lo` is the load your start position already carries, `hi` is your
+     all-out max. Get those two numbers right for a movement and every game
+     scales correctly for it. Get them wrong and no amount of pulling harder
+     helps — which is exactly what "different exercises still have trouble
+     getting the minimums and the maximums" feels like from the sofa.
+
+     THREE THINGS THIS REWRITE FIXES, each with a functional test that fails
+     against the old page (tools/func-test/cases-cal.js):
+
+     1. IT LOADS x3f-band.js. The old page read the GLOBAL band while the
+        Library launched games on a PER-MOVEMENT one. Nothing reconciled them,
+        so you could calibrate Chest Press on White, tap Bloom on Chest Press,
+        and have the game look under Dark Gray, find nothing, and fall back to a
+        hardcoded 330. The calibration was correct and simply filed under a
+        different key than it was looked up by. Now there is one function that
+        answers "which band is this movement on", and this page asks it too.
+
+     2. A REFUSED CAPTURE WRITES NOTHING. The old page raised the global band
+        ceiling even when it refused to save the capture, permanently
+        mis-scaling all ten other movements on that band, with no UI anywhere to
+        undo it. This page never touches x3f_bandMax at all; X3FCal.save() is
+        the only writer and it writes only on success.
+
+     3. IT DOES NOT LIE ABOUT THE CONNECTION. On the TV none of the old page's
+        setStatus() callers ever ran, so the pill read "Offline" in red under
+        live moving numbers, and pressing Re-Zero wedged it on "Zeroing" for the
+        rest of the session. The status here is derived from whether force is
+        actually moving, which is the only honest signal available on both
+        platforms.
+
+     AND THE TIMING, WHICH IS WHY THIS WAS ASKED FOR. The old flow gave you
+     3.0 s from pressing OK to holding a loaded start position, then 2.5 s to go
+     all out. That is not enough time to put a remote down and pick a bar up.
+     The capture is now a state machine in x3f-calflow.js with a GET SET phase
+     that defaults to ten seconds, is adjustable, is skippable once you are
+     ready, and ticks audibly — because during a capture you are holding a bar
+     and not looking at the screen.
+
+     WHAT MUST NOT CHANGE. This page deliberately does NOT define calLo(). The
+     shell's bootstrap applies a per-movement floor only when the page defines
+     one, and Calibrate has to measure ABSOLUTE force — it is the thing that
+     produces the floor in the first place. See INV-13. -->
+<head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>X3F Calibrate</title>
-<meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="x3f-ui.css">
 <style>
-:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--hot:#ff5d78;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;overflow:hidden}
-body{font-family:var(--d);color:var(--txt);background:radial-gradient(120vw 60vh at 80% -10%,rgba(47,240,176,.09),transparent 60%),var(--bg);-webkit-user-select:none;user-select:none}
-.app{height:100dvh;max-width:560px;margin:0 auto;display:flex;flex-direction:column;padding:calc(14px + var(--sat)) 16px calc(18px + var(--sab))}
-.top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.brand{font-weight:800;font-size:18px;letter-spacing:2px}.brand b{color:var(--accent)}
-.spacer{flex:1}
-a.home{font-family:var(--n);font-size:13px;font-weight:600;color:var(--txt);text-decoration:none;background:var(--panel);border:1px solid var(--brd2);border-radius:100px;padding:8px 13px}
-.status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);font-size:12px;color:var(--dim);font-family:var(--n)}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--hot)}.dot.on{background:var(--accent);box-shadow:0 0 12px var(--accent)}.dot.wait{background:var(--gold)}
-.mid{flex:1;display:flex;align-items:center;justify-content:center;gap:14px;min-height:0}
-/* The figure sits beside the readout, so you can see the movement you are being
-   asked to hold instead of guessing it from a sentence. */
-.figure{flex:0 0 34%;max-width:210px;align-self:stretch;min-height:0;border-radius:16px;
- background:rgba(255,255,255,.03);border:1px solid var(--brd);overflow:hidden}
-#formCv{width:100%;height:100%;display:block}
-.readout{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px}
-@media (max-width:430px){.mid{flex-direction:column;gap:8px}.figure{flex:0 0 34%;width:100%;max-width:none}}
-.eyebrow{font-family:var(--n);font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--dim)}
-.big{font-family:var(--n);font-weight:700;font-variant-numeric:tabular-nums;font-size:clamp(3.6rem,20vw,7rem);line-height:.95}
-.big.hot{color:var(--hot)}.big.accent{color:var(--accent)}
-.sub{color:var(--dim);font-size:14px;max-width:340px;line-height:1.5}
-.rowsel{display:flex;gap:8px;align-items:center;width:100%;margin-bottom:10px}
-select{flex:1;font-family:var(--n);font-weight:700;font-size:14px;background:var(--bg2);color:var(--txt);border:1px solid var(--brd2);border-radius:12px;padding:11px}
-.cta{font-family:var(--d);font-weight:700;font-size:16px;border:none;border-radius:14px;padding:15px;cursor:pointer;width:100%;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;transition:transform .07s,filter .15s}
-.cta:active{transform:translateY(1px)}.cta.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--brd2)}
-.cta:disabled{opacity:.4}
-.stored{font-family:var(--n);font-size:12.5px;color:var(--dim);text-align:center;margin-top:10px;line-height:1.6}
-.stored b{color:var(--txt)}
-.btnrow{display:flex;gap:8px}
-.scrim{position:fixed;inset:0;background:rgba(4,6,11,.74);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:20;opacity:0;pointer-events:none;transition:opacity .25s;padding:24px}
+.wrap{height:100dvh;display:flex;flex-direction:column;padding:var(--safe-y) var(--safe-x);gap:var(--s-2)}
+.top{display:flex;align-items:center;gap:var(--s-3);flex:none}
+.brand{font-size:var(--t-h2);font-weight:var(--w-bold);letter-spacing:.05em}
+.brand b{color:var(--accent)}
+.top .sp{flex:1}
+.pill{display:inline-flex;align-items:center;gap:var(--s-1);font-size:var(--t-min);
+  font-weight:var(--w-bold);padding:var(--s-1) var(--s-3);border-radius:var(--r-pill);
+  background:var(--surface-2);border:.125rem solid var(--line-2);color:var(--txt-2);position:relative}
+.pill .dot{width:.85rem;height:.85rem;border-radius:50%;background:var(--dim)}
+.pill.on  .dot{background:var(--mint)}
+.pill.wait .dot{background:var(--gold)}
+
+.sel{display:flex;gap:var(--s-2);flex:none;flex-wrap:wrap}
+select{font-family:var(--font-display);font-size:var(--t-min);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-pill);padding:var(--s-1) var(--s-3);position:relative;cursor:pointer}
+
+.mid{flex:1 1 auto;min-height:0;display:flex;gap:var(--s-4);align-items:stretch}
+.figure{flex:0 0 30%;min-width:0;background:var(--surface);border:.125rem solid var(--line);
+  border-radius:var(--r-2);overflow:hidden}
+.figure canvas{width:100%;height:100%;display:block}
+.readout{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;
+  align-items:center;text-align:center;gap:var(--s-1)}
+
+.eyebrow{font-size:var(--t-min);font-weight:var(--w-bold);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim)}
+/* The number is enormous on purpose: during a capture you are reading it out of
+   the corner of one eye from four to eight feet away, side-on, holding a bar. */
+.big{font-family:var(--font-num);font-variant-numeric:tabular-nums;
+  font-size:var(--t-count);font-weight:var(--w-bold);line-height:.92;min-width:3ch}
+.big.accent{color:var(--mint)} .big.hot{color:var(--hot)} .big.gold{color:var(--gold)}
+.sub{font-size:var(--t-body);color:var(--txt-2);max-width:44rem;line-height:1.35}
+
+/* State is carried by LAYOUT and BACKGROUND LUMINANCE first, hue only third, so
+   it survives an angle, a bright room, and a colour-blind viewer. */
+body{transition:background-color 200ms linear}
+body.p-getset{background:#101722}
+body.p-hold  {background:#101a16}
+body.p-ready {background:#1b1710}
+body.p-max   {background:#21120F}
+
+.track{width:min(70rem,100%);height:1rem;border-radius:var(--r-pill);
+  background:rgba(236,238,242,.10);overflow:hidden;margin-top:var(--s-1)}
+.track i{display:block;height:100%;background:var(--accent);width:0;
+  transform-origin:left center;transition:width 90ms linear}
+
+.stored{flex:none;display:flex;gap:var(--s-2);flex-wrap:wrap;justify-content:center;
+  font-size:var(--t-min);color:var(--txt-2)}
+.bandrow{display:inline-flex;align-items:center;gap:var(--s-1);
+  background:var(--surface);border:.125rem solid var(--line);border-radius:var(--r-pill);
+  padding:var(--s-1) var(--s-3)}
+.bandrow b{color:var(--txt)}
+.bandrow .est{opacity:.5;font-style:normal}
+.bandrow.cur{border-color:var(--accent)}
+
+.btns{flex:none;display:flex;gap:var(--s-2)}
+.btn{font-family:var(--font-display);font-size:var(--t-body);font-weight:var(--w-bold);
+  color:var(--txt);background:var(--surface-2);border:.125rem solid var(--line-2);
+  border-radius:var(--r-2);padding:var(--s-2) var(--s-4);cursor:pointer;position:relative;
+  text-decoration:none;display:inline-block;
+  transition:transform var(--focus-ms) var(--ease),background-color var(--focus-ms) linear}
+.btn.primary{background:var(--accent);color:#0B0813;border-color:var(--accent-2);flex:2}
+.btn.foc{background:var(--accent);color:#0B0813;border-color:var(--accent-2)}
+
+.scrim{position:fixed;inset:0;background:rgba(10,12,16,.94);z-index:50;display:flex;
+  align-items:center;justify-content:center;padding:var(--safe-y) var(--safe-x);
+  opacity:0;pointer-events:none;transition:opacity 160ms linear}
 .scrim.show{opacity:1;pointer-events:auto}
-.card{width:100%;max-width:400px;text-align:center;display:flex;flex-direction:column;gap:13px}
-.card h1{font-size:26px;font-weight:800}.card h1 b{color:var(--accent)}.card p{color:var(--dim);font-size:14px;line-height:1.55}
+.card{max-width:56rem;text-align:center;display:flex;flex-direction:column;gap:var(--s-3)}
+.card h1{font-size:var(--t-title);font-weight:var(--w-bold)}
+.card h1 b{color:var(--accent)}
+.card p{font-size:var(--t-body);color:var(--txt-2);line-height:1.4}
 </style>
-<script src="x3f-exercises.js"></script>
-<script src="x3f-form.js"></script>
-<script src="x3f-cal.js"></script>
 </head>
 <body>
-<div class="app">
-<div class="top"><div class="brand">X3F <b>CALIBRATE</b></div><div class="spacer"></div>
-<div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
-<a class="home" href="launcher.html" data-nav data-nav-back>Home</a></div>
-<div class="rowsel"><select id="exSel"></select><select id="bandSel"></select></div>
-<div class="mid">
-<div class="figure"><canvas id="formCv"></canvas></div>
-<div class="readout">
-<div class="eyebrow" id="eye">Live Force</div>
-<div class="big" id="big">0</div>
-<div class="sub" id="sub">Pick the movement and the band you use for it, then run the two captures.</div>
+
+<div class="wrap">
+  <div class="top">
+    <div class="brand">X3F <b>CALIBRATE</b></div>
+    <div class="sp"></div>
+    <div class="pill" id="pill"><span class="dot" id="dot"></span><span id="statusTxt">Waiting for the bar</span></div>
+    <a class="btn" href="launcher.html" data-nav data-nav-back>Home</a>
+  </div>
+
+  <div class="sel">
+    <select id="exSel" data-nav aria-label="Movement"></select>
+    <select id="bandSel" data-nav aria-label="Band"></select>
+    <select id="gsSel" data-nav aria-label="Get-set delay"></select>
+  </div>
+
+  <div class="mid">
+    <div class="figure"><canvas id="formCv"></canvas></div>
+    <div class="readout">
+      <div class="eyebrow" id="eye">Live force</div>
+      <div class="big" id="big">0</div>
+      <div class="sub" id="sub">Pick the movement and the band you use for it, then run the two captures.</div>
+      <div class="track" id="track"><i id="trackFill"></i></div>
+    </div>
+  </div>
+
+  <div class="stored" id="stored"></div>
+
+  <div class="btns">
+    <button class="btn" id="zeroBtn" data-nav>Re-Zero</button>
+    <button class="btn primary" id="calBtn" data-nav>Calibrate</button>
+  </div>
 </div>
-</div>
-<div class="stored" id="stored"></div>
-<div class="btnrow" style="margin-top:12px"><button class="cta ghost" id="zeroBtn" style="flex:1">Re-Zero</button><button class="cta" id="calBtn" style="flex:2">Calibrate</button></div>
-</div>
+
 <div class="scrim show" id="firstrun"><div class="card">
-<h1>X3F <b>CALIBRATE</b></h1>
-<p>Each movement gets its own scale. Two captures: <b>hold your start position</b> so we learn the load the movement already carries, then <b>go all out</b> for its max. Games map between the two, so the bottom of the range reads as the bottom.</p>
-<button class="cta" id="frConnect">Connect Bar</button>
-<button class="cta ghost" id="frDemo">Try Demo (hold to pull)</button>
+  <h1>X3F <b>CALIBRATE</b></h1>
+  <p>Every movement gets its own scale. Two captures: <b>hold your start position</b>, so the
+     app learns the load the movement already carries — an overhead press starts with about
+     half its peak force already on the band — then <b>go all out</b> for its max.</p>
+  <p>You get ten seconds to put the remote down and get set. It counts you in out loud.</p>
+  <button class="btn primary" id="frConnect" data-nav>Connect Bar</button>
+  <button class="btn" id="frDemo" data-nav>Try Demo (hold to pull)</button>
 </div></div>
+
+<script>window.X3FNAV_CLASS = 'foc';</script>
+<script src="x3f-exercises.js"></script>
+<script src="x3f-band.js"></script>
+<script src="x3f-cal.js"></script>
+<script src="x3f-calflow.js"></script>
+<script src="x3f-form.js"></script>
+<script src="x3f-nav.js"></script>
 <script>
 "use strict";
 const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6';
 const $=id=>document.getElementById(id);
-function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
-function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
-const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
-const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
-let band=xget('band','White'),bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
-const bandSel=$('bandSel');
-BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSel.appendChild(o)});
-bandSel.onchange=()=>{band=bandSel.value;xset('band',band);showStored()};
 
-/* Which movement we are calibrating. Launching from the Library or a Routine
-   passes ?ex=, so the right one is already selected when you arrive. */
+/* NO calLo() ON THIS PAGE. The shell's bootstrap subtracts a per-movement floor
+   only when the page defines one, and this page has to see ABSOLUTE force — it
+   is what produces the floor. Defining one here would make every calibration
+   measure a range relative to the previous range. (INV-13.) */
+
+const BANDS=(window.X3FEX&&X3FEX.bands)||['White','Light Gray','Dark Gray','Black','Elite Black'];
 const EXL=(window.X3FEX&&X3FEX.list)?X3FEX.list:[];
-const exSel=$('exSel');
-let slug=(window.X3FCal?X3FCal.slug():null)||(EXL[0]&&EXL[0].slug)||null;
-EXL.forEach(e=>{const o=document.createElement('option');o.value=e.slug;o.textContent=e.name;o.selected=e.slug===slug;exSel.appendChild(o)});
-exSel.onchange=()=>{slug=exSel.value;showStored();if(fig&&X3FForm.has(slug))fig.setExercise(slug)};
 
-/* The same animated figure the guided Routine uses, as a reminder of the
-   movement you are calibrating - and, during the hold, as a picture of the exact
-   position you are being asked to hold. Idle it loops the rep on a tempo; in the
-   captures it is driven live, so it moves with you. */
+let slug=(window.X3FCal?X3FCal.slug():null)||(EXL[0]&&EXL[0].slug)||null;
+/* ONE answer to "which band". Asking X3FBand rather than reading x3f_band is
+   the entire fix for the reported bug: this page now files a calibration under
+   exactly the key the games look it up by. */
+let band=(window.X3FBand?X3FBand.forMovement(slug):'White');
+
+const exSel=$('exSel'),bandSel=$('bandSel'),gsSel=$('gsSel');
+EXL.forEach(e=>{const o=document.createElement('option');o.value=e.slug;o.textContent=e.name;o.selected=e.slug===slug;exSel.appendChild(o)});
+function fillBands(){
+  bandSel.innerHTML='';
+  BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;
+    o.textContent=b+(window.X3FEX&&X3FEX.forceLabel?(' · '+(X3FEX.forceLabel(b,slug)||'')):'');
+    o.selected=b===band;bandSel.appendChild(o)});
+}
+fillBands();
+[5,8,10,15,20,30].forEach(s=>{const o=document.createElement('option');o.value=s*1000;
+  o.textContent='Get set: '+s+'s';gsSel.appendChild(o)});
+gsSel.value=String(window.X3FCalFlow?X3FCalFlow.getSetMs():10000);
+
+/* Changing either dropdown mid-capture used to write the capture to whatever
+   was selected at COMMIT time, so one stray OK on the remote (which steps a
+   <select> in place) filed a chest press under overhead-press and then said so
+   on screen, looking entirely correct. The flow refuses a movement change while
+   it is running. */
+exSel.onchange=()=>{
+  if(flow&&flow.phase()!=='idle'&&flow.phase()!=='done'&&flow.phase()!=='failed'){exSel.value=slug;return}
+  slug=exSel.value;
+  band=(window.X3FBand?X3FBand.forMovement(slug):band);
+  fillBands();showStored();
+  if(fig&&window.X3FForm&&X3FForm.has(slug))fig.setExercise(slug);
+  if(flow)flow.setMovement(slug,band);
+  label();
+};
+bandSel.onchange=()=>{
+  if(flow&&flow.phase()!=='idle'&&flow.phase()!=='done'&&flow.phase()!=='failed'){bandSel.value=band;return}
+  band=bandSel.value;
+  /* An explicit per-movement choice, which is what picking a band on this
+     screen means. Deliberately does NOT move the global — v1.4 fixed a bug
+     where choosing a band for one movement silently moved every other one. */
+  if(window.X3FBand)X3FBand.set(slug,band);
+  showStored();label();
+};
+gsSel.onchange=()=>{if(window.X3FCalFlow)X3FCalFlow.setGetSetMs(+gsSel.value)};
+
+/* The same animated figure the guided Routine uses: a reminder of the movement,
+   and during the hold a picture of the exact position you are being asked to
+   hold, which carries the instruction better than a sentence. */
 let fig=null,figN=0;
 (function(){
   try{
     if(!window.X3FForm||!X3FForm.has(slug))return;
-    fig=X3FForm.create($('formCv'),{exercise:slug,mode:'tempo',tempo:3400,
-      getN:()=>figN,theme:{accent:'#2ff0b0',band:'#ffd35c',dim:'#8ba0a8',skin:'#e9f6f1',deep:'#4b6b66'}});
-    /* create() sizes the canvas immediately, and at that moment this one has no
-       layout yet - it bails and the figure stays at the 300x150 default, drawn
-       stretched. Its ResizeObserver fixes it on the first frame in a live
-       browser, but ask once the page has settled rather than relying on that. */
+    /* Themed from the design tokens rather than the rig's defaults, which are a
+       high-chroma yellow-green left over from the old palette and read as a
+       different product from the screen around them. */
+    fig=X3FForm.create($('formCv'),{exercise:slug,mode:'tempo',tempo:3400,getN:()=>figN,
+      theme:{accent:'#7C6CFF',band:'#FFC94A',dim:'#8B93A5',skin:'#D7DCE8',deep:'#5A5F73'}});
+    /* create() sizes its canvas immediately and this one has no layout yet at
+       that moment, so it would draw stretched from the 300x150 default. */
     addEventListener('load',()=>{try{fig.resize()}catch(e){}});
     setTimeout(()=>{try{fig.resize()}catch(e){}},120);
   }catch(e){fig=null}
@@ -113,117 +255,251 @@ let fig=null,figN=0;
 function verb(){return (window.X3FForm&&X3FForm.verb)?X3FForm.verb(slug):'PULL'}
 function exName(){const e=EXL.filter(x=>x.slug===slug)[0];return e?e.name:'this movement'}
 
-/* Show THIS movement's range on every band, so it is obvious which ones you
-   have really set and which are still guesses the app made for you. */
+/* This movement's range on every band, so it is obvious which are really yours
+   and which are still estimates the app made for you. */
 function showStored(){
-  if(!window.X3FCal||!slug){$('stored').innerHTML=BANDS.map(b=>`${b}: <b>${Math.round(bandMax[b]||0)}</b>`).join(' &nbsp;·&nbsp; ');return}
+  if(!window.X3FCal||!slug){$('stored').textContent='';return}
   $('stored').innerHTML=BANDS.map(b=>{
     const r=X3FCal.range(slug,b);
-    return `${b}: <b>${Math.round(r.lo)}–${Math.round(r.hi)}</b>${r.auto?' <i style="opacity:.55;font-style:normal">est</i>':''}`;
-  }).join(' &nbsp;·&nbsp; ');
+    const age=X3FCal.age(slug,b);
+    const stale=X3FCal.stale(slug,b);
+    return '<span class="bandrow'+(b===band?' cur':'')+'">'+b+' <b>'+Math.round(r.lo)+'–'+Math.round(r.hi)+'</b>'+
+      (r.auto?' <i class="est">est</i>':(stale?' <i class="est">'+Math.round(age/7)+'w ago</i>':''))+'</span>';
+  }).join('');
 }
 showStored();
 
-let device=null,connected=false,demo=false,raw=0,baseline=null,taring=false,tSamp=[],tStart=0,tEnd=0,force=0;
-function setStatus(t,c){$('statusTxt').textContent=t;$('dot').className='dot'+(c?' '+c:'')}
+/* ── the bar ─────────────────────────────────────────────────────────────── */
+
+let device=null,demo=false,raw=0,baseline=null,taring=false,tSamp=[],tStart=0,tEnd=0,force=0;
+
+/* Status is DERIVED, not asserted. The old page set it from four call sites,
+   none of which run inside the TV shell — so it read "Offline" in red while the
+   numbers moved, and Re-Zero wedged it on "Zeroing" for the rest of the
+   session. Watching whether force actually changes is the one signal that is
+   true on both platforms. */
+let lastF=null,moveAt=0;
+function setStatus(t,c){$('statusTxt').textContent=t;$('dot').className='dot';$('pill').className='pill'+(c?' '+c:'')}
+setInterval(()=>{
+  const f=(typeof window.__x3fForce==='number')?window.__x3fForce:force;
+  if(lastF!==null&&Math.abs(f-lastF)>0.02)moveAt=Date.now();
+  lastF=f;
+  if(taring)return;
+  if(Date.now()-moveAt<3000)setStatus(demo?'Demo':'Bar live','on');
+  else if(moveAt)setStatus(demo?'Demo':'Bar connected','on');
+},400);
+
 async function connect(){
-  if(!navigator.bluetooth){setStatus('No Web Bluetooth','');alert('Bluetooth needs Chrome on Android, or the free Bluefy browser on iPhone (App Store). Or press Demo to play without the bar.');return;}
-  if(!window.isSecureContext){setStatus('Not secure','');alert('Serve over https or localhost.');return;}
-  try{setStatus('Scanning...','wait');
+  if(!navigator.bluetooth){setStatus('No Web Bluetooth','');return}
+  if(!window.isSecureContext){setStatus('Not secure','');return}
+  try{setStatus('Scanning…','wait');
     device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE]});
-    device.addEventListener('gattserverdisconnected',()=>{connected=false;setStatus('Disconnected','')});
-    setStatus('Connecting...','wait');
+    device.addEventListener('gattserverdisconnected',()=>{setStatus('Disconnected','')});
+    setStatus('Connecting…','wait');
     const srv=await(await device.gatt.connect()).getPrimaryService(SERVICE);
     const fc=await srv.getCharacteristic(CH_FORCE);await fc.startNotifications();
     fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);onSample()});
-    demo=false;connected=true;$('firstrun').classList.remove('show');startTare();
-  }catch(e){console.error(e);if(e.name==='NotFoundError'){setStatus('No bar found','');alert('No device selected, or nothing advertising.')}else{setStatus(e.name,'')}}
+    demo=false;$('firstrun').classList.remove('show');startTare();
+  }catch(e){setStatus(e&&e.name==='NotFoundError'?'No bar found':'Error','')}
 }
-function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
+function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing — hold still','wait')}
 function onSample(){
-  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
-  if(baseline==null)baseline=raw;force=Math.max(0,raw-baseline);
+  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);
+    if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Bar live','on')}return}
+  if(baseline==null)baseline=raw;
+  force=Math.max(0,raw-baseline);
 }
 let demoF=0,pull=false;
-function startDemo(){demo=true;connected=false;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
+function startDemo(){demo=true;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
   if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(700,demoF+40);else demoF=Math.max(0,demoF*0.9-3);raw=demoF;onSample()},27)}
-addEventListener('pointerdown',()=>{if(demo)pull=true});addEventListener('pointerup',()=>pull=false);
-addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});addEventListener('keyup',e=>{if(e.code==='Space')pull=false});
-$('frConnect').onclick=connect;$('frDemo').onclick=startDemo;
-$('zeroBtn').onclick=()=>{if(demo){baseline=0}else startTare()};
+addEventListener('pointerdown',()=>{if(demo)pull=true});
+addEventListener('pointerup',()=>pull=false);
+addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});
+addEventListener('keyup',e=>{if(e.code==='Space')pull=false});
+$('frConnect').onclick=connect;
+$('frDemo').onclick=startDemo;
+$('zeroBtn').onclick=()=>{
+  if(demo){baseline=0;return}
+  /* On the TV the native side owns the tare; the browser build runs its own. */
+  if(window.X3F&&window.X3F.reZero){try{window.X3F.reZero();setStatus('Zeroing — hold still','wait');
+    setTimeout(()=>setStatus('Bar live','on'),1800);return}catch(e){}}
+  startTare();
+};
 
-let beeper=null;function beep(f,d){try{beeper=beeper||new(window.AudioContext||window.webkitAudioContext)();const o=beeper.createOscillator(),g=beeper.createGain();o.frequency.value=f;o.connect(g);g.connect(beeper.destination);g.gain.setValueAtTime(0.001,beeper.currentTime);g.gain.exponentialRampToValueAtTime(0.25,beeper.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.001,beeper.currentTime+d);o.start();o.stop(beeper.currentTime+d+0.03)}catch(e){}}
-/* Two captures, in the order you would actually set a lift up.
-
-   HOLD  - get into the movement's start position and stay there. We average the
-           window rather than peak it, because this is a steady load, and a peak
-           would bank a wobble as the floor. This is the number that fixes the
-           overhead press: its start position already carries the band.
-   MAX   - all out. Peak wins.
-
-   Saved as a range against movement+band, so the games map hold -> bottom of
-   the screen and max -> top. */
-let phase='idle',pEnd=0,capMax=0,holdSum=0,holdN=0,capLo=0;
-$('calBtn').onclick=()=>{ if(phase!=='idle')return;
-  if(!slug){alert('Pick a movement first.');return;}
-  if(baseline==null&&!demo){alert('Connect and let it zero first.');return;}
-  phase='count';pEnd=performance.now()+3000; };
-/* What the figure should be doing, per phase. During HOLD it is pinned to the
-   start pose - that is the whole instruction, and a picture carries it better
-   than a sentence. During the max it rides your actual force against a running
-   estimate of the range, because the real one is what we are still measuring. */
-function driveFigure(){
-  if(!fig)return;
-  if(phase==='hold'||phase==='count'){fig.setMode('live');figN=0;return}
-  if(phase==='ready'){fig.setMode('live');figN=0;return}
-  if(phase==='cap'){fig.setMode('live');
-    const est=Math.max(30,(capMax||0)-capLo);
-    figN=Math.max(0,Math.min(1,(force-capLo)/est));return}
-  if(phase==='done'){fig.setMode('live');figN=1;return}
-  fig.setMode('tempo');                       // idle: just show me the movement
+/* The force the flow measures. On the TV the shell assigns window.__x3fForce and
+   the bootstrap writes `force` directly; in the browser onSample() does. Reading
+   both means this page does not care which. */
+function liveForce(){
+  if(typeof window.__x3fForce==='number')return window.__x3fForce;
+  return force;
 }
-function loop(now){
-  driveFigure();
-  if(phase==='count'){const s=Math.ceil((pEnd-now)/1000);$('eye').textContent='Get ready';$('big').className='big';$('big').textContent=s>0?s:'GO';$('sub').textContent='Get into your START position for the '+exName()+' and hold it';
-    if(!loop.lastS||loop.lastS!==s){loop.lastS=s;if(s>0)beep(520,0.08);else beep(760,0.12)}
-    if(now>=pEnd){phase='hold';pEnd=now+3000;holdSum=0;holdN=0;} }
-  else if(phase==='hold'){$('eye').textContent='HOLD THE START';$('big').className='big accent';$('big').textContent=Math.round(force);$('sub').textContent='Stay still — '+Math.max(0,(pEnd-now)/1000).toFixed(1)+'s';
-    holdSum+=force;holdN++;
-    if(now>=pEnd){capLo=holdN?holdSum/holdN:0;phase='ready';pEnd=now+2500;beep(660,0.1);} }
-  else if(phase==='ready'){const s=Math.ceil((pEnd-now)/1000);$('eye').textContent='Now go all out';$('big').className='big';$('big').textContent=s>0?s:'GO';$('sub').textContent='Start tension '+Math.round(capLo)+' — '+verb().toLowerCase()+' as hard as you can on GO';
-    if(!loop.lastR||loop.lastR!==s){loop.lastR=s;if(s>0)beep(520,0.08);else beep(760,0.12)}
-    if(now>=pEnd){phase='cap';pEnd=now+4000;capMax=0;} }
-  else if(phase==='cap'){$('eye').textContent=verb()+' MAX';$('big').className='big hot';$('big').textContent=Math.round(force);$('sub').textContent=Math.max(0,(pEnd-now)/1000).toFixed(1)+'s left';
-    if(force>capMax)capMax=force;
-    if(now>=pEnd){phase='done';beep(400,0.2);
-      loop.ok=window.X3FCal?X3FCal.save(slug,band,capLo,capMax):false;
-      // keep the band max fed too - it is still the fallback for movements you
-      // have never calibrated, and the dashboard reads it
-      if(capMax>10&&capMax>(bandMax[band]||0)){bandMax[band]=Math.round(capMax);xset('bandMax',bandMax);}
-      showStored();} }
-  else if(phase==='done'){
-    if(loop.ok){$('eye').textContent=exName()+' · '+band;$('big').className='big accent';$('big').textContent=Math.round(capLo)+'–'+Math.round(capMax);
-      $('sub').textContent='Saved. Games now treat '+Math.round(capLo)+' as the bottom of this movement and '+Math.round(capMax)+' as the top.';}
-    else{$('eye').textContent='Not saved';$('big').className='big';$('big').textContent=Math.round(capLo)+'–'+Math.round(capMax);
-      /* Say what we actually measured. "Too narrow" on its own is a dead end -
-         you cannot tell whether the hold was wrong, the press was, or the bar
-         drifted. The numbers make it obvious which. */
-      $('sub').textContent=capMax<=capLo
-        ? 'The max ('+Math.round(capMax)+') came out no higher than the hold ('+Math.round(capLo)+') — re-zero, hold your start position, then press all out.'
-        : 'Only '+Math.round(capMax-capLo)+' between hold and max; needs '+(window.X3FCal?X3FCal.minSpan:10)+'. Check the band is loaded at your start position, then run it again.';}
-    setTimeout(()=>{if(phase==='done')phase='idle'},3200); }
-  else{$('eye').textContent='Live Force';$('big').className='big';$('big').textContent=Math.round(force);}
-  $('calBtn').textContent=phase==='idle'?'Calibrate '+exName():'...';
-  requestAnimationFrame(loop);
+
+/* ── the capture ─────────────────────────────────────────────────────────── */
+
+let flow=null,lastResult=null;
+
+function label(){
+  $('calBtn').textContent=(flow&&flow.phase()!=='idle'&&flow.phase()!=='done'&&flow.phase()!=='failed')
+    ? 'Cancel' : ('Calibrate '+exName());
 }
-requestAnimationFrame(loop);
+
+function ui(p,st){
+  document.body.className=p==='idle'||p==='done'||p==='failed'?'':'p-'+p;
+  const big=$('big'),eye=$('eye'),sub=$('sub'),fill=$('trackFill');
+  const pct=st&&st.total?Math.max(0,Math.min(100,100*(1-st.left/st.total))):0;
+  fill.style.width=pct+'%';
+
+  if(p==='getset'){
+    eye.textContent='Get set';
+    big.className='big gold';
+    big.textContent=Math.max(0,Math.ceil(st.left/1000));
+    sub.textContent='Put the remote down. Get into the start position for the '+exName()+
+      '. Press OK when you are ready.';
+    figN=0;
+  }else if(p==='hold'){
+    eye.textContent='Hold the start';
+    big.className='big accent';
+    big.textContent=Math.round(st.force);
+    sub.textContent='Stay still — '+(st.left/1000).toFixed(1)+'s';
+    figN=0;
+  }else if(p==='ready'){
+    eye.textContent='Now go all out';
+    big.className='big gold';
+    big.textContent=Math.max(0,Math.ceil(st.left/1000))||'GO';
+    sub.textContent='Start tension '+Math.round(st.lo)+' — '+verb().toLowerCase()+' as hard as you can on GO';
+    figN=0;
+  }else if(p==='max'){
+    eye.textContent=verb()+' MAX';
+    big.className='big hot';
+    big.textContent=Math.round(st.force);
+    sub.textContent='Keep going while it is still climbing';
+    const est=Math.max(30,(st.hi||0)-st.lo);
+    figN=Math.max(0,Math.min(1,(st.force-st.lo)/est));
+  }else{
+    eye.textContent='Live force';
+    big.className='big';
+    big.textContent=Math.round(liveForce());
+    fill.style.width='0%';
+    figN=0;
+    if(!lastResult)sub.textContent='Pick the movement and the band you use for it, then run the two captures.';
+  }
+  if(fig){try{fig.setMode(p==='idle'?'tempo':'live')}catch(e){}}
+}
+
+function makeFlow(){
+  if(!window.X3FCalFlow)return null;
+  return X3FCalFlow.create({
+    slug:slug, band:band,
+    getForce:liveForce,
+    onTick:st=>ui(st.phase,st),
+    onPhase:(p)=>{label();ui(p,{left:0,total:1,force:liveForce(),lo:0,hi:0})},
+    onDone:res=>{
+      lastResult=res;
+      label();
+      document.body.className='';
+      const big=$('big'),eye=$('eye'),sub=$('sub');
+      if(res.ok){
+        eye.textContent=exName()+' · '+band;
+        big.className='big accent';
+        big.textContent=Math.round(res.lo)+'–'+Math.round(res.hi);
+        /* Saved either way - the user's own measurement outranks our model - but
+           a hold that does not look like a held position is said out loud
+           rather than banked in silence. A floor of zero on a movement that
+           genuinely starts under load is how this whole class of bug began. */
+        var note='';
+        if(res.hold&&!res.hold.ok){
+          if(res.hold.reason==='no-load'){
+            big.className='big gold';
+            note=' Your hold read '+Math.round(res.lo)+', but the '+exName().toLowerCase()+
+                 ' should already be carrying about '+res.hold.expected+
+                 ' in the start position. If you were not holding the bar yet, run it again.';
+          }else if(res.hold.reason==='wobble'){
+            note=' The hold moved about '+res.hold.spread+'% across the four seconds, so that floor is'+
+                 ' an average of a wobble. Steadier next time is worth redoing.';
+          }
+        }
+        sub.textContent='Saved. Games now treat '+Math.round(res.lo)+' as the bottom of this movement and '+
+          Math.round(res.hi)+' as the top.'+note;
+        showStored();
+      }else{
+        eye.textContent='Not saved';
+        big.className='big hot';
+        big.textContent=Math.round(res.lo)+'–'+Math.round(res.hi);
+        /* Say what was measured, not just that it was refused — otherwise you
+           cannot tell whether the hold was wrong, the press was, or the bar
+           never zeroed. */
+        sub.textContent=res.message+' Press Calibrate to run the max again.';
+      }
+      /* NOTHING writes x3f_bandMax here, on success or failure. X3FCal.save()
+         is the only writer in the app and it writes only when the capture is
+         good. The old page raised the global ceiling even when it refused. */
+      setTimeout(()=>{if(flow&&flow.phase()!=='getset')ui('idle',null)},6000);
+    }
+  });
+}
+
+$('calBtn').onclick=()=>{
+  if(!slug)return;
+  if(!flow)flow=makeFlow();
+  if(!flow)return;
+  const p=flow.phase();
+  if(p!=='idle'&&p!=='done'&&p!=='failed'){flow.cancel();ui('idle',null);label();return}
+  /* A failed max keeps the hold, so a slip does not cost the whole setup. */
+  if(p==='failed'&&lastResult&&lastResult.error==='too-narrow'&&flow.retryMax()){label();return}
+  flow.setMovement(slug,band);
+  lastResult=null;
+  flow.start();
+  label();
+};
+
+/* OK during GET SET means "I am ready now" — it skips the rest of the countdown
+   rather than restarting or cancelling, so the delay never gets in the way once
+   you are quick at setting up. */
+addEventListener('keydown',e=>{
+  if(!flow)return;
+  if((e.key==='Enter'||e.code==='Space')&&flow.phase()==='getset'){flow.press();e.preventDefault()}
+  if(e.key==='Escape'&&flow.phase()!=='idle'){flow.cancel();ui('idle',null);label()}
+});
+
+/* The page's own testable surface. tools/func-test/cases-cal.js drives a whole
+   capture through this rather than waiting out a real one, so what the suite
+   exercises is the same commit path a user gets. `band` is exposed for the same
+   reason: the assertion that matters most is "the band Calibrate saves under is
+   the band the games read", and that cannot be checked from outside. */
+window.__x3fCal = {
+  get band(){return band},
+  get slug(){return slug},
+  phase:function(){return flow?flow.phase():'idle'},
+  commit:function(lo,hi){
+    if(!flow)flow=makeFlow();
+    if(!flow)throw new Error('no flow');
+    flow.setMovement(slug,band);
+    flow._commit(lo,hi);
+  }
+};
+
+label();
+ui('idle',null);
+setInterval(()=>{if(!flow||flow.phase()==='idle')ui('idle',null)},250);
 </script>
+
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+
 <script src="x3f-music.js"></script>
-<script>/* soundtrack: reacts to your pull where the page exposes one */
+<script>
+/* The old copy of this hook called ref(), which the eight GAMES define and this
+   page deliberately does not — so it threw on every single frame, silently, for
+   the whole session. Intensity here is the live force against this movement's
+   own calibrated span. */
 addEventListener("load",function(){try{
-  var f=function(){ try{ return Math.min(1,(force/ref())*1.05); }catch(e){ return 0.25; } };
-  X3FMusic.attach({mood:"calibrate",getIntensity:f,
-    buttonHost:document.querySelector(".topbar")||document.body,buttonClass:"mini"});
-}catch(e){}});</script>
+  X3FMusic.attach({mood:"calibrate",
+    getIntensity:function(){
+      try{
+        if(!window.X3FCal||!slug)return 0.25;
+        return Math.min(1,X3FCal.raw(slug,band,liveForce())*1.05);
+      }catch(e){return 0.25}
+    },
+    buttonHost:document.querySelector(".top")||document.body,buttonClass:"mini"});
+}catch(e){}});
+</script>
 </body></html>

@@ -19,8 +19,17 @@ android {
         applicationId 'com.goob.x3ftv'
         minSdk 24
         targetSdk 34
-        versionCode 17
-        versionName '1.7'
+        /* BUMP THE NUMBER BELOW ON EVERY PUBLISH, INCLUDING ASSET-ONLY CHANGES.
+           CI writes dist/version.txt by grepping this file for the FIRST line naming
+           the version-code property and keeping its digits, so no line above it may
+           mention that property name - a comment that did would silently publish the
+           digits out of the comment instead. The in-app updater then compares that
+           file against BuildConfig.VERSION_CODE with <=, which means a build that
+           changes only the web bundle and leaves this alone ships a genuinely
+           different APK that every TV in the field reports as "You're on the latest",
+           forever. */
+        versionCode 19
+        versionName '1.9'
     }
 
     buildFeatures {

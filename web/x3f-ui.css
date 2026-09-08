@@ -1,0 +1,357 @@
+/* X3F UI — the design system.
+
+   Replaces four divergent copies of the tokens (index, Routine, Library,
+   Progress each had their own, and they had drifted: different accents,
+   different fonts, different panel values).
+
+   ─────────────────────────────────────────────────────────────────────────
+   THE COORDINATE SYSTEM, WHICH IS THE WHOLE TRICK
+   ─────────────────────────────────────────────────────────────────────────
+
+   A CSS pixel is not a panel pixel. A 1080p Android TV normally reports
+   devicePixelRatio 2 and hands the page a 960 x 540 CSS px viewport, so a
+   stylesheet that says `font-size: 28px` renders 56 physical pixels — double
+   what a designer working from a 1920-wide mock intended. Force the viewport
+   the other way and the same 28px lands at 28 physical px, which is below the
+   legibility floor for a sofa.
+
+   So nothing here is sized in raw px. One line pins the whole system to the
+   panel instead of to the viewport's units:
+
+       :root { font-size: calc(100vw / 120); }   →  1rem === 16 design px
+
+   At 1920 CSS px that is 16px. At 960 CSS px it is 8px — and because every
+   size below is in rem, the layout is pixel-identical on the panel either way.
+   A 2rem heading is 32 design px on every TV, at every DPR, forever.
+
+   Verify rather than assume: X3FUI.probe() logs innerWidth, devicePixelRatio
+   and the resulting physical width. Run it once on the actual Hisense.
+
+   ─────────────────────────────────────────────────────────────────────────
+   TV-SAFE COLOUR
+   ─────────────────────────────────────────────────────────────────────────
+
+   Rec.709 video levels put black at 16 and white at 235. Below and above that
+   a TV crushes detail, and many panels add contrast enhancement on top. The
+   old palette used #06080e for the ground and #eaf2ff for text — the first is
+   below the floor (it renders as flat crushed black, taking every subtle panel
+   edge with it) and the second is above the ceiling (it blooms and shimmers).
+
+     darkest usable ground  ≈ #0F1114
+     brightest usable text  ≈ #ECEEF2
+
+   Everything here sits inside that window.
+
+   ─────────────────────────────────────────────────────────────────────────
+   WHAT IS BANNED, AND WHY
+   ─────────────────────────────────────────────────────────────────────────
+
+     backdrop-filter        a "glassmorphic" card drops a 1 GB TV to single
+                            digit fps. Measured cost of a naive animated blur:
+                            ~90 ms/frame against a 16.6 ms budget.
+     filter: blur() on
+       anything animated    same reason
+     will-change on lists   7.9 MiB per full-screen composited layer; forty
+                            cards is the entire graphics budget
+     animating anything
+       but transform/opacity  everything else costs layout or paint
+     a canvas at dpr 2      a 1080p canvas at devicePixelRatio 2 is 31.6 MiB
+
+   The one exception is a single small blurred glow behind the focus ring,
+   which is static and composited.
+*/
+
+/* ══════════════════════════════════════════════════════════ tokens ═════ */
+
+:root {
+  /* The coordinate system. Everything else depends on this line. */
+  font-size: calc(100vw / 120);
+
+  /* ── ground ─────────────────────────────────────────────────────────── */
+  --bg:        #0F1114;   /* the darkest a TV renders honestly */
+  --bg-lift:   #14171E;   /* the ambient layer's base */
+  --surface:   #1A1E27;   /* cards sit on their own ground, never on the
+                             backdrop — translucent panels over a moving
+                             aurora are unreadable, which is why v1.7 already
+                             had to give every panel an opaque base */
+  --surface-2: #232936;
+  --surface-3: #2C3341;
+  --line:      rgba(236, 238, 242, 0.10);
+  --line-2:    rgba(236, 238, 242, 0.18);
+
+  /* ── ink ────────────────────────────────────────────────────────────── */
+  --txt:       #ECEEF2;   /* the brightest a TV renders honestly */
+  --txt-2:     #B9C0CE;
+  --dim:       #8B93A5;   /* 4.6:1 on --bg. Never go dimmer than this. */
+
+  /* ── accents ────────────────────────────────────────────────────────── */
+  --accent:    #7C6CFF;   /* violet — the brand, focus, primary action */
+  --accent-2:  #A99BFF;
+  --cyan:      #35D8F5;
+  --mint:      #33E2AE;   /* success, "you did the thing" */
+  --gold:      #FFC94A;   /* personal bests, milestones */
+  --hot:       #FF6376;   /* failure, max effort, the last five reps */
+  --amber:     #FF9E4A;   /* partials */
+
+  /* Band identity. NEVER used alone — the band names are a purely luminance
+     based palette (White / Light Gray / Dark Gray / Black / Elite Black)
+     sitting in exactly the near-white and near-black regions a TV renders
+     worst, and invisible to a portion of viewers. Always name in text at
+     ≥ 1.75rem, plus a shape, and only then a hue. */
+  --band-1: #C9D1E0;  /* White */
+  --band-2: #7FA3C4;  /* Light Gray */
+  --band-3: #5C7FB8;  /* Dark Gray */
+  --band-4: #7A6ACF;  /* Black */
+  --band-5: #B85CC4;  /* Elite Black */
+
+  /* ── type ───────────────────────────────────────────────────────────── */
+  /* Bundled locally — nothing loads from the network. See fonts/fonts.css. */
+  --font-display: 'X3F Display', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-num:     'X3F Num', ui-monospace, 'Segoe UI', system-ui, sans-serif;
+
+  /* Design px, at 1080p. The practical floor for a sofa is 28; body is 32-36;
+     a screen title is 72. Nothing in this app may be smaller than --t-min. */
+  --t-count:  12rem;    /* 192px — the in-set rep counter, readable in
+                           peripheral vision at 8 feet. This is not a typo. */
+  --t-hero:    6rem;    /*  96px */
+  --t-title: 4.5rem;    /*  72px */
+  --t-h1:      3rem;    /*  48px */
+  --t-h2:   2.25rem;    /*  36px */
+  --t-body:    2rem;    /*  32px */
+  --t-min:  1.75rem;    /*  28px — the floor. Never smaller. */
+
+  /* Never below 400. Thin weights shimmer and alias badly on a TV. */
+  --w-body: 500;
+  --w-bold: 700;
+
+  /* ── space ──────────────────────────────────────────────────────────── */
+  --s-1: 0.5rem;  --s-2: 1rem;   --s-3: 1.5rem;  --s-4: 2rem;
+  --s-5: 3rem;    --s-6: 4rem;   --s-7: 6rem;
+
+  /* 5% per edge is the minimum overscan safe area; TVs still crop. */
+  --safe-x: 5vw;
+  --safe-y: 5vh;
+
+  --r-1: 0.75rem; --r-2: 1.25rem; --r-3: 2rem; --r-pill: 100rem;
+
+  /* ── focus ──────────────────────────────────────────────────────────── */
+  /* An 8-design-px ring. Anything thinner disappears across a room. Focus
+     must also be distinguishable at 3:1 from the unfocused state, which is
+     why it changes size AND brightness AND border, not just colour. */
+  --focus-ring: 0.625rem;   /* 10 design px — the middle of the 8-12 range */
+  --focus-scale: 1.06;
+  --focus-ms: 140ms;
+
+  --ease: cubic-bezier(.2, .9, .25, 1);
+}
+
+/* Respect the setting, always. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --focus-ms: 1ms; --focus-scale: 1.0; }
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════ base ═══════ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--font-display);
+  font-weight: var(--w-body);
+  font-size: var(--t-body);
+  line-height: 1.4;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  /* The system font-scale setting on Google TV multiplies WebView text. The
+     shell sets textZoom(100) to stop that; this is the belt to its braces. */
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+}
+
+/* Numbers that change in place must never reflow the layout around them. */
+.num, .x3f-count { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+img { max-width: 100%; display: block; }
+[hidden] { display: none !important; }
+
+/* ══════════════════════════════════════════════════════ structure ══════ */
+
+.x3f-safe { padding: var(--safe-y) var(--safe-x); }
+
+/* A screen fills the panel and never scrolls horizontally. Wide content gets
+   its own scroller. */
+.x3f-screen {
+  position: relative; z-index: 1;
+  height: 100dvh;
+  display: flex; flex-direction: column;
+  padding: var(--safe-y) var(--safe-x);
+  overflow: hidden;
+}
+
+.x3f-row { display: flex; align-items: center; gap: var(--s-3); }
+.x3f-col { display: flex; flex-direction: column; gap: var(--s-3); }
+.x3f-grow { flex: 1 1 auto; min-height: 0; }
+.x3f-spacer { flex: 1 1 auto; }
+
+/* A leanback row: horizontal, scrolls, and the last card bleeds past the safe
+   edge so it reads as "there is more". */
+.x3f-rail {
+  display: flex; gap: var(--s-3);
+  overflow-x: auto; overflow-y: hidden;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  padding: var(--s-2) 0;
+  margin-right: calc(var(--safe-x) * -1);
+  padding-right: var(--safe-x);
+}
+.x3f-rail::-webkit-scrollbar { display: none; }
+
+.x3f-railhead {
+  font-size: var(--t-h2); font-weight: var(--w-bold);
+  color: var(--txt-2); letter-spacing: .02em;
+  margin-bottom: var(--s-1);
+}
+
+/* ══════════════════════════════════════════════════════════ type ═══════ */
+
+.x3f-hero    { font-size: var(--t-hero);  font-weight: var(--w-bold); line-height: 1.05; }
+.x3f-title   { font-size: var(--t-title); font-weight: var(--w-bold); line-height: 1.1; }
+.x3f-h1      { font-size: var(--t-h1);    font-weight: var(--w-bold); line-height: 1.15; }
+.x3f-h2      { font-size: var(--t-h2);    font-weight: var(--w-bold); line-height: 1.2; }
+.x3f-body    { font-size: var(--t-body); }
+.x3f-small   { font-size: var(--t-min);   color: var(--txt-2); }
+.x3f-dim     { color: var(--dim); }
+
+/* Never wider than about 60 characters — long lines are unreadable at distance
+   because the eye loses the return sweep. */
+.x3f-prose { max-width: 46rem; line-height: 1.5; }
+
+.x3f-eyebrow {
+  font-size: var(--t-min); font-weight: var(--w-bold);
+  letter-spacing: .12em; text-transform: uppercase; color: var(--dim);
+}
+
+/* ═════════════════════════════════════════════════════ components ══════ */
+
+.x3f-card {
+  background: var(--surface);
+  border: 0.125rem solid var(--line);
+  border-radius: var(--r-2);
+  padding: var(--s-3);
+  /* transform and opacity only — the compositor handles both for free */
+  transition: transform var(--focus-ms) var(--ease),
+              border-color var(--focus-ms) linear,
+              background-color var(--focus-ms) linear;
+  will-change: auto;
+}
+
+.x3f-btn {
+  font-family: var(--font-display);
+  font-size: var(--t-body); font-weight: var(--w-bold);
+  color: var(--txt);
+  background: var(--surface-2);
+  border: 0.125rem solid var(--line-2);
+  border-radius: var(--r-pill);
+  padding: var(--s-2) var(--s-4);
+  cursor: pointer;
+  transition: transform var(--focus-ms) var(--ease),
+              background-color var(--focus-ms) linear;
+}
+.x3f-btn.primary { background: var(--accent); border-color: var(--accent-2); color: #0B0813; }
+.x3f-btn.ghost   { background: transparent; }
+
+/* ── focus ──────────────────────────────────────────────────────────────
+   One ring, everywhere, owned by this class. x3f-nav.js sets
+   window.X3FNAV_CLASS to 'foc' and moves it; nothing else may draw focus,
+   or two rings end up lit and one of them is a lie. */
+/* Focus has to survive: a 55-inch panel eight feet away, a bright room, a
+   viewer who cannot distinguish the accent hue, and a photograph of the screen
+   sent to someone else. So it changes FOUR things at once — ring, size,
+   background luminance and border — rather than relying on colour alone.
+   Guidance is a 6 px minimum ring, 8-12 preferred, and 3:1 contrast between the
+   focused and unfocused state. */
+.foc {
+  outline: var(--focus-ring) solid var(--accent);
+  outline-offset: 0.25rem;
+  transform: scale(var(--focus-scale));
+  z-index: 2;
+  background: var(--surface-3);
+  border-color: var(--accent-2);
+}
+.x3f-btn.foc { background: var(--accent); color: #0B0813; }
+
+/* A soft glow so the ring reads across a room without a wide hard outline.
+   Static, single, small — the one place a blur is affordable. */
+.foc::after {
+  content: ''; position: absolute; inset: calc(var(--focus-ring) * -1);
+  border-radius: inherit;
+  box-shadow: 0 0 var(--s-4) var(--accent);
+  opacity: .35; pointer-events: none;
+}
+.x3f-card, .x3f-btn { position: relative; }
+
+/* ── band chip ─────────────────────────────────────────────────────────
+   Text first, shape second, colour third — never colour alone. */
+.x3f-band {
+  display: inline-flex; align-items: center; gap: var(--s-1);
+  font-size: var(--t-min); font-weight: var(--w-bold);
+  padding: var(--s-1) var(--s-3);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  border: 0.125rem solid var(--line-2);
+  white-space: nowrap;
+}
+.x3f-band .pip { width: 1rem; height: 1rem; border-radius: 50%; flex: none; }
+.x3f-band[data-band="White"]       .pip { background: var(--band-1); border-radius: 50%; }
+.x3f-band[data-band="Light Gray"]  .pip { background: var(--band-2); border-radius: 0.15rem; }
+.x3f-band[data-band="Dark Gray"]   .pip { background: var(--band-3); border-radius: 0.15rem; transform: rotate(45deg); }
+.x3f-band[data-band="Black"]       .pip { background: var(--band-4); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.x3f-band[data-band="Elite Black"] .pip { background: var(--band-5); clip-path: polygon(50% 0,100% 38%,82% 100%,18% 100%,0 38%); }
+
+/* ── the in-set scoreboard ─────────────────────────────────────────────
+   A different product from the browse screens. During a set the user is
+   standing on a plate holding a loaded bar, often side-on to the screen,
+   reading it out of the corner of one eye for a fraction of a second
+   between reps. It is a scoreboard, not a UI:
+
+     one number dominates, at 160-220 physical px
+     tabular numerals in a fixed-width slot so 9 → 10 never reflows
+     NO ANIMATION — motion in peripheral vision reads as an alert and pulls
+       the eye off the bar, and the frame budget is better spent on the
+       audio scheduler not missing
+     state by luminance and position first, hue third
+     audio carries the set; the screen only confirms it                    */
+
+.x3f-scoreboard { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-2); }
+.x3f-count {
+  font-size: var(--t-count); font-weight: var(--w-bold); line-height: .9;
+  letter-spacing: -.02em;
+  min-width: 2ch; text-align: center;
+  color: var(--txt);
+}
+.x3f-count.partial { color: var(--amber); }
+.x3f-count.weak    { color: var(--hot); }
+.x3f-countlabel { font-size: var(--t-h2); font-weight: var(--w-bold); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+
+/* Tier changes the LAYOUT and the BACKGROUND LUMINANCE, not just the hue, so
+   it is legible at an angle, in a bright room, to a colour-blind viewer. */
+.x3f-tier-full    { background: var(--bg); }
+.x3f-tier-mid     { background: #1B1710; }
+.x3f-tier-weak    { background: #21120F; }
+.x3f-tier-rest    { background: #0E1620; }
+
+/* ── force meter ───────────────────────────────────────────────────────
+   SVG stroke-dasharray with a CSS transition, which the compositor handles.
+   Never a per-frame canvas redraw for a progress arc. */
+.x3f-meter { transition: stroke-dashoffset 90ms linear; }
+
+.x3f-endcap { height: 0.25rem; background: var(--line); border-radius: var(--r-pill); margin-top: var(--s-5); }
+.x3f-scrollpad { height: 5rem; }

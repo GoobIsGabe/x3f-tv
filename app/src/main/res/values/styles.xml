@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The app used to run on @android:style/Theme.DeviceDefault.NoActionBar with no
+  windowBackground override at all. DeviceDefault is LIGHT on a lot of OEM TV builds, so
+  every launch from the leanback home painted a light grey window for the whole of the
+  activity's startup, then the WebView's near-black, then the page — a white flash on a
+  dark app, every single time, on the biggest screen in the house.
+
+  Deliberately NOT setting android:windowFullscreen here: the activity is already
+  effectively fullscreen on a TV with no action bar, and a fullscreen window pushes the
+  IME into extract mode, which would fight the text-input path the shell just gained.
+-->
+<resources>
+    <style name="Theme.X3F" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/x3f_bg</item>
+        <item name="android:colorBackground">@color/x3f_bg</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

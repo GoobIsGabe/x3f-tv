@@ -40,8 +40,16 @@ REPO = Path(__file__).resolve().parents[2]
 ASSETS = REPO / "app" / "src" / "main" / "assets"
 HERE = Path(__file__).resolve().parent
 
-SCREENS = ["launcher", "routine", "library", "progress", "nova", "bloom",
+SCREENS = ["launcher", "app", "routine", "library", "progress", "nova", "bloom",
            "splash", "arena", "duel", "flow", "rhythm", "calibrate"]
+
+# Bundled pages that are deliberately not audited under their own name.
+# index.html is a byte-identical twin of launcher.html (the shell treats both as
+# the launcher), so auditing it would run the same walk twice and report the same
+# result. Everything else in the bundle SHOULD be in SCREENS - see the coverage
+# report at the end of main(). "104 assertions, all clean" reads as much stronger
+# evidence than it is when a whole page is silently outside the suite.
+NOT_AUDITED = {"index"}
 
 BROWSERS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -63,6 +71,17 @@ def find_browser():
 
 
 def main():
+    # The pages are full of emoji and typographic dashes, and a control's label
+    # ends up inside a problem line verbatim. On a Windows console (cp1252) one
+    # "⬇" in a button caption made `print` raise UnicodeEncodeError halfway
+    # through the report - so a screen that failed for an ordinary reason took
+    # the whole run's output down with it and left a traceback in place of the
+    # evidence. Substitute what the console cannot draw; never stop reporting.
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except Exception:
+        pass
+
     want = [a for a in sys.argv[1:] if not a.startswith("-")] or SCREENS
     browser = find_browser()
     if not browser:
@@ -116,7 +135,15 @@ def main():
 
         dump = stage / ("dump_" + name + ".html")
         flags = ["--headless", "--disable-gpu", "--no-sandbox",
-                 "--user-data-dir=" + str(stage / "profile"),
+                 # One profile PER SCREEN, the way func-test already does it.
+                 # Chromium hands every file:// page the same localStorage
+                 # origin, so a shared profile leaks state between screens: the
+                 # routine case writes x3f_session.pending and never clears it,
+                 # and every later screen then boots mid-deadlift. The full run
+                 # and `run.py nova` on its own would audit different states,
+                 # which makes a clean run non-reproducible - exactly the kind of
+                 # thing a big refactor cannot afford to be guessing about.
+                 "--user-data-dir=" + str(stage / ("profile_" + name)),
                  "--window-size=1920,1080",
                  # Under virtual time the browser runs timers as fast as it can, so
                  # this is a work allowance rather than a wall clock. The routine
@@ -160,6 +187,21 @@ def main():
 
     if missing:
         print("\nnot in the bundle: " + ", ".join(missing))
+
+    # Coverage, reported whether or not anything failed. A page that is in the
+    # APK but in nobody's SCREENS list is a page the remote has never been driven
+    # around, and nothing used to say so - which is how "all screens clean" came
+    # to describe a bundle where several pages had zero assertions of any kind.
+    # Printed rather than failed, because a run limited to named screens is a
+    # normal thing to do and should not go red for it.
+    if not [a for a in sys.argv[1:] if not a.startswith("-")]:
+        bundled = {p.stem for p in ASSETS.glob("*.html")}
+        uncovered = sorted(bundled - set(SCREENS) - NOT_AUDITED)
+        if uncovered:
+            print("\nNOT AUDITED BY ANY SCREEN: " + ", ".join(uncovered))
+            print("Add them to SCREENS (and a branch in cases.js) or say why in "
+                  "NOT_AUDITED - see docs/ADDING-A-FILE.md.")
+
     if problems:
         print("\n===== problems =====")
         for name, lines in problems.items():

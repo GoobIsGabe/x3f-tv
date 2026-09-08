@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The API 31+ replacement for backup_rules.xml (android:dataExtractionRules). Same policy,
+  stated twice because the platform split one attribute into two: cloud backup, and
+  device-to-device transfer.
+
+  Keep the training history, drop the bar's MAC — see backup_rules.xml for why.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="x3f.xml"/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="x3f.xml"/>
+    </device-transfer>
+</data-extraction-rules>

@@ -1,15 +1,62 @@
 <!DOCTYPE html>
-<!-- X3F ARENA - mobile-first Web Bluetooth game for the X3 Force bar.
- Force char e3458901 (LE float64, ~37Hz) on service e3458900. Auto-zeroed. -->
+<!-- X3F ARENA - three drills and a meter, for the X3 Force bar.
+ Force char e3458901 (LE float64, ~37Hz) on service e3458900. Auto-zeroed.
+
+ WHAT THIS FILE IS FOR, AND WHAT CHANGED IN THE OVERHAUL
+
+ Arena carries the Library's three "drill" entries - Hold the Zone, Max Effort and
+ Boss Fight - plus a plain force meter. The audit's verdict on all three was that
+ they scored the opposite of the method: Hold paid you for staying inside a
+ SUBMAXIMAL window (target 0.55 of your range with a 1.25x ceiling, so pulling
+ hard put you OUTSIDE the zone), Max paid for a 5-second snatch, and Boss paid for
+ a 15-46 second maximal isometric and then only told the program anything if you
+ won - so the training was discarded precisely on the attempts that went to
+ failure.
+
+ The games are not smaller now. What is being SCORED changed:
+
+   Hold   the zone is the strong range and it has NO CEILING. Pulling harder can
+          never take you out of it. The clock is the same number x3f-set logs as
+          `strong`, so the screen and the log cannot disagree. The round ends at
+          failure, not on a 30-second timer.
+   Max    scores the force you HELD for the protocol's own 2-3 second ascent,
+          not the instantaneous spike, so a jerk that collapses scores nothing
+          and a controlled build that is held scores everything. It gets a
+          get-set delay, because you cannot press OK on a remote and be all-out
+          in the same second.
+   Boss   dies to an honest set: damage is the integral of your force, every rep
+          lands a blow, slow reps hit harder than fast ones, and the only thing
+          that heals the core is letting the band go SLACK. Its stages are sized
+          so the ladder is the 15-40 rep window, and it steps back down when you
+          fail - so it can never become the unwinnable mode it used to be.
+
+ Removed outright: the unit-conversion ("hang a known weight") feature. It was the
+ root of three severity-1 defects - it scaled `force` but not ref() or calLo(), a
+ mis-tap with the bar at rest produced a 250000x multiplier that persisted, and
+ the TV shell never mirrored it so the same pull read two different numbers on two
+ platforms. It existed to print pounds; X3FEX.forceLabel() prints the published
+ pound range for the band with no calibration step at all. Real per-movement
+ calibration belongs to X3F_Calibrate.html, which does it correctly, and the
+ settings sheet now links there. Nothing else in the suite ever read x3f_scale or
+ x3f_unit. Arena also no longer writes x3f_bandMax: it is the fallback ceiling for
+ all nine games, and "set it from the hardest pull I happen to have seen" is the
+ same one-mis-tap-poisons-everything shape.
+-->
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>X3F Arena</title>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
-:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.045);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--hot:#ff5d78;--cyan:#37d6ff;--display:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--num:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+:root{--bg:#06080e;--bg2:#0b0f18;--panel:rgba(255,255,255,.045);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--hot:#ff5d78;--cyan:#37d6ff;--display:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--num:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);
+/* The shared in-set HUD (x3f-hud.js) reads these four names. Without them it
+   falls back to system-ui and monospace and the one number the user actually
+   reads during a set is in a different typeface from the rest of the game. */
+--font-display:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--font-num:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--amber:#ffb15c;--mint:#2ff0b0}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-select:none;background:radial-gradient(120vw 60vh at 78% -8%,rgba(47,240,176,.10),transparent 60%),radial-gradient(90vw 50vh at 12% 110%,rgba(143,125,255,.12),transparent 60%),var(--bg)}
@@ -25,6 +72,10 @@ body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-s
 .icbtn{width:40px;height:40px;border-radius:12px;background:var(--panel);border:1px solid var(--brd);display:grid;place-items:center;cursor:pointer;color:var(--txt);flex:0 0 auto}
 .icbtn:active{transform:scale(.94)}.icbtn svg{width:20px;height:20px}
 .stage{flex:1;min-height:0;position:relative;overflow:hidden}
+/* INV-12: inactive views hide with opacity + pointer-events and KEEP their layout
+   box. The TV shell's vis() walks ancestors checking exactly those two things,
+   which is what stops the D-pad pressing "Fight" on a tab nobody can see. Any
+   other hiding technique has to trip one of its four checks. */
 .view{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:8px 20px 12px;opacity:0;pointer-events:none;transform:translateY(8px) scale(.99);transition:opacity .28s,transform .28s}
 .view.active{opacity:1;pointer-events:auto;transform:none}
 .eyebrow{font-family:var(--num);font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--dim);font-weight:500;text-align:center}
@@ -34,6 +85,7 @@ body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-s
 .chip{flex:1 1 0;min-width:96px;max-width:170px;background:var(--panel);border:1px solid var(--brd);border-radius:16px;padding:12px 14px;text-align:center}
 .chip .k{font-family:var(--num);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
 .chip .v{font-family:var(--num);font-weight:700;font-size:22px;font-variant-numeric:tabular-nums;margin-top:3px}
+.chip .v.sm{font-size:15px;letter-spacing:.5px}
 .v.gold{color:var(--gold)}.v.accent{color:var(--accent)}
 .ringwrap{position:relative;flex:1;display:grid;place-items:center;width:100%;min-height:0}
 .ring{width:min(66vw,270px);height:min(66vw,270px);max-height:44vh;transform:rotate(-90deg)}
@@ -46,11 +98,24 @@ body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-s
 .cta.hot{background:linear-gradient(180deg,#ff6f87,#e63a58);color:#210308}
 .cta.small{width:auto;padding:13px 20px;font-size:15px}
 .track{position:relative;flex:1;width:100%;max-width:340px;border-radius:20px;overflow:hidden;background:var(--panel);border:1px solid var(--brd);margin:6px 0}
-.band{position:absolute;left:0;right:0;background:rgba(55,214,255,.14);border-top:2px dashed var(--cyan);border-bottom:2px dashed var(--cyan)}
-.band .lab{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-family:var(--num);font-size:12px;color:var(--cyan);letter-spacing:1px}
+/* Two stacked regions, not a target window. The old track drew a band with a
+   ceiling on it, which is a picture of "do not pull too hard". These are open
+   upward: the strong range runs from its line to the top of the track and
+   beyond, because there is no such thing as too much force here. */
+/* The dashed rule is on the BOTTOM edge of each region, because the edge that
+   means anything is the one you have to get ABOVE. On the top edge it would draw
+   a line at the ceiling of a region that deliberately has no ceiling. */
+.zone{position:absolute;left:0;right:0}
+.zone.mid{background:rgba(55,214,255,.07);border-bottom:2px dashed rgba(55,214,255,.5)}
+.zone.full{background:rgba(47,240,176,.16);border-bottom:2px dashed var(--accent)}
+.zone .lab{position:absolute;right:10px;bottom:6px;font-family:var(--num);font-size:12px;letter-spacing:1px;color:var(--accent)}
+.zone.mid .lab{color:var(--cyan);opacity:.8}
 .mark{position:absolute;left:0;right:0;height:0;border-top:5px solid var(--accent);box-shadow:0 0 16px var(--accent);bottom:0;transition:bottom .05s linear}
 .marklab{position:absolute;left:10px;transform:translateY(-50%);font-family:var(--num);font-weight:700;font-size:14px}
-.orb{width:min(46vw,190px);height:min(46vw,190px);max-height:34vh;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffb3c0,#ff5d78 42%,#7a1730 100%);box-shadow:0 0 60px rgba(255,93,120,.4),inset 0 0 40px rgba(0,0,0,.35);transition:transform .09s}
+/* One diameter, used for both axes. A max-height on a fixed width turned the
+   core into an ellipse on any short screen - which is every television in
+   landscape. */
+.orb{--d:min(46vw,190px,34vh);width:var(--d);height:var(--d);border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffb3c0,#ff5d78 42%,#7a1730 100%);box-shadow:0 0 60px rgba(255,93,120,.4),inset 0 0 40px rgba(0,0,0,.35);transition:transform .09s}
 .orb.hit{transform:scale(1.07)}
 .orb.dead{background:radial-gradient(circle at 35% 30%,#555,#222 60%,#111);box-shadow:none}
 .hpwrap{width:100%;max-width:340px;height:20px;border-radius:100px;background:var(--panel);border:1px solid var(--brd);overflow:hidden}
@@ -62,7 +127,37 @@ body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-s
 .tab svg{width:22px;height:22px}
 .tab.active{color:#04120c;background:linear-gradient(180deg,var(--accent),var(--accentD))}
 .tab:not(.active):active{background:var(--panel)}
-.scrim{position:fixed;inset:0;background:rgba(4,6,11,.72);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;z-index:40;opacity:0;pointer-events:none;transition:opacity .25s}
+/* ---- fitting the shared in-set HUD (x3f-hud.js) into Arena's column ----
+   The HUD is fixed to the viewport edges, which is right on a television and
+   wrong in a phone browser, where Arena's whole app is a 600px column and the
+   rep counter would sit out in the margin beside it. The shell's own 10-foot
+   pass treats >=1200px as "this is a television", so below that the HUD is
+   pinned to the same column as everything else and above it it spans the panel,
+   which is what the in-set design asks for. */
+@media(max-width:1199px){.x3fhud{max-width:600px;margin:0 auto}}
+/* While a set is live the HUD owns the top of the screen. Give the view back the
+   space it takes instead of letting a 90-200px counter sit on the game's own
+   readouts, and drop the browse-mode chrome back so the one number you are meant
+   to read from across the room has nothing competing with it. The topbar is
+   dimmed, never hidden: the shell's vis() treats anything under 0.05 opacity as
+   unreachable, and the remote still needs Back and the gear. */
+body.inset .topbar{opacity:.28}
+body.hudroom .view{padding-top:calc(4vh + min(13rem,17vh) + 2.8rem)}
+body.hudroom .orb{--d:min(46vw,190px,24vh)}
+/* A television in landscape is a SHORT screen - 540 CSS px on a 1080p panel at
+   the usual devicePixelRatio of 2 - and the HUD is entitled to its share of it
+   before the game gets any. So on a short screen the in-set layout gives up the
+   coaching line rather than pushing the button that ends the set off the
+   bottom. The HUD's own sub-line still names the movement. */
+@media(max-height:620px){
+  body.hudroom .view{padding-top:calc(3vh + min(13rem,17vh) + 1.4rem)}
+  body.hudroom .hint{display:none}
+  body.hudroom .colgap{gap:10px}
+  body.hudroom .orb{--d:min(46vw,190px,19vh)}
+}
+/* Above the in-set HUD (z-index 40), so opening the settings sheet mid-set does
+   not leave a 200px rep counter painted over the sheet. */
+.scrim{position:fixed;inset:0;background:rgba(4,6,11,.72);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;z-index:50;opacity:0;pointer-events:none;transition:opacity .25s}
 .scrim.show{opacity:1;pointer-events:auto}
 .firstrun{align-items:center}
 .frcard{width:100%;max-width:440px;margin:auto;padding:34px 26px;text-align:center;display:flex;flex-direction:column;gap:14px}
@@ -76,17 +171,26 @@ body{font-family:var(--display);color:var(--txt);user-select:none;-webkit-user-s
 .rowbtns{display:flex;gap:10px}
 .field{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--brd);border-radius:14px;padding:10px 12px}
 .field label{font-size:13px;color:var(--dim);flex:1}
-input[type=number],select{font-family:var(--num);background:rgba(0,0,0,.25);color:var(--txt);border:1px solid var(--brd2);border-radius:10px;padding:9px 10px;font-size:15px;width:88px}
-select{width:74px}
+.note{font-size:12.5px;color:var(--dim);line-height:1.55;margin:8px 2px 0}
+.note b{color:var(--txt);font-weight:700}
+select{font-family:var(--num);background:rgba(0,0,0,.25);color:var(--txt);border:1px solid var(--brd2);border-radius:10px;padding:9px 10px;font-size:15px;width:auto;min-width:120px}
 @media(min-width:620px){.huge{font-size:6.4rem}.app{border-left:1px solid var(--brd);border-right:1px solid var(--brd)}}
-@media(orientation:landscape) and (max-height:560px){.huge{font-size:clamp(2.4rem,11vh,4rem)}.ring{max-height:56vh;width:min(40vh,220px);height:min(40vh,220px)}.chip{padding:8px 12px}.view{padding:6px 16px 8px}}</style><script src="x3f-cal.js"></script>
+@media(orientation:landscape) and (max-height:560px){.huge{font-size:clamp(2.4rem,11vh,4rem)}.ring{max-height:56vh;width:min(40vh,220px);height:min(40vh,220px)}.chip{padding:8px 12px}.view{padding:6px 16px 8px}}</style>
+<!-- INV-15: these load in <head>, before the inline game script, because it
+     evaluates X3FCal.slug() and X3FBand.forMovement() at parse time. Deferring
+     or module-ifying any of them makes EXSLUG null, which silently drops the
+     movement from every set report and reverts the scale to the band-wide
+     fallback. Order matches X3F_Calibrate.html: exercises, band, cal. -->
+<script src="x3f-exercises.js"></script>
+<script src="x3f-band.js"></script>
+<script src="x3f-cal.js"></script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute"><defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2ff0b0"/><stop offset="1" stop-color="#37d6ff"/></linearGradient></defs></svg>
 <div class="app">
 <div class="topbar">
 <button onclick="history.length>1?history.back():location.href='index.html'" aria-label="Back" style="display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:22px;font-weight:700;line-height:1;flex:0 0 auto;cursor:pointer;font-family:inherit">&lsaquo;</button>
-<button onclick="x3tv()" aria-label="TV mode" style="display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 12px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:12px;font-weight:800;letter-spacing:1px;cursor:pointer;font-family:inherit;flex:0 0 auto">TV</button>
+<button class="tvbtn" onclick="x3tv()" aria-label="TV mode" style="display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 12px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eaf0fa;font-size:12px;font-weight:800;letter-spacing:1px;cursor:pointer;font-family:inherit;flex:0 0 auto">TV</button>
 <div class="brand">X3F <b>ARENA</b></div><div class="spacer"></div>
 <div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Offline</span></div>
 <button class="icbtn" id="gearBtn" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.2"/><path d="M4 12h3M17 12h3M12 4v3M12 17v3M6.3 6.3l2.1 2.1M15.6 15.6l2.1 2.1M17.7 6.3l-2.1 2.1M8.4 15.6l-2.1 2.1"/></svg></button>
@@ -97,23 +201,26 @@ select{width:74px}
 <svg class="ring" viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"></circle><circle class="fg" id="ringFg" cx="60" cy="60" r="52"></circle></svg>
 <div class="ringcenter"><div class="eyebrow">Live Force</div><div class="huge" id="mLive">0</div><div class="unit" id="mUnit">units</div></div>
 </div>
-<div class="chips"><div class="chip"><div class="k">Peak</div><div class="v gold" id="mPeak">0</div></div><div class="chip"><div class="k">Avg</div><div class="v" id="mAvg">0</div></div><div class="chip"><div class="k">Work</div><div class="v" id="mWork">0</div></div></div>
+<div class="chips"><div class="chip"><div class="k">Peak</div><div class="v gold" id="mPeak">0</div></div><div class="chip"><div class="k">Of Range</div><div class="v" id="mPct">0%</div></div><div class="chip"><div class="k">Band</div><div class="v sm" id="mBand">-</div></div></div>
+<div class="hint" id="mCal" style="margin-top:10px">-</div>
 </section>
 <section class="view" data-v="zone">
-<div class="chips" style="margin-top:6px"><div class="chip"><div class="k">In Zone</div><div class="v accent" id="zTime">0.0s</div></div><div class="chip"><div class="k">Best Hold</div><div class="v gold" id="zBest">0.0s</div></div><div class="chip"><div class="k">Target</div><div class="v" id="zTarget">-</div></div></div>
-<div class="track" id="zTrack"><div class="band" id="zBand"><span class="lab">TARGET</span></div><div class="mark" id="zMark"><span class="marklab" id="zMarkLab">0</span></div></div>
-<button class="cta" id="zStart">Start 30s Round</button>
+<div class="chips" style="margin-top:6px"><div class="chip"><div class="k">In Zone</div><div class="v accent" id="zTime">0.0s</div></div><div class="chip"><div class="k">Reps</div><div class="v" id="zReps">0</div></div><div class="chip"><div class="k">Best Hold</div><div class="v gold" id="zBest">0.0s</div></div></div>
+<div class="track" id="zTrack"><div class="zone mid" id="zMid"><span class="lab">MID</span></div><div class="zone full" id="zFull"><span class="lab">STRONG</span></div><div class="mark" id="zMark"><span class="marklab" id="zMarkLab">0</span></div></div>
+<div class="hint" id="zHint">The zone is the top of your range and it has no ceiling. Stay in it. When you cannot, keep going in the middle.</div>
+<button class="cta" id="zStart" data-nav-first>Start Set</button>
 </section>
 <section class="view" data-v="max">
-<div class="colgap"><div class="eyebrow" id="xState">Explode for 5 seconds. Beat your best.</div><div class="huge" id="xNum">0</div>
-<div class="chips"><div class="chip"><div class="k">Attempt</div><div class="v" id="xAttempt">0</div></div><div class="chip"><div class="k">Personal Best</div><div class="v gold" id="xPB">0</div></div></div>
-<button class="cta" id="xStart">Start Max Effort</button></div>
+<div class="colgap"><div class="eyebrow" id="xState">Build over two seconds, then hold it.</div><div class="huge" id="xNum">0</div>
+<div class="chips"><div class="chip"><div class="k">Held</div><div class="v accent" id="xHold">0</div></div><div class="chip"><div class="k">Peak</div><div class="v" id="xPeak">0</div></div><div class="chip"><div class="k">Best Held</div><div class="v gold" id="xBest">0</div></div></div>
+<button class="cta" id="xStart" data-nav-first>Start Max Effort</button>
+<div class="hint" id="xHint">Scored on the force you can HOLD, not the one you can snatch. A spike that collapses is worth nothing.</div></div>
 </section>
 <section class="view" data-v="boss">
 <div class="colgap"><div class="orb" id="bOrb"></div><div class="hpwrap"><div class="hp" id="bHP"></div></div>
-<div class="chips"><div class="chip"><div class="k">Stage</div><div class="v" id="bStage">1</div></div><div class="chip"><div class="k">Best Time</div><div class="v gold" id="bBest">-</div></div><div class="chip"><div class="k">DPS</div><div class="v" id="bDPS">0</div></div></div>
-<button class="cta hot" id="bStart">Fight</button>
-<div class="hint">Sustained force damages the core. Drop below the threshold and it heals. Each win raises the stakes.</div></div>
+<div class="chips"><div class="chip"><div class="k">Stage</div><div class="v" id="bStage">1</div></div><div class="chip"><div class="k">Reps</div><div class="v" id="bReps">0</div></div><div class="chip"><div class="k">Best</div><div class="v gold" id="bBest">-</div></div></div>
+<button class="cta hot" id="bStart" data-nav-first>Fight</button>
+<div class="hint" id="bHint">Every rep lands a blow, and slow reps hit hardest. The core only heals if you let the band go slack.</div></div>
 </section>
 </div>
 <nav class="tabbar">
@@ -134,45 +241,170 @@ select{width:74px}
 <div class="grip"></div>
 <h2>Connection</h2>
 <div class="rowbtns"><button class="cta small" id="reconnectBtn" style="flex:1">Connect Bar</button><button class="cta ghost small" id="demoBtn" style="flex:1">Demo</button></div>
+<div class="rowbtns" style="margin-top:10px"><button class="cta ghost small" id="zeroBtn" style="flex:1">Re-Zero (at rest)</button></div>
 <h2>Band</h2>
-<div class="field"><label>Resistance band in use</label><select id="bandSel"></select></div>
-<div class="field" style="margin-top:10px"><label>Max units on this band</label><input type="number" id="bandMaxInp" step="1" inputmode="numeric"></div>
-<div class="rowbtns" style="margin-top:10px"><button class="cta small" id="bandCap" style="flex:1">Set from hardest pull</button></div>
+<div class="field"><label id="bandLab">Resistance band in use</label><select id="bandSel" aria-label="Resistance band"></select></div>
+<p class="note" id="bandNote">-</p>
 <h2>Calibration</h2>
-<div class="rowbtns" style="margin-bottom:10px"><button class="cta ghost small" id="zeroBtn" style="flex:1">Re-Zero (at rest)</button></div>
-<div class="field"><label>Hang a known weight, then capture</label><input type="number" id="calW" value="25" step="0.5" inputmode="decimal"><select id="calU"><option>lb</option><option>kg</option></select></div>
-<div class="rowbtns" style="margin-top:10px"><button class="cta small" id="calBtn" style="flex:1">Capture</button><button class="cta ghost small" id="calClr" style="flex:1">Reset units</button></div>
+<p class="note" id="calNote">-</p>
+<!-- The href is written out as the exact literal tools/sync-from-web.py rewrites
+     ("X3F_Calibrate.html" -> "calibrate.html"); the ?ex= is appended at runtime
+     from the attribute, so one line works in both builds. Query strings are not
+     rewritten, which is why it is not baked into the markup. -->
+<div class="rowbtns" style="margin-top:10px"><a class="cta small" id="calLink" href="X3F_Calibrate.html" style="flex:1;text-decoration:none">Calibrate this movement</a></div>
 <h2>Records</h2>
-<div class="rowbtns"><button class="cta ghost small" id="resetPB" style="flex:1">Reset personal bests</button></div>
+<div class="rowbtns"><button class="cta ghost small" id="resetPB" style="flex:1">Reset Arena bests</button></div>
 </div></div>
 <script>
 "use strict";
+/* ===========================================================================
+   1. Constants, storage, and the numbers this file is allowed to own
+   =========================================================================== */
 const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_BATT='e3458902-6ed5-40ff-aa3a-4e9a87ce1ad6';
 const $=id=>document.getElementById(id);
 const store={get(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}};
 const fmt=v=>{v=+v||0;const a=Math.abs(v);return a>=100?String(Math.round(v)):a>=10?v.toFixed(1):v.toFixed(2)};
-let device=null,connected=false,demo=false;
+const clamp01=x=>x<0?0:(x>1?1:x);
+
+/* The program's own numbers come from X3FEX.protocol. Nothing here re-invents
+   one. The literals below are the same safety net x3f-set.js carries and for the
+   same reason: if x3f-exercises.js ever fails to load, this page must still be
+   scaled sensibly rather than dividing by undefined. They are a fallback, not a
+   second source of truth. */
+const P=Object.assign({repsMin:15,repsMax:40,repMinMs:4000,repIdealMs:5000,
+  fullRangeFrac:0.85,midRangeFrac:0.45,curveExp:0.65,tempoUpMs:2500},
+  (window.X3FEX&&X3FEX.protocol)||{});
+
+/* Everything Arena tunes for itself, in one place with the reasoning attached,
+   because a number with no rationale is a number nobody dares change (audit
+   W-14 - Arena used to carry six of them naked in the middle of the loop). */
+const T={
+  /* The force axis on the Hold track runs to 1.15x your calibrated max, so
+     exceeding your own ceiling is VISIBLE instead of pinned. Nothing in this
+     file caps a reward at 1.0. */
+  axisTop:1.15,
+  /* A set is over when the bar has been essentially down this long. Eight
+     seconds is far longer than the pause between two honest reps at the
+     prescribed 2-3 s each way, and far shorter than the time it takes to
+     wander off. AD-3 rule 5: infer the end, never demand a press for it. */
+  idleFrac:0.10, idleEndMs:8000,
+  /* MAX. The score is the force held for a continuous window; the window is the
+     program's own ascent time, so "build over two seconds and hold" is
+     literally what is being measured. */
+  getSetMs:10000,          // put the remote down, pick the bar up (plan 3.5)
+  maxWindowMs:8000,        // the effort window...
+  maxExtendMs:1500,        // ...extended while force is still climbing
+  /* BOSS. Damage is in normalised force-seconds: 1.0 = one second held at your
+     full calibrated range. A full rep from bottom to top and back over ~5 s
+     averages about half of that, so it contributes ~2.5, plus a 1.0 hit for
+     landing the rep at all. A 15-rep set therefore does ~50 damage and a 30-rep
+     set ~100 - which is what the stage ladder below is sized against. */
+  dps:1.0, repHit:1.0,
+  hp0:45, hpStep:14, stageMax:6,
+  /* The ONLY thing that heals the core is letting the band go slack, which is
+     one of the two non-negotiable technique rules. The grace period is the same
+     600 ms x3f-set uses to tell a turnaround from a stop: a correct rep passes
+     through the bottom, it does not park there. */
+  healFrac:0.04, slackMs:600,
+  /* And the core only bleeds properly while you are working THROUGH the range.
+     Without this the fastest kill is one long maximal isometric, which is
+     exactly what the old Boss rewarded and exactly what the program is not. */
+  moveGraceMs:8000, moveFadeMs:10000, moveFloor:0.2
+};
+
+let device=null,connected=false,demo=false,nativeSeen=false;
 let raw=0,baseline=null,taring=false,tSamp=[],tStart=0,tEnd=0;
-let force=0,scale=store.get('scale',1),unit=store.get('unit','units');
-let sessionPeak=0,activeSum=0,activeCount=0,totalWork=0,lastT=performance.now();
-let zBest=store.get('zBest',0),xPB=store.get('xPB',0),bBest=store.get('bBest',0),bStageSaved=store.get('bStage',1);
+let force=0;
+let lookPeak=0;                       // peak since this meter view was opened
 let mode='meter';
-const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
-const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
-let band=store.get('band','White');
-let bandMax=Object.assign({},BAND_DEF,store.get('bandMax',{}));
+let lastT=performance.now();
+
+/* ===========================================================================
+   2. Movement, band and scale
+   =========================================================================== */
 const EXSLUG=window.X3FCal?X3FCal.slug():null;
+const MOVE=(window.X3FEX&&EXSLUG)?X3FEX.get(EXSLUG):null;
+const MOVE_NAME=(MOVE&&MOVE.name)||'Arena';
+/* X3FBand is the ONE owner of "which band is this movement on". Reading
+   x3f_band directly is the bug class that made a calibration land under one key
+   and get looked up under another. */
+let band=window.X3FBand?X3FBand.forMovement(EXSLUG):'White';
 /* The band this run is actually using. A ?band= override no longer writes the
    global setting, so the set log has to ask the game, not localStorage. */
 window.__x3fBand=function(){return band};
+
+/* ref() and calLo() come from x3f-cal.js, and X3FCal.range() allocates a fresh
+   object on every call (audit games-a D-19). The old loop asked for both several
+   times a frame for two numbers that change at most once a set, so they are
+   cached and refreshed on a timer that matches x3f-cal's own 500 ms map cache -
+   plus immediately whenever anything could have moved them. */
+let REF=100,LO=0,calAt=0;
+function refreshCal(now){
+  calAt=now||performance.now();
+  REF=window.X3FCal?X3FCal.span(EXSLUG,band):100;
+  LO=window.X3FCal?X3FCal.floor(EXSLUG,band):0;
+  if(!(REF>0))REF=100;
+}
 /* The span of THIS movement's calibrated range, not the raw band max: a chest
    press and an overhead press on one band are nowhere near the same scale. */
-function ref(){return window.X3FCal?X3FCal.span(EXSLUG,band):Math.max(20,bandMax[band]||130)}
+function ref(){return REF}
 /* The movement's own start position already carries load (an overhead press
    starts at chin height with the band loaded). That load is the zero. */
-function calLo(){return window.X3FCal?X3FCal.floor(EXSLUG,band):0}
-function logSession(o){try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push(Object.assign({t:Date.now(),b:band},o));while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}}
-const RC=2*Math.PI*52;$('ringFg').style.strokeDasharray=RC;$('ringFg').style.strokeDashoffset=RC;
+function calLo(){return LO}
+refreshCal(lastT);
+
+/* The LINEAR proportion of the calibrated range. force is already floored by
+   calLo(), so force/ref() is exactly X3FCal.raw() of the unfloored signal.
+   EVERY threshold, rep decision and score in this file is applied to this and
+   never to the eased display value - easing a threshold silently moves it
+   (0.85 eased is 0.90 linear). Deliberately NOT clamped at 1: pulling past your
+   calibrated max must keep paying, or the game caps the reward exactly where the
+   program says the work is. */
+function lin(){return REF>0?force/REF:0}
+
+/* The eased force axis every meter in this file is drawn on.
+
+   For ten of the eleven movements this is exactly X3FCal.frac(): the same
+   protocol exponent applied to the same linear value. It is written out here
+   rather than called because frac() also carries the bent-over row's inverted
+   strength curve, which PEAKS MID-RANGE AND COMES BACK DOWN. That is the right
+   picture for a game drawing where you are in the movement (Bloom's vine), and
+   the wrong one for a force meter: on a bent row the ring would fall while the
+   user pulled harder, which is the single thing this overhaul exists to stop.
+   Arena's meters answer "how hard are you pulling", so they stay monotonic. */
+function axis(x){return Math.pow(clamp01(x/T.axisTop),P.curveExp)}
+
+/* ===========================================================================
+   3. The force pipeline - ONE conditioning path, shared with the TV shell
+   =========================================================================== */
+/* INV-1/INV-2: anything that conditions the raw signal has to exist on BOTH the
+   browser's Bluetooth path and the shell's injected driver, or it silently does
+   not exist on the TV. Three shipped bugs came out of maintaining two copies -
+   Arena's own `scale` was the third. So there is one function, the shell is
+   handed it by name, and there is nothing left to drift. */
+function onSample(){
+  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
+  if(baseline==null)baseline=raw;
+  force=Math.max(0,raw-baseline-LO);
+  if(force>lookPeak)lookPeak=force;
+}
+/* One force sample in BAR UNITS, exactly what the Bluetooth handler puts in
+   `raw`. The shell has already removed its own native zero, which is why it
+   pins baseline to 0 - the arithmetic above stays an identity. */
+window.__x3fIngest=function(v){
+  nativeSeen=true;
+  raw=+v||0;
+  onSample();
+};
+/* The UNFLOORED force. Handing this to the reporter turns slack detection from
+   a dwell heuristic into the rule as literally written ("below the movement's
+   start tension"), and makes the logged peak absolute, which is what
+   X3FCal.observe must be fed or it learns a ceiling short by exactly the floor. */
+function absForce(){return baseline==null?0:Math.max(0,raw-baseline)}
+
+/* ===========================================================================
+   4. Connection, tare, demo
+   =========================================================================== */
 async function connect(){
   if(!navigator.bluetooth){setStatus('No Web Bluetooth','off');alert('Bluetooth needs Chrome on Android, or the free Bluefy browser on iPhone (App Store). Or press Demo to play without the bar.');return;}
   if(!window.isSecureContext){setStatus('Not secure','off');alert('This page must be served over https or localhost for Bluetooth. Use the deployed link.');return;}
@@ -185,7 +417,12 @@ async function connect(){
     const fc=await srv.getCharacteristic(CH_FORCE);await fc.startNotifications();
     fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);onSample()});
     try{const bc=await srv.getCharacteristic(CH_BATT);await bc.startNotifications();bc.addEventListener('characteristicvaluechanged',e=>showBatt(e.target.value.getUint16(0,true)))}catch(e){}
-    demo=false;connected=true;hideOverlays();startTare();
+    /* The demo interval used to keep running after a real connection, writing
+       zeros into `raw` between BLE notifications at almost the same rate. The
+       live reading flickered to nothing, reps double-counted, and only a page
+       reload fixed it (audit D-07). */
+    stopDemo();
+    connected=true;hideOverlays();startTare();
   }catch(e){console.error(e);
     if(e.name==='NotFoundError'){setStatus('No bar found','off');alert('No device selected, or nothing advertising. Make sure the bar is awake and not connected to your phone.');}
     else{setStatus(e.name,'off');alert('Bluetooth error: '+e.name+'\n'+(e.message||''));}
@@ -194,83 +431,679 @@ async function connect(){
 function setStatus(t,cls){$('statusTxt').textContent=t;$('dot').className='dot'+(cls==='on'?' on':cls==='wait'?' wait':'')}
 function showBatt(mv){const pct=Math.max(0,Math.min(100,Math.round((mv-3300)/900*100)));$('statusTxt').textContent=(connected?'Live':'Demo')+'  '+(mv/1000).toFixed(2)+'V ('+pct+'%)'}
 function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
-function onSample(){
-  if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
-  if(baseline==null)baseline=raw;
-  force=Math.max(0,raw-baseline-calLo())*scale;
-  if(force>sessionPeak)sessionPeak=force;
-}
 let demoF=0,pull=false;
-function startDemo(){demo=true;connected=false;baseline=0;hideOverlays();setStatus('Demo','on');showBatt(3980);
-  if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(1000,demoF+55+Math.random()*30);else demoF=Math.max(0,demoF*0.86-4);raw=demoF+(Math.random()*2-1);onSample()},27);}
-$('stage').addEventListener('pointerdown',()=>{if(demo)pull=true});
+function stopDemo(){if(startDemo.l){clearInterval(startDemo.l);startDemo.l=null}demo=false;pull=false;demoF=0}
+function startDemo(){
+  /* Inside the TV shell the bar drives this page and the demo loop would fight
+     it sample for sample. There is no useful "demo" there. */
+  if(nativeSeen||window.__x3fNative){hideOverlays();setStatus('Bar drives this screen','on');return;}
+  demo=true;connected=false;baseline=0;hideOverlays();setStatus('Demo','on');showBatt(3980);
+  if(!startDemo.l)startDemo.l=setInterval(()=>{
+    if(nativeSeen){stopDemo();return;}
+    if(pull)demoF=Math.min(1000,demoF+55+Math.random()*30);else demoF=Math.max(0,demoF*0.86-4);
+    raw=demoF+(Math.random()*2-1);onSample();
+  },27);
+}
+/* A pull must not fire when the user is pressing a control. #stage contains all
+   four views and every mode's start button, so tapping "Start Max Effort" used
+   to begin a pull as well (audit D-31). */
+$('stage').addEventListener('pointerdown',e=>{if(!demo)return;if(e.target&&e.target.closest&&e.target.closest('button,select,input,a'))return;pull=true});
 addEventListener('pointerup',()=>pull=false);
-addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});
+/* Space is the demo's pull, but it is also how a keyboard user activates the
+   focused control. preventDefault()ing it unconditionally made every button
+   look dead to anyone not using a mouse (audit D-30). */
+addEventListener('keydown',e=>{
+  if(e.code!=='Space')return;
+  const t=e.target;
+  if(t&&(t.tagName==='BUTTON'||t.tagName==='SELECT'||t.tagName==='INPUT'||t.tagName==='A'||t.isContentEditable))return;
+  if(!demo)return;
+  pull=true;e.preventDefault();
+});
 addEventListener('keyup',e=>{if(e.code==='Space')pull=false});
-function calibrate(){const known=parseFloat($('calW').value);if(!known||baseline==null)return;const z=Math.max(0.0001,raw-baseline);scale=known/z;unit=$('calU').value;store.set('scale',scale);store.set('unit',unit);sessionPeak=0;closeSheet();}
-function resetUnits(){scale=1;unit='units';store.set('scale',1);store.set('unit',unit)}
+
+/* ===========================================================================
+   5. Bests - one map, keyed by movement AND band
+   =========================================================================== */
+/* The old x3f_zBest / x3f_xPB / x3f_bBest were single numbers, so a White-band
+   drag curl and a Black-band deadlift wrote to the same record and the boss's
+   "best time" compared kill times across different stages. Keys carry
+   everything that changes what the number means. */
+function bestId(kind,extra){return kind+'|'+(EXSLUG||'-')+'|'+band+(extra!=null?'|'+extra:'')}
+function bestGet(kind,extra){const m=store.get('arenaBest',{})||{};return +m[bestId(kind,extra)]||0}
+function bestSet(kind,extra,v){const m=store.get('arenaBest',{})||{};m[bestId(kind,extra)]=v;store.set('arenaBest',m)}
+function bestBeat(kind,extra,v,lowerIsBetter){
+  const cur=bestGet(kind,extra);
+  if(cur===0||(lowerIsBetter?v<cur:v>cur)){bestSet(kind,extra,v);return true}
+  return false;
+}
+function bossStage(){return Math.min(T.stageMax,Math.max(1,bestGet('stage')||1))}
+function bossStageSet(s){bestSet('stage',null,Math.min(T.stageMax,Math.max(1,s)))}
+
+/* ===========================================================================
+   6. Audio cues
+   =========================================================================== */
+/* Every phase change is audible, because during an effort you are holding a bar
+   and not looking at the screen - AD-3 rule 4, audio carries the set and the
+   screen confirms it. Every tone here sits well clear of 200 Hz: a television's
+   speakers roll off hard below that, so the satisfying low thump that works on
+   headphones is literally inaudible in the room this app runs in. */
+let ac=null;
+function beep(f,ms,gain){
+  try{
+    if(!ac){const C=window.AudioContext||window.webkitAudioContext;if(!C)return;ac=new C()}
+    if(ac.state==='suspended')ac.resume();
+    const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime;
+    o.type='triangle';o.frequency.value=f;
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(gain||0.2,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+ms/1000);
+    o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+ms/1000+0.02);
+  }catch(e){}
+}
+
+/* ===========================================================================
+   7. The shared in-set HUD
+   =========================================================================== */
+/* x3f-hud.js draws the one enormous counter that is the same size and in the
+   same place in every game, because during a set you read the screen in
+   peripheral vision for a fraction of a second from four to eight feet away,
+   side-on to the television. Arena's own 22px chips were never that. Guarded
+   throughout so a missing module degrades to "no HUD" rather than a dead page. */
+let hud=null,hudLbl='REPS';
+function hudEl(sel){try{return hud&&hud.el?hud.el.querySelector(sel):null}catch(e){return null}}
+function hudSetLabel(t){hudLbl=t;const el=hudEl('[data-lbl]');if(el)el.textContent=t}
+function hudClose(){if(hud){try{hud.destroy()}catch(e){}hud=null}hudRoom(false)}
+function hudOpen(label){
+  hudClose();
+  try{if(window.X3FHUD)hud=X3FHUD.create({host:document.body,name:MOVE_NAME})}catch(e){hud=null}
+  hudRoom(!!hud);
+  hudSetLabel(label||'REPS');
+}
+/* Two body classes, and the stylesheet does the rest. Deliberately separate. `inset` means a set is LIVE and the browse
+   chrome steps back. `hudroom` means the HUD is on screen at all, and it owns
+   the top of the view - it outlives the set, because the counter stays up after
+   the last rep and the layout underneath must not jump out from under the number
+   the moment you stop. */
+function insetMode(on){try{document.body.classList.toggle('inset',!!on)}catch(e){}}
+function hudRoom(on){try{document.body.classList.toggle('hudroom',!!on)}catch(e){}}
+function hudDone(){
+  if(!hud)return;
+  try{hud.done()}catch(e){}
+  /* done() resets the caption to REPS, which is right for a rep counter and
+     wrong for Max, whose big number is a force. Put the caption back. */
+  hudSetLabel(hudLbl);
+}
+
+/* ===========================================================================
+   8. The run engine - ONE run at a time, and it does not stop for a tab change
+   =========================================================================== */
+/* Every mode used to live inside `if(mode==='...')` in the animation frame, so
+   switching tabs froze its state machine and it then resolved against the
+   wall clock on the first frame back: a 30 s hold round that had accumulated 5 s
+   reported {tut:5, secs:30}, and a max attempt reported peak 0 as a real set
+   (audit D-06). The state machine now runs whatever tab is visible; only the DOM
+   writes are gated. Hiding the PAGE is different from hiding the tab and is a
+   real pause - see the visibilitychange handler. */
+let run=null;
+
+function elapsed(now){return run?Math.max(0,(now-run.t0-run.paused)/1000):0}
+
+/* X3FSet.report() walks the whole history and evaluates ~130 achievement
+   predicates. Called from inside the animation frame it produced a visible hitch
+   at exactly the moment the user was looking for their result (audit D-19), so
+   it is deferred by a tick - and flushed synchronously before anything could
+   reset the trace out from under it. */
+let pendingReport=null;
+function flushReport(){
+  if(!pendingReport)return;
+  const o=pendingReport;pendingReport=null;
+  try{if(window.X3FSet)X3FSet.report(o)}catch(e){}
+}
+function reportSoon(o){pendingReport=o;setTimeout(flushReport,0)}
+
+/* A set the user never did must not be logged. One entry makes today a training
+   day, extends the streak, advances the twelve-week program's push/pull
+   alternation and counts toward the session badges - so a Start/Stop mis-tap
+   used to swap tomorrow's workout (audit D-12, W-8). */
+function worthLogging(){
+  let s={reps:0,tut:0,peak:0};
+  try{if(window.X3FSet)s=X3FSet.seen()}catch(e){}
+  return (s.reps||0)>=1||(s.tut||0)>=3;
+}
+
+/* What the last finished run produced, so the chips keep showing your result
+   instead of snapping back to zero the moment the set ends. The number you want
+   to read is the one you just earned. */
+let last={mode:null,strong:0,reps:0,hold:0,peak:0,secs:0,won:false};
+
+function startRun(m){
+  if(run)endRun('switch');
+  flushReport();
+  /* D-05: the watcher is started once at page load and reset ONLY by report(),
+     so without this the set inherits every yank since the page opened - and that
+     contaminated peak is what X3FCal.observe writes as the movement's ceiling. */
+  try{if(window.X3FSet)X3FSet.reset()}catch(e){}
+  const t=performance.now();
+  lookPeak=0;
+  run={mode:m,t0:t,paused:0,hidAt:0,active:t,reps:0,
+       /* max */ phase:'set',phaseEnd:t+T.getSetMs,tick:-1,winEnd:0,rise:0,hold:0,peak:0,buf:[],
+       /* boss */ hp:0,hpMax:0,dmg:0,stage:1,lastRep:t,slack:0,repAt:t};
+  last={mode:m,strong:0,reps:0,hold:0,peak:0,secs:0,won:false};
+  if(m==='max'){
+    beep(660,120,.22);
+  }else if(m==='boss'){
+    run.stage=bossStage();
+    run.hpMax=T.hp0+(run.stage-1)*T.hpStep;
+    run.hp=run.hpMax;
+    $('bOrb').classList.remove('dead');
+    beep(587,180,.22);
+  }else{
+    beep(784,120,.22);
+  }
+  hudOpen(m==='max'?'HELD':'REPS');
+  insetMode(true);
+}
+
+function endRun(reason){
+  if(!run)return;
+  const r=run,now=performance.now(),secs=Math.round(elapsed(now));
+  run=null;
+  insetMode(false);
+
+  let seen={reps:0,tut:0,peak:0,strong:0};
+  try{if(window.X3FSet)seen=X3FSet.seen()}catch(e){}
+  last={mode:r.mode,strong:seen.strong||0,reps:seen.reps||0,
+        hold:r.hold,peak:r.peak||seen.peak||0,secs:secs,won:false};
+
+  /* THE FLOOR FOR A BENCHMARK IS ITS OWN MEASUREMENT, not the watcher's peak:
+     the watcher's peak is ABSOLUTE, so on a movement whose start position carries
+     real load (an overhead press carries half its max) merely holding the bar
+     clears any threshold expressed against it. r.peak is the floored force this
+     attempt actually produced. */
+  const real=(r.mode==='max')?(r.hold>0&&r.peak>REF*0.10):worthLogging();
+  /* Announce a finished set; withdraw quietly from one that never happened. A
+     "SET COMPLETE" chime for a mis-tap is a lie you can hear from across the
+     room. */
+  if(real)hudDone();else hudClose();
+
+  if(r.mode==='zone'){
+    if(real&&last.strong>0)bestBeat('zone',null,last.strong,false);
+    if(real)reportSoon({g:'zone',secs:secs});
+  }else if(r.mode==='max'){
+    if(real){
+      bestBeat('max',null,r.hold,false);
+      /* Reported with a score and no rep count, which is how the engine tells a
+         benchmark from a set. The absolute peak is filled in by the watcher and
+         is what teaches an uncalibrated movement its ceiling. */
+      reportSoon({g:'max',score:Math.round(r.hold),secs:secs});
+    }
+  }else if(r.mode==='boss'){
+    const won=r.hp<=0;
+    last.won=won;
+    if(won){
+      $('bOrb').classList.add('dead');$('bOrb').classList.remove('hit');
+      bestBeat('boss',r.stage,secs,true);
+      bossStageSet(r.stage+1);
+      beep(1046,140,.26);setTimeout(()=>beep(1568,260,.26),140);
+      setTimeout(()=>{try{$('bOrb').classList.remove('dead')}catch(e){}},1800);
+    }else{
+      $('bOrb').classList.remove('hit');
+      /* THE FIGHT STEPS BACK DOWN WHEN YOU FAIL. The old boss escalated a stage
+         on every win and never came back, so by stage 5 it wanted 46 seconds of
+         unbroken maximal isometric - and because the report was gated on the
+         kill, every honest attempt after that reported NOTHING. Failure is the
+         end of an X3 set. It is the most valuable thing that happens here, so it
+         both logs and re-levels the fight. */
+      if(real&&reason!=='switch')bossStageSet(r.stage-1);
+    }
+    /* A rep count is passed on purpose. Without one the engine reads "a score
+       and no reps" as a RUN rather than a set, and a boss fight is a set. */
+    if(real)reportSoon({g:'boss',score:r.stage,reps:last.reps,secs:secs});
+  }
+  syncBests();
+}
+
+/* A hidden PAGE is a pause, not elapsed training time. Force is reported as zero
+   to the watcher while paused so time-under-tension and rep detection do not
+   accumulate against a frozen sample, and the wall-clock timers skip the gap. */
+let hidden=false;
+document.addEventListener('visibilitychange',function(){
+  const h=(document.visibilityState!=='visible');
+  if(h===hidden)return;
+  hidden=h;
+  const now=performance.now();
+  if(hidden){if(run)run.hidAt=now}
+  else{if(run&&run.hidAt){run.paused+=now-run.hidAt;run.hidAt=0;run.active=now;run.lastRep=now;run.repAt=now}lastT=now}
+});
+/* Leaving the page mid-set should still bank the work. */
+addEventListener('pagehide',function(){if(run)endRun('leave');flushReport()});
+
+/* ===========================================================================
+   9. UI wiring
+   =========================================================================== */
+const RC=2*Math.PI*52;$('ringFg').style.strokeDasharray=RC;$('ringFg').style.strokeDashoffset=RC;
 function hideOverlays(){$('firstrun').classList.remove('show')}
 function openSheet(){$('sheetScrim').classList.add('show')}
 function closeSheet(){$('sheetScrim').classList.remove('show')}
 $('gearBtn').onclick=openSheet;
 $('sheetScrim').onclick=e=>{if(e.target===$('sheetScrim'))closeSheet()};
 $('frConnect').onclick=connect;$('frDemo').onclick=startDemo;
-$('reconnectBtn').onclick=()=>{closeSheet();connect()};$('demoBtn').onclick=()=>{closeSheet();startDemo()};
-$('zeroBtn').onclick=()=>{if(demo){baseline=0;sessionPeak=0}else startTare();closeSheet()};
-$('calBtn').onclick=calibrate;$('calClr').onclick=resetUnits;
-$('resetPB').onclick=()=>{zBest=xPB=bBest=0;bStageSaved=1;['zBest','xPB','bBest'].forEach(k=>store.set(k,0));store.set('bStage',1);closeSheet()};
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{mode=t.dataset.m;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.dataset.v===mode))});
-const bandSel=$('bandSel'),bandMaxInp=$('bandMaxInp');
+$('reconnectBtn').onclick=()=>{closeSheet();connect()};
+$('demoBtn').onclick=()=>{closeSheet();startDemo()};
+/* On the TV the shell owns the zero. The page's own startTare() sets taring=true
+   and only onSample()'s tare branch can clear it - which the shell never reaches
+   - so the status pill wedged on "Zeroing - hold still" for the rest of the
+   session (audit D-16). The shell also intercepts this button, but relying on
+   one listener suppressing another is exactly the assumption that produced the
+   bug, so the page refuses to tare natively as well. */
+$('zeroBtn').onclick=()=>{
+  lookPeak=0;
+  if(window.__x3fNative||nativeSeen){try{if(window.X3F&&X3F.reZero)X3F.reZero()}catch(e){}closeSheet();return}
+  if(demo)baseline=0;else startTare();
+  closeSheet();
+};
+$('resetPB').onclick=()=>{store.set('arenaBest',{});syncBests();closeSheet()};
+
+/* Switching tabs never stops a run - the state machine is outside the frame's
+   mode gate now, so the set keeps counting while you look at something else and
+   the HUD keeps showing it. What a tab change DOES clear is a finished set's
+   scoreboard, which has been read by then. */
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  mode=t.dataset.m;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.dataset.v===mode));
+  if(mode==='meter')lookPeak=0;
+  if(!run)hudClose();
+});
+
+const bandSel=$('bandSel');
+const BANDS=(window.X3FEX&&X3FEX.bands)||['White','Light Gray','Dark Gray','Black','Elite Black'];
 BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';bandSel.appendChild(o)});
-function syncBand(){bandSel.value=band;bandMaxInp.value=Math.round(bandMax[band]||130)}
-syncBand();
-(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;syncBand();}const m=p.get('mode');if(m){const tb=document.querySelector('.tab[data-m=\"'+m+'\"]');if(tb)tb.click();}})();
-bandSel.onchange=()=>{band=bandSel.value;store.set('band',band);sessionPeak=0;bandMaxInp.value=Math.round(bandMax[band]||130)};
-bandMaxInp.onchange=()=>{const v=parseFloat(bandMaxInp.value);if(v>0){bandMax[band]=v;store.set('bandMax',bandMax)}};
-$('bandCap').onclick=()=>{if(sessionPeak>10){bandMax[band]=Math.round(sessionPeak);store.set('bandMax',bandMax);bandMaxInp.value=bandMax[band]}closeSheet()};
-let zRun=false,zTime=0,zEnd=0;
-$('zStart').onclick=()=>{zRun=true;zTime=0;zEnd=performance.now()+30000};
-let xPhase='idle',xEnd=0,xAttempt=0,xCountEnd=0;
-$('xStart').onclick=()=>{xPhase='count';xCountEnd=performance.now()+3000;xAttempt=0};
-let bFight=false,bHP=0,bMax=0,bStage=bStageSaved,bStart=0,bDmg=0;
-$('bStart').onclick=()=>{bStage=bStageSaved;bMax=ref()*(14+(bStage-1)*7);bHP=bMax;bFight=true;bStart=performance.now();bDmg=0;$('bOrb').classList.remove('dead')};
-function tick(now){
-  const dt=Math.min(0.05,(now-lastT)/1000);lastT=now;
-  if(force>2){activeSum+=force;activeCount++;totalWork+=force*dt}
-  const gMax=Math.max(ref(),force*1.02);
-  $('ringFg').style.strokeDashoffset=RC*(1-Math.min(1,force/gMax));
-  if(mode==='meter'){$('mLive').textContent=fmt(force);$('mUnit').textContent=unit;$('mPeak').textContent=fmt(sessionPeak);$('mAvg').textContent=fmt(activeCount?activeSum/activeCount:0);$('mWork').textContent=fmt(totalWork)}
-  if(mode==='zone'){
-    const R=ref(),target=R*0.55,lo=target*0.82,hi=target*1.25,gm=R*1.15;
-    $('zTarget').textContent=fmt(target);$('zBand').style.bottom=(lo/gm*100)+'%';$('zBand').style.height=((hi-lo)/gm*100)+'%';
-    const inZone=force>=lo&&force<=hi;$('zMark').style.bottom=Math.min(100,force/gm*100)+'%';$('zMarkLab').textContent=fmt(force);$('zMark').style.borderTopColor=inZone?'var(--gold)':'var(--accent)';
-    if(zRun){if(inZone)zTime+=dt;if(now>=zEnd){zRun=false;if(zTime>zBest){zBest=zTime;store.set('zBest',zBest)}if(window.X3FSet)X3FSet.report({g:'zone',tut:Math.round(zTime),secs:30});}$('zStart').textContent=Math.max(0,(zEnd-now)/1000).toFixed(1)+'s left';}else $('zStart').textContent='Start 30s Round';
-    $('zTime').textContent=zTime.toFixed(1)+'s';$('zBest').textContent=zBest.toFixed(1)+'s';
-  }
-  if(mode==='max'){
-    if(xPhase==='count'){const s=Math.ceil((xCountEnd-now)/1000);$('xState').textContent=s>0?'Get ready...':'GO';$('xNum').textContent=s>0?s:'GO';if(now>=xCountEnd){xPhase='go';xEnd=now+5000;xAttempt=0}}
-    else if(xPhase==='go'){if(force>xAttempt)xAttempt=force;$('xState').textContent='EXPLODE  '+Math.max(0,(xEnd-now)/1000).toFixed(1)+'s';$('xNum').textContent=fmt(force);if(now>=xEnd){xPhase='done';if(xAttempt>xPB){xPB=xAttempt;store.set('xPB',xPB)}(window.X3FSet?X3FSet.report({g:'max',peak:Math.round(xAttempt)}):logSession({g:'max',peak:Math.round(xAttempt)}));}}
-    else if(xPhase==='done'){$('xState').textContent=xAttempt>=xPB?'NEW PERSONAL BEST':'Locked in - beat it next time';$('xNum').textContent=fmt(xAttempt)}
-    else{$('xNum').textContent=fmt(force);$('xState').textContent='Explode for 5 seconds. Beat your best.'}
-    $('xAttempt').textContent=fmt(xAttempt);$('xPB').textContent=fmt(xPB);$('xStart').textContent=(xPhase==='idle'||xPhase==='done')?'Start Max Effort':'In progress...';
-  }
-  if(mode==='boss'){
-    const thr=ref()*0.35;
-    if(bFight){
-      if(force>thr){const d=(force-thr)*dt*1.4;bHP-=d;bDmg+=d;$('bOrb').classList.add('hit')}else{bHP=Math.min(bMax,bHP+bMax*0.04*dt);$('bOrb').classList.remove('hit')}
-      const el=(now-bStart)/1000;$('bDPS').textContent=fmt(bDmg/Math.max(1,el));
-      if(bHP<=0){bFight=false;bHP=0;$('bOrb').classList.add('dead');$('bOrb').classList.remove('hit');if(bBest===0||el<bBest){bBest=el;store.set('bBest',bBest)}bStageSaved=bStage+1;store.set('bStage',bStageSaved);(window.X3FSet?X3FSet.report({g:'boss',score:bStage,secs:Math.round(el)}):logSession({g:'boss',stage:bStage,time:Math.round(el*10)/10}));setTimeout(()=>$('bOrb').classList.remove('dead'),1600)}
-    }
-    $('bHP').style.width=Math.max(0,bHP/Math.max(1,bMax)*100)+'%';$('bStage').textContent=bFight?bStage:bStageSaved;$('bBest').textContent=bBest?bBest.toFixed(1)+'s':'-';$('bStart').textContent=bFight?'Fighting...':'Fight';
-  }
-  requestAnimationFrame(tick);
+function syncBand(){
+  bandSel.value=band;
+  refreshCal(performance.now());
+  const lbl=window.X3FEX&&X3FEX.forceLabel?X3FEX.forceLabel(band,EXSLUG):'';
+  $('mBand').textContent=lbl||band;
+  $('mUnit').textContent=MOVE?(MOVE.name+' · '+band):band;
+  /* Published pounds for the configuration this movement actually uses - the
+     honest answer to "how heavy is this", with no calibration step and no unit
+     multiplier anywhere near the force pipeline. */
+  $('bandNote').textContent=lbl?(MOVE?MOVE.name:'This movement')+' on '+band+' is about '+lbl+
+    ((MOVE&&MOVE.bandConfig==='doubled')?' doubled.':' singled.'):'Band: '+band+'.';
+  const rec=window.X3FBand?X3FBand.recommended(EXSLUG):null;
+  $('bandLab').textContent=rec&&rec!==band?('Band in use — '+MOVE_NAME+' is usually '+rec):'Resistance band in use';
+  syncCalNote();
+  syncBests();
 }
-requestAnimationFrame(tick);
+bandSel.onchange=()=>{
+  /* Changing bands mid-run desynced every cached threshold (audit D-11). It
+     cannot now - everything is normalised to ref() and recomputed each frame -
+     but the SET is still over: it was performed on a different resistance, and
+     half of it under one scale is not one set. */
+  if(run)endRun('switch');
+  band=bandSel.value;
+  /* A per-movement choice must never silently move every other movement, and
+     the ?band= override for this run must never be persisted. X3FBand owns both
+     rules; the page just tells it what the user picked. */
+  try{
+    if(window.X3FBand){if(EXSLUG)X3FBand.set(EXSLUG,band);else X3FBand.setCurrent(band)}
+  }catch(e){}
+  lookPeak=0;
+  syncBand();
+};
+function syncCalNote(){
+  let txt='Games scale to your measured range for this movement and band.';
+  try{
+    if(window.X3FCal&&EXSLUG){
+      const r=X3FCal.range(EXSLUG,band);
+      if(r.est||r.auto){
+        txt='Not calibrated yet — '+MOVE_NAME+' on '+band+' is being estimated at '+
+            Math.round(r.lo)+'–'+Math.round(r.hi)+'. Measure it once and every drill here gets honest.';
+      }else{
+        const a=X3FCal.age(EXSLUG,band);
+        txt='Measured '+Math.round(r.lo)+'–'+Math.round(r.hi)+
+            (a===null?'':(a<1?', today':', '+a+' day'+(a===1?'':'s')+' ago'))+
+            (X3FCal.stale(EXSLUG,band)?'. Worth re-measuring — bands age and so does your max.':'.');
+      }
+    }
+  }catch(e){}
+  $('calNote').textContent=txt;
+  $('mCal').textContent=txt;
+}
+function syncBests(){
+  $('zBest').textContent=bestGet('zone').toFixed(1)+'s';
+  $('xBest').textContent=fmt(bestGet('max'));
+  const s=bossStage(),bt=bestGet('boss',s);
+  $('bStage').textContent=run&&run.mode==='boss'?run.stage:s;
+  $('bBest').textContent=bt?bt.toFixed(0)+'s':'-';
+}
+(function(){
+  const p=new URLSearchParams(location.search);
+  /* ?band= is an override for THIS RUN only and is resolved by X3FBand, which is
+     why it is read back through forMovement() rather than assigned here. */
+  const m=p.get('mode');
+  if(m&&/^(meter|zone|max|boss)$/.test(m)){const tb=document.querySelector('.tab[data-m="'+m+'"]');if(tb)tb.click()}
+})();
+try{$('calLink').href=$('calLink').getAttribute('href')+(EXSLUG?('?ex='+encodeURIComponent(EXSLUG)):'')}catch(e){}
+syncBand();
+
+/* ===========================================================================
+   10. Mode: HOLD THE ZONE
+   =========================================================================== */
+/* WHAT IT USED TO SCORE: a window from 0.82x to 1.25x of 0.55 of your range, for
+   a fixed 30 seconds. The ceiling meant an all-out pull was OUTSIDE the target,
+   so the game paid you for holding just over half of what you had - and then
+   logged {tut, secs:30} whether you had held anything or not.
+
+   WHAT IT SCORES NOW: seconds spent at or above the strong-range threshold, with
+   no ceiling at all, until you fail. That number is the same `strong` x3f-set
+   already measures and logs, so the chip on screen and the field in the history
+   can never disagree. Both are measured against the CALIBRATED range rather than
+   today's best rep, so the number means the same thing week to week. */
+$('zStart').onclick=()=>{
+  if(run&&run.mode==='zone'){endRun('stop');return}
+  startRun('zone');
+};
+
+/* ===========================================================================
+   11. Mode: MAX EFFORT
+   =========================================================================== */
+/* WHAT IT USED TO SCORE: the highest instantaneous sample in a 5-second window
+   that began 3 seconds after you pressed a button on a remote you were still
+   holding.
+
+   WHAT IT SCORES NOW: the greatest force you HELD for a continuous window the
+   length of the program's own ascent - "2-3 seconds up". A snatch that spikes
+   and collapses scores nothing; a controlled build that is held scores
+   everything. The instantaneous peak is still shown, and still reported, because
+   that is the number the calibration ceiling learns from - it is just not the
+   thing you are being paid for.
+
+   The sustained figure is the MINIMUM over the trailing window: the level you
+   have been at or above for the whole of it. Taking the best of that over the
+   attempt is exactly "the most force you held for two and a half seconds". */
+$('xStart').onclick=()=>{
+  if(run&&run.mode==='max'){
+    if(run.phase==='set'){run.phaseEnd=performance.now();return}   // skip the get-set
+    endRun('stop');return;
+  }
+  startRun('max');
+};
+function maxSustained(now,f){
+  const r=run;
+  r.buf.push(now,f);
+  /* Two numbers per sample in a flat array. Trim from the front, but KEEP the
+     last sample older than the window: it is the proof that the window is fully
+     covered. Dropping everything older than the cut leaves buf[0] newer than the
+     cut on every call, which makes "is the window full yet" permanently false -
+     and a sustained score that is permanently zero. */
+  const cut=now-P.tempoUpMs;
+  while(r.buf.length>=4&&r.buf[2]<=cut)r.buf.splice(0,2);
+  if(r.buf.length<4||r.buf[0]>cut)return 0;    // window not full yet
+  let m=Infinity;
+  for(let k=1;k<r.buf.length;k+=2)if(r.buf[k]<m)m=r.buf[k];
+  return m===Infinity?0:m;
+}
+
+/* ===========================================================================
+   12. Mode: BOSS FIGHT
+   =========================================================================== */
+/* WHAT IT USED TO SCORE: unbroken force above 35% of your range, healing 4% a
+   second whenever you dropped below it, with no lose condition, a stage that
+   only ever went up, and a report gated on the kill. At stage 5 that is 46
+   seconds of continuous all-out isometric.
+
+   WHAT IT SCORES NOW: an honest set.
+     - damage is the integral of your force, so harder is always better and
+       there is no threshold to fall under;
+     - every rep lands a flat blow on top, so the partials after full-range
+       failure still hurt it, which is the part of the set the program calls the
+       whole workout;
+     - a rep's blow is scaled by how long it took, capped at the protocol's ideal
+       so slowness is correct rather than farmable - a two-second rep lands 40%
+       of a five-second one;
+     - damage fades toward a floor if reps stop, so the fastest kill is a set and
+       not a long hold;
+     - the ONLY thing that heals it is letting the band go slack, after the same
+       600 ms grace that separates a turnaround from a stop;
+     - the stage ladder is sized to the 15-40 rep window, and beating the top of
+       it means the band is too light, which is the program's actual progression
+       axis;
+     - and it steps back down when you fail, so it cannot become unwinnable. */
+$('bStart').onclick=()=>{
+  if(run&&run.mode==='boss'){endRun('stop');return}
+  startRun('boss');
+};
+
+/* ===========================================================================
+   13. The engine, and separately the frame
+   ===========================================================================
+
+   THE SET IS NOT ALLOWED TO DEPEND ON FRAMES BEING DELIVERED.
+
+   Every mode used to live inside the animation frame, and everything that
+   mattered - whether the round had ended, how much damage the boss had taken,
+   whether the max window had closed - was integrated there. requestAnimationFrame
+   is a rendering callback: the compositor is entitled to stop calling it whenever
+   the page is not being painted, and it does. A set that stops advancing because
+   nothing is being drawn is a set that never ends, never reports, and silently
+   throws away the work.
+
+   So the state machine runs on a timer at the same 40 ms cadence the reporter
+   samples force on, and the animation frame does nothing but draw. That also
+   honours the in-set design rule the other way round: the screen is allowed to
+   be still, because being still no longer means being stopped. */
+const ENGINE_MS=40;
+
+function engine(){
+  const now=performance.now();
+  let dt=(now-lastT)/1000;lastT=now;
+  /* The old clamp of 50 ms DISCARDED real elapsed time below 20 fps, so a
+     perfect 30-second hold read as 22 seconds on a slow panel and boss fights
+     ran a third longer (audit D-24). Real time is kept; only a gap big enough to
+     be a stall or a throttled background timer is dropped. */
+  if(!(dt>0)||dt>0.5)dt=0;
+  if(hidden)dt=0;
+
+  /* Two numbers that change at most once a set, refreshed on the same cadence
+     x3f-cal caches its own map on. */
+  if(now-calAt>500)refreshCal(now);
+
+  const n=lin(),disp=axis(n);
+
+  let lv=null;
+  if(run&&window.X3FSet){try{lv=X3FSet.live()}catch(e){lv=null}}
+  if(run&&n>=T.idleFrac)run.active=now;
+
+  /* ---- the run advances whatever tab is on screen, and whether or not the
+          page is being painted ---- */
+  if(run){
+    /* Started by accident and walked away from. Nothing was measured, so nothing
+       is reported - this exists only so the HUD and the in-set layout do not sit
+       there for the rest of the session waiting for a set that is not coming. */
+    if(run.mode!=='max'&&run.reps===0&&now-run.t0-run.paused>60000&&now-run.active>30000)endRun('abandon');
+  }
+  if(run){
+    if(run.mode==='zone'){
+      if(lv&&lv.reps>run.reps){run.reps=lv.reps;beep(880,45,.12)}
+      /* Inferred ending: the bar has been down long enough that the set is over.
+         Never demand a press during a set - AD-3 rule 5. */
+      if(run.reps>0&&now-run.active>T.idleEndMs)endRun('failure');
+    }else if(run.mode==='max'){
+      if(run.phase==='set'){
+        const left=Math.ceil((run.phaseEnd-now)/1000);
+        if(left!==run.tick&&left>0&&left<=10){run.tick=left;beep(left<=3?880:660,60,.18)}
+        if(now>=run.phaseEnd){run.phase='go';run.winEnd=now+T.maxWindowMs;run.buf=[];beep(1175,220,.26)}
+      }else if(run.phase==='go'){
+        if(force>run.peak){run.peak=force;run.rise=now}
+        const h=maxSustained(now,force);
+        if(h>run.hold){run.hold=h}
+        /* The window extends while force is still climbing, so a slow honest
+           build is never cut off mid-ascent. */
+        if(now>=Math.max(run.winEnd,(run.rise||0)+T.maxExtendMs)){beep(523,260,.24);endRun('done')}
+      }
+    }else if(run.mode==='boss'){
+      if(dt>0){
+        /* Slack: the literal rule, using the unfloored signal - "below the
+           movement's start tension" - with the module's own 10% margin so an
+           ESTIMATED floor cannot invent a fault on its own. Falls back to a
+           small fraction of the span when there is no floor to be below. */
+        const lo=LO,slack=lo>0?(absForce()<lo*0.9):(n<0.04);
+        if(slack)run.slack+=dt*1000;else run.slack=0;
+        if(run.slack>T.slackMs){
+          run.hp=Math.min(run.hpMax,run.hp+run.hpMax*T.healFrac*dt);
+          $('bOrb').classList.remove('hit');
+        }else{
+          const since=(now-run.lastRep)/1000;
+          const momentum=since<=T.moveGraceMs/1000?1:
+            Math.max(T.moveFloor,1-(since-T.moveGraceMs/1000)/(T.moveFadeMs/1000));
+          const d=Math.min(2,n)*T.dps*momentum*dt;
+          run.hp-=d;run.dmg+=d;
+          if(n>0.15)$('bOrb').classList.add('hit');else $('bOrb').classList.remove('hit');
+        }
+      }
+      if(lv&&lv.reps>run.reps){
+        run.reps=lv.reps;
+        /* Tempo, applied as the program states it: a rep faster than the ideal
+           lands proportionally less. Capped at 1, so resting between reps buys
+           nothing - slowness is correct, not farmable. */
+        const period=Math.min(P.repIdealMs,now-run.repAt);
+        const hit=T.repHit*Math.max(0.15,period/P.repIdealMs);
+        run.hp-=hit;run.dmg+=hit;run.repAt=now;run.lastRep=now;
+        beep(period>=P.repMinMs?988:740,60,.16);
+      }
+      if(run.hp<=0){run.hp=0;endRun('win')}
+      else if(run.reps>0&&now-run.active>T.idleEndMs)endRun('failure');
+    }
+
+    /* The HUD is the one thing that is identical in all eight games. Max shows
+       the force it is actually paying for - a number that only ever goes up, so
+       nothing on screen moves except when you earn it. */
+    /* `run` can have become null a few lines above - a fight that just died, a
+       max window that just closed - so this is re-checked rather than relying on
+       the branch it was entered from. */
+    if(run&&hud){
+      try{
+        if(run.mode==='max'){
+          const big=run.phase==='set'?Math.max(0,Math.ceil((run.phaseEnd-now)/1000)):Math.round(run.hold);
+          hud.set({reps:big,frac:disp});
+        }else if(lv){
+          hud.set({reps:lv.reps,full:lv.full,mid:lv.mid,weak:lv.weak,tier:lv.tier,frac:disp});
+        }
+      }catch(e){}
+    }
+  }
+}
+setInterval(engine,ENGINE_MS);
+engine();
+
+function paint(){
+  /* Scheduled first: a throw anywhere below must not be able to kill the loop
+     and leave a live set with a frozen screen. */
+  requestAnimationFrame(paint);
+
+  /* Deliberately NOT the timestamp requestAnimationFrame hands in. The engine
+     runs on performance.now() and every run-relative figure below - the get-set
+     countdown, "set ends in Ns", damage per second - is measured against it.
+     Two clocks in one file is how "21 damage per second" got printed for a fight
+     that had done 21 damage in thirty seconds. */
+  const now=performance.now();
+  const n=lin(),disp=axis(n);
+  $('ringFg').style.strokeDashoffset=RC*(1-disp);
+
+  /* ---- and only the DOM writes are gated by the visible tab ---- */
+  if(mode==='meter'){
+    $('mLive').textContent=fmt(force);
+    $('mPeak').textContent=fmt(lookPeak);
+    $('mPct').textContent=Math.round(n*100)+'%';
+  }else if(mode==='zone'){
+    /* One mapping for the marker and for every boundary drawn beside it, so what
+       you see inside the zone is exactly what the clock counts as inside. */
+    const full=axis(P.fullRangeFrac),mid=axis(P.midRangeFrac);
+    $('zFull').style.bottom=(full*100)+'%';$('zFull').style.height=((1-full)*100)+'%';
+    $('zMid').style.bottom=(mid*100)+'%';$('zMid').style.height=((full-mid)*100)+'%';
+    $('zMark').style.bottom=Math.min(100,disp*100)+'%';
+    $('zMarkLab').textContent=fmt(force);
+    $('zMark').style.borderTopColor=n>=P.fullRangeFrac?'var(--accent)':(n>=P.midRangeFrac?'var(--cyan)':'var(--gold)');
+    const active=run&&run.mode==='zone';
+    let strong=0,reps=0;
+    if(active){try{if(window.X3FSet){const s=X3FSet.seen();strong=s.strong||0;reps=s.reps||0}}catch(e){}}
+    else if(last.mode==='zone'){strong=last.strong;reps=last.reps}
+    $('zTime').textContent=strong.toFixed(1)+'s';
+    $('zReps').textContent=reps+' / '+P.repsMin+'-'+P.repsMax;
+    $('zStart').textContent=active?'End Set':'Start Set';
+    if(active){
+      const idle=Math.ceil((T.idleEndMs-(now-run.active))/1000);
+      $('zHint').textContent=(run.reps>0&&idle<=5)?('Set ends in '+Math.max(0,idle)+'s unless you pull.')
+        :(n>=P.fullRangeFrac?'In the strong range. Harder is always better here.'
+        :(reps>=P.repsMax?'Past '+P.repsMax+' full reps — this band has stopped being heavy.'
+        :'Two up, two down. Never slack at the bottom, never lock out at the top.'));
+    }else if(last.mode==='zone'&&last.reps>0){
+      $('zHint').textContent=last.reps+' reps · '+last.strong.toFixed(1)+'s in the strong range'+
+        (last.reps>=P.repsMax?'. Past '+P.repsMax+' — go up a band.':(last.reps<P.repsMin?'. Under '+P.repsMin+' — go lighter.':'.'));
+    }else{
+      $('zHint').textContent='The zone is the top of your range and it has no ceiling. Stay in it. When you cannot, keep going in the middle.';
+    }
+  }else if(mode==='max'){
+    const active=run&&run.mode==='max';
+    if(active&&run.phase==='set'){
+      const left=Math.max(0,(run.phaseEnd-now)/1000);
+      $('xState').textContent='Put the remote down. Get set.';
+      $('xNum').textContent=Math.ceil(left);
+      $('xStart').textContent='Skip · '+left.toFixed(0)+'s';
+    }else if(active){
+      $('xState').textContent='BUILD AND HOLD  '+Math.max(0,(Math.max(run.winEnd,(run.rise||0)+T.maxExtendMs)-now)/1000).toFixed(1)+'s';
+      $('xNum').textContent=fmt(force);
+      $('xStart').textContent='Stop';
+    }else if(last.mode==='max'&&last.peak>0){
+      $('xState').textContent=last.hold>0?'Held for '+(P.tempoUpMs/1000).toFixed(1)+'s':'Nothing was held long enough to count';
+      $('xNum').textContent=fmt(last.hold);
+      $('xStart').textContent='Start Max Effort';
+    }else{
+      $('xState').textContent='Build over two seconds, then hold it.';
+      $('xNum').textContent=fmt(force);
+      $('xStart').textContent='Start Max Effort';
+    }
+    $('xHold').textContent=fmt(active?run.hold:(last.mode==='max'?last.hold:0));
+    $('xPeak').textContent=fmt(active?run.peak:(last.mode==='max'?last.peak:lookPeak));
+    if(active&&run.phase==='go'&&run.peak>0&&run.hold<run.peak*0.55){
+      $('xHint').textContent='You snapped it. Build over two seconds and hold — the hold is the score.';
+    }else if(!active&&last.mode==='max'&&last.peak>0){
+      $('xHint').textContent='Held '+fmt(last.hold)+' of a '+fmt(last.peak)+' peak. The closer those two numbers are, the more of that force was real.';
+    }else if(!active){
+      $('xHint').textContent='Scored on the force you can HOLD for '+(P.tempoUpMs/1000).toFixed(1)+'s, not the one you can snatch. This is a benchmark — one all-out set is the training.';
+    }
+  }else if(mode==='boss'){
+    const active=run&&run.mode==='boss';
+    const hpFrac=active?Math.max(0,run.hp/Math.max(1,run.hpMax)):1;
+    $('bHP').style.width=(hpFrac*100)+'%';
+    $('bStage').textContent=active?run.stage:bossStage();
+    $('bReps').textContent=(active?run.reps:(last.mode==='boss'?last.reps:0))+' / '+P.repsMin+'-'+P.repsMax;
+    $('bStart').textContent=active?'Fighting...':'Fight';
+    if(active){
+      const idle=Math.ceil((T.idleEndMs-(now-run.active))/1000);
+      $('bHint').textContent=(run.reps>0&&idle<=5)?('Fight ends in '+Math.max(0,idle)+'s unless you pull.')
+        :(run.slack>T.slackMs?'It is healing — the band has gone slack.'
+        :(run.stage>=T.stageMax?'Top stage. Beat it and the answer is a heavier band, not a bigger score.'
+        /* Reps remaining at the rate you are actually working, which is the only
+           number here a person can act on - and it falls when you pull harder. */
+        :(function(){const per=run.reps>0?run.dmg/run.reps:0;
+            return Math.round(hpFrac*100)+'% left'+(per>0?' · about '+Math.ceil(run.hp/per)+' more reps':'');})()));
+    }else if(last.mode==='boss'&&last.reps>0){
+      $('bHint').textContent=last.won
+        ?('Core destroyed in '+last.secs+'s. Stage '+bossStage()+' next'+(bossStage()>=T.stageMax?' — the top of the ladder.':'.'))
+        :('Failure at '+last.reps+' reps. That is the end of an X3 set, and it is logged. Stage '+bossStage()+' next.');
+    }else{
+      $('bHint').textContent='Every rep lands a blow, and slow reps hit hardest. The core only heals if you let the band go slack.';
+    }
+  }
+}
+requestAnimationFrame(paint);
 </script>
 <script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
 <script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script><script src="x3f-progress.js"></script>
 <script src="x3f-set.js"></script>
+<script src="x3f-hud.js"></script>
 <script src="x3f-music.js"></script>
 <script>/* soundtrack: reacts to your pull where the page exposes one */
 addEventListener("load",function(){try{
@@ -278,6 +1111,14 @@ addEventListener("load",function(){try{
   X3FMusic.attach({mood:"arena",getIntensity:f,
     buttonHost:document.querySelector(".topbar")||document.body,buttonClass:"mini"});
 }catch(e){}});</script>
-<script>/* let the reporter measure peak force and time under tension itself */
-addEventListener('load',function(){try{X3FSet.watch(function(){return force},function(){return ref()});}catch(e){}});</script>
+<script>/* Hand the reporter the force it should watch, and the UNFLOORED force
+   alongside it. The second one is what turns "the band went slack" from a dwell
+   heuristic into the rule as written, and what keeps the logged peak absolute so
+   a personal best survives a recalibration. While the page is hidden the getters
+   report nothing happening, because nothing is. */
+addEventListener('load',function(){try{
+  X3FSet.watch(function(){return hidden?0:force;},
+               function(){return ref();},
+               {abs:function(){return hidden?calLo():absForce();}});
+}catch(e){}});</script>
 </body></html>

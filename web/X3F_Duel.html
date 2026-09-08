@@ -1,14 +1,54 @@
 <!DOCTYPE html>
-<!-- X3F DUEL - tug-of-war vs an AI. Complete reps to pull the flag to your side. -->
+<!-- X3F DUEL - tug-of-war vs an AI.
+
+     WHAT THIS GAME NOW SCORES, AND WHY IT CHANGED
+
+     The audit (docs/audit/games-b.md D-08, D-10, D-12) found three things wrong
+     with what Duel rewarded, and all three were the same mistake: the game was
+     scoring the SHAPE of a rep instead of the WORK in it.
+
+     D-10 - a rep only completed when force fell below 20% of the calibrated
+     span. That is the app instructing you to let the band go slack to score,
+     against the one rule the program calls non-negotiable. Rep detection is now
+     X3FSet's: a rep closes on a genuine range reversal - the force retreating
+     halfway back from its own peak toward its own turnaround - which happens
+     with the band still loaded and never needs a release.
+
+     D-08 - the CPU drained faster than a correctly-paced rep could pull, from
+     round one. Break-even was 3.89 s per rep at perfect quality against a
+     protocol that asks for 4-6 s. The only way to win was to move faster than
+     the method allows, which is precisely the thing the program's author warns
+     against ("you break form; you get sloppy... your objective is exhausting
+     the muscle"). Gain per rep is now proportional to the rep's DURATION up to
+     the ideal, so anywhere inside the legal 2-3 s per phase pulls the rope at
+     the SAME rate, and anything under repMinMs is discounted on a curve steep
+     enough that a 2.5 s bounce loses ground to a round-one CPU. See TUNING
+     below for the arithmetic.
+
+     D-12 - a match with no reps in it was still written to history, where it
+     made today a training day, extended the streak and flipped tomorrow's
+     workout. Nothing is reported unless at least one rep actually happened.
+
+     And the thing the summary table called the deeper problem: there was no
+     reason to pull harder. Quality saturated at the calibrated ceiling. Now the
+     session top is tracked UNCLAMPED, a rep that sets a new high pulls the rope
+     harder, and your current force physically resists the CPU's tug - so
+     grinding at 95% on the last reps of a set is the strongest thing you can
+     do, not a wasted second. -->
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>X3F Duel</title>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
-:root{--bg:#06080e;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--hot:#ff5d78;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+/* --font-display / --font-num / --amber / --mint are what x3f-hud.js reads. The
+   shared scoreboard is deliberately unstyled by the game beyond these tokens,
+   so the rep count is the same size, in the same place, in every game. */
+:root{--bg:#06080e;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--amber:#ffb257;--mint:#2ff0b0;--hot:#ff5d78;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--font-display:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--font-num:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 body{font-family:var(--d);color:var(--txt);background:var(--bg);-webkit-user-select:none;user-select:none}
@@ -21,12 +61,17 @@ body{font-family:var(--d);color:var(--txt);background:var(--bg);-webkit-user-sel
 select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);color:var(--txt);border:1px solid var(--brd2);border-radius:11px;padding:9px 11px;cursor:pointer}
 .stage{flex:1;min-height:0;position:relative;overflow:hidden}
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
-.hud{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
+/* The chips moved to the BOTTOM of the stage. The top of the screen now belongs
+   to the shared HUD, which is where the one number you can actually read from
+   the plate lives; a second row of small type up there would just compete with
+   it. Round and Best Round stay, because they are the game's own chrome - the
+   rep count is not, and is gone from here entirely. */
+.hud{position:absolute;left:10px;right:10px;bottom:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
 .chip{background:rgba(10,14,22,.66);backdrop-filter:blur(6px);border:1px solid var(--brd);border-radius:14px;padding:8px 13px;min-width:78px}
 .chip .k{font-family:var(--n);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
-.chip .v{font-family:var(--n);font-weight:700;font-size:20px}
+.chip .v{font-family:var(--n);font-weight:700;font-size:20px;font-variant-numeric:tabular-nums}
 .v.accent{color:var(--accent)}.v.gold{color:var(--gold)}
-.toast{position:absolute;left:0;right:0;top:36%;text-align:center;font-family:var(--n);font-weight:700;font-size:clamp(1.6rem,7vw,2.6rem);opacity:0;transition:opacity .3s;pointer-events:none;text-shadow:0 4px 30px #000}
+.toast{position:absolute;left:0;right:0;top:44%;text-align:center;font-family:var(--n);font-weight:700;font-size:clamp(1.6rem,7vw,2.6rem);opacity:0;transition:opacity .3s;pointer-events:none;text-shadow:0 4px 30px #000}
 .toast.show{opacity:1}
 .ctrl{display:flex;gap:8px;align-items:center;padding:8px 12px calc(8px + var(--sab));border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(0,0,0,.4))}
 .cta{font-family:var(--d);font-weight:700;font-size:16px;border:none;border-radius:14px;padding:14px 18px;cursor:pointer;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c}
@@ -36,7 +81,14 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 .scrim.show{opacity:1;pointer-events:auto}
 .card{width:100%;max-width:420px;text-align:center;display:flex;flex-direction:column;gap:14px}
 .card h1{font-size:28px;font-weight:800}.card h1 b{color:var(--accent)}.card p{color:var(--dim);font-size:14px;line-height:1.55}
-</style><script src="x3f-cal.js"></script>
+</style>
+<!-- Order matters only in that all three define globals the inline script reads
+     at first paint: the protocol numbers, the one band-resolution owner, and the
+     calibration. x3f-cal.js asks X3FBand at call time, so it does not care which
+     of the two parses first - but both must exist before the game's own code. -->
+<script src="x3f-exercises.js"></script>
+<script src="x3f-band.js"></script>
+<script src="x3f-cal.js"></script>
 </head>
 <body>
 <div class="app">
@@ -51,7 +103,6 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <canvas id="cv"></canvas>
 <div class="hud">
 <div class="chip"><div class="k">Round</div><div class="v accent" id="hRound">1</div></div>
-<div class="chip"><div class="k">Reps</div><div class="v" id="hReps">0</div></div>
 <div class="chip"><div class="k">Best Round</div><div class="v gold" id="hBest">0</div></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -64,7 +115,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 </div>
 <div class="scrim show" id="firstrun"><div class="card">
 <h1>X3F <b>DUEL</b></h1>
-<p>Tug-of-war against the machine. Every full rep - pull hard to the peak, then release - yanks the rope your way. The CPU pulls on a cadence that gets faster each round. Out-rep it to win and climb the rounds.</p>
+<p>Tug-of-war against the machine. Every rep hauls the rope your way - and how far depends on how <b>deep</b> and how <b>slow</b> it was, not how many you can rattle off. Two to three seconds each way is the winning pace; anything quicker barely moves the rope. While you are loaded up the CPU can hardly pull at all, so the hardest part of your set is also your best defence.</p>
 <button class="cta" id="frConnect">Connect Bar</button>
 <button class="cta ghost" id="frDemo">Try Demo (hold to pull)</button>
 </div></div>
@@ -74,25 +125,64 @@ const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40f
 const $=id=>document.getElementById(id);
 function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
 function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
-function logSession(o){try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push(Object.assign({t:Date.now(),b:band},o));while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}}
-const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
-const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
-let band=xget('band','White'),bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
+
+/* The program's own numbers live in one place and are never restated here. The
+   literal object is a graceful-degradation floor for the case where the script
+   did not load at all, not a second opinion. */
+const PROTO=Object.assign({repMinMs:4000,repIdealMs:5000,fullRangeFrac:0.85,midRangeFrac:0.45},
+  (window.X3FEX&&X3FEX.protocol)||{});
+const BANDS=(window.X3FEX&&X3FEX.bands)||['White','Light Gray','Dark Gray','Black','Elite Black'];
 const EXSLUG=window.X3FCal?X3FCal.slug():null;
-/* The band this run is actually using. A ?band= override no longer writes the
-   global setting, so the set log has to ask the game, not localStorage. */
+const EXNAME=(function(){try{const e=window.X3FEX&&X3FEX.get(EXSLUG);return(e&&e.name)||'Duel'}catch(e){return'Duel'}})();
+
+/* X3FBand is the ONLY thing that answers "which band". Reading x3f_band here is
+   what produced the reported "can't reach the minimums and maximums" bug: the
+   Library launches a movement on its own per-movement band while Calibrate had
+   filed the numbers under the global one, and nothing reconciled the two. */
+let band=window.X3FBand?X3FBand.forMovement(EXSLUG):xget('band','White');
+if(BANDS.indexOf(band)<0)band=BANDS[0];
+/* A ?band= override no longer writes the global setting, so the set log has to
+   ask the game, not localStorage. */
 window.__x3fBand=function(){return band};
 /* The span of THIS movement's calibrated range, not the raw band max: a chest
    press and an overhead press on one band are nowhere near the same scale. */
-function ref(){return window.X3FCal?X3FCal.span(EXSLUG,band):Math.max(60,bandMax[band]||130)}
+function ref(){return window.X3FCal?X3FCal.span(EXSLUG,band):130}
 /* The movement's own start position already carries load (an overhead press
    starts at chin height with the band loaded). That load is the zero. */
 function calLo(){return window.X3FCal?X3FCal.floor(EXSLUG,band):0}
+
+/* THE LINEAR VALUE, and the one every threshold in this file uses.
+
+   X3FCal.raw() is that value - and X3FCal.frac() is the eased DISPLAY curve,
+   which must never reach a threshold. The one thing raw() does that this game
+   cannot live with is clamp at 1: a set in which you out-pull your own
+   calibration would saturate, every rep after that would grade "full range",
+   and pulling harder would once again do nothing. Past the ceiling we continue
+   with the identical expression, unclamped, so the strong range keeps having
+   somewhere to go. The game's `force` is already floored by calLo(), so adding
+   it back is what makes this the same number X3FCal.raw() is given. */
+function linear(f){
+  if(!window.X3FCal)return f/Math.max(1,ref());
+  const v=X3FCal.raw(EXSLUG,band,f+calLo());
+  return v<1?v:f/Math.max(1,ref());
+}
+
 let bestRound=xget('duelBest',0);$('hBest').textContent=bestRound;
 const bandSel=$('bandSel');
 BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSel.appendChild(o)});
-bandSel.onchange=()=>{band=bandSel.value;xset('band',band)};
-(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;bandSel.value=band;}})();
+bandSel.value=band;
+bandSel.onchange=()=>{
+  band=bandSel.value;
+  /* Per-movement when we know the movement, global when we do not. Writing the
+     global from a per-movement choice is the v1.4 bug ("starting a day on White
+     silently moved you to Dark Gray") and must not come back. */
+  if(window.X3FBand){ if(EXSLUG)X3FBand.set(EXSLUG,band); else X3FBand.setCurrent(band); }
+  else xset('band',band);
+  /* Every threshold and the flag itself are band-relative, so a match already
+     in progress is measured against a scale that no longer exists (D-11's
+     mirror). End it honestly rather than carry a meaningless score forward. */
+  if(running)endMatch('band');
+};
 
 let device=null,connected=false,demo=false,raw=0,baseline=null,taring=false,tSamp=[],tStart=0,tEnd=0,force=0;
 function setStatus(t,c){$('statusTxt').textContent=t;$('dot').className='dot'+(c?' '+c:'')}
@@ -105,18 +195,40 @@ async function connect(){
     setStatus('Connecting...','wait');
     const srv=await(await device.gatt.connect()).getPrimaryService(SERVICE);
     const fc=await srv.getCharacteristic(CH_FORCE);await fc.startNotifications();
-    fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);onSample()});
+    fc.addEventListener('characteristicvaluechanged',e=>{onSample(e.target.value.getFloat64(0,true))});
+    /* D-07: the demo interval was never cleared, so a user who pressed Try Demo
+       and then paired the bar had two writers on `raw` at ~37 Hz each. The live
+       reading collapsed to near-zero between notifications, reps were doubled or
+       lost, and only a page reload fixed it. */
+    stopDemo();
     demo=false;connected=true;$('firstrun').classList.remove('show');startTare();
   }catch(e){console.error(e);if(e.name==='NotFoundError'){setStatus('No bar found','');alert('No device selected, or nothing advertising.')}else{setStatus(e.name,'')}}
 }
 function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
-function onSample(){
+
+/* ONE CONDITIONING PATH FOR BOTH BUILDS.
+
+   The browser's Bluetooth handler calls this with a sample; the TV shell calls
+   the SAME function through window.__x3fIngest with the same argument, so the
+   tare, the movement floor and anything else that ever conditions the raw
+   signal exist exactly once. Three shipped bugs came from the shell's bootstrap
+   replacing onSample() and having to repeat this arithmetic by hand
+   (docs/OVERHAUL-PLAN.md invariant 1). There is now nothing to repeat. */
+function onSample(v){
+  if(v!=null)raw=+v||0;
   if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
-  if(baseline==null)baseline=raw;force=Math.max(0,raw-baseline-calLo());
+  if(baseline==null)baseline=raw;
+  force=Math.max(0,raw-baseline-calLo());
 }
+window.__x3fIngest=onSample;
+
 let demoF=0,pull=false;
+function stopDemo(){if(startDemo.l){clearInterval(startDemo.l);startDemo.l=null}}
 function startDemo(){demo=true;connected=false;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
-  if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(ref()*1.05,demoF+ref()*0.07+2);else demoF=Math.max(0,demoF*0.8-3);raw=demoF;onSample()},27)}
+  /* Ceiling above ref() on purpose: the demo has to be able to exercise the
+     "you beat your own calibration" path, which is the whole point of the
+     rescaling below. */
+  if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(ref()*1.35,demoF+ref()*0.05+2);else demoF=Math.max(0,demoF*0.86-3);onSample(demoF)},27)}
 $('stage').addEventListener('pointerdown',()=>{if(demo)pull=true});addEventListener('pointerup',()=>pull=false);
 addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});addEventListener('keyup',e=>{if(e.code==='Space')pull=false});
 $('frConnect').onclick=connect;$('frDemo').onclick=startDemo;
@@ -125,58 +237,249 @@ $('zeroBtn').onclick=()=>{if(demo){baseline=0}else startTare()};
 let ac=null;function beep(f,d){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=f;o.connect(g);g.connect(ac.destination);g.gain.setValueAtTime(0.001,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.25,ac.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+d);o.start();o.stop(ac.currentTime+d+0.03)}catch(e){}}
 function toast(t){$('toast').textContent=t;$('toast').classList.add('show');toast.e=performance.now()+1500}
 
-const cv=$('cv'),ctx=cv.getContext('2d');let W=0,H=0,DPR=1;
-function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0)}
+const cv=$('cv'),ctx=cv.getContext('2d');let W=0,H=0,DPR=1,wash=null;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);
+  /* Built once per resize instead of once per frame. A fresh gradient object and
+     a full-canvas fill every frame was the single largest piece of pure overdraw
+     in this file and it never changed between frames. */
+  wash=ctx.createLinearGradient(0,0,W,0);wash.addColorStop(0,'rgba(255,93,120,.12)');wash.addColorStop(.5,'rgba(0,0,0,0)');wash.addColorStop(1,'rgba(47,240,176,.12)');}
 addEventListener('resize',resize);
-let running=false,round=1,flag=0,reps=0,st='down',peakF=0,aiNext=0,reason='';
-let duelRounds=0;
-function startMatch(){ if(duelRounds>0&&window.X3FSet){X3FSet.report({g:'duel',score:duelRounds});duelRounds=0;}
-  running=true;round=1;newRound();$('startBtn').textContent='Restart';toast('ROUND 1');beep(660,0.12)}
-function newRound(){flag=0;reps=0;st='down';peakF=0;aiNext=performance.now()+aiPeriod();$('hReps').textContent=0;$('hRound').textContent=round}
-function aiPeriod(){return Math.max(820,1900-round*150)}
-function aiPull(){return 0.055+round*0.008}
+/* The TV shell widens .app AFTER the document has laid out, and a CSS-only size
+   change fires no resize event - so the canvas kept its 820px backing store and
+   the WebView upscaled it to 1920. Watch the element itself, not the window. */
+try{if(window.ResizeObserver)new ResizeObserver(function(){resize()}).observe(cv)}catch(e){}
+
+/* ------------------------------------------------------------------ *
+ *  TUNING - why these numbers, and the arithmetic that fixes D-08.    *
+ * ------------------------------------------------------------------ *
+
+   The flag runs -1 (CPU wins) .. +1 (you win the round) and starts at 0.
+
+   PLAYER.  A full-range rep at the protocol's ideal pace is worth PULL. Gain
+   scales LINEARLY with the rep's duration up to TEMPO_CAP, which is the whole
+   trick: at 4 s (2 s each way) a rep is worth PULL*0.8 and you do 15 of them a
+   minute; at 6 s (3 s each way) it is worth PULL*1.2 and you do 10. Both come
+   out at PULL*0.2 per second. Anywhere inside the legal window the rope moves
+   at the SAME rate, so there is no tempo to optimise and nothing to gain by
+   hurrying.
+
+   Below repMinMs the rep is additionally multiplied by (dur/repMinMs)^RUSH_EXP.
+   A curve rather than a step, deliberately: a hard cutoff at exactly 4.0 s would
+   make a 3.9 s rep lose and a 4.0 s rep win comfortably, which is not a thing a
+   person can feel or correct. Since the rope's RATE is gain/duration and gain is
+   linear in duration, that exponent IS the rate multiplier, so it reads directly
+   as "how much of your pace is counting":
+
+     5.0 s/rep  ->  100%  ->  0.034 flag/s   comfortably ahead
+     4.0 s/rep  ->  100%  ->  0.034 flag/s   comfortably ahead
+     3.5 s/rep  ->   71%  ->  0.024 flag/s   still ahead, visibly slower
+     3.0 s/rep  ->   47%  ->  0.016 flag/s   crawling
+     2.5 s/rep  ->   30%  ->  0.010 flag/s   LOSING to a round-1 CPU
+     2.0 s/rep  ->   17%  ->  0.006 flag/s   losing badly
+
+   CPU.  AI_BASE + AI_STEP per round, in flag/second, delivered as visible tugs
+   on a cadence. Its pull is resisted by RESIST * your average normalised force
+   since its last tug, so a loaded bar blocks most of it - and the resistance is
+   averaged, not sampled at the instant of the tug, so it cannot be gamed by
+   yanking on the beat.
+
+     round 1 idle          0.023/s   -> you lose in ~43 s of doing nothing
+     round 1 while working ~0.014/s  -> net +0.020/s, ~10 reps to win the round
+     round 5 while working ~0.022/s  -> net +0.012/s, ~16 reps
+     round 8 while working ~0.027/s  -> net +0.007/s, ~29 reps
+
+   So a good set walks you to round 6-8 and the match ends where the set ends:
+   at the point your range collapses and mid/weak reps stop out-pulling the
+   machine. That is failure, which is the thing the program is actually after. */
+const PULL=0.17;          // flag gained by a full-range rep at repIdealMs
+const TIER_MUL={full:1,mid:0.7,weak:0.45};
+const RUSH_EXP=2.6;       // how sharply a rep under repMinMs is discounted
+const TEMPO_CAP=1.35;     // credit for going slower, capped; never a penalty
+const NEW_HIGH=1.25;      // a rep that beats your own session top
+const AI_BASE=0.020, AI_STEP=0.003;        // flag/second at round r = BASE+STEP*r
+const AI_MS_MAX=2400, AI_MS_MIN=1100, AI_MS_STEP=110;   // tug cadence
+const RESIST=0.85;        // fraction of the CPU's tug a maximal hold cancels
+const HEADROOM=1.18;      // the gauge always keeps this much room above your top
+
+let running=false,round=1,flag=0,reps=0,roundsWon=0,matchStart=0;
+/* topN is the top this SESSION has established out of COMPLETED reps, normalised
+   and unclamped - it is what the three tiers are graded against, so it must not
+   move mid-rep or a rep could never be a new high. dispTop is the same number
+   plus whatever the bar is doing right now, and exists only so the gauge grows
+   under your hand instead of after the fact. */
+let repsSeen=0,repPeak=0,repT0=0,topN=PROTO.midRangeFrac,dispTop=PROTO.midRangeFrac;
+let fullN=0,midN=0,weakN=0,tierNow='full';
+let aiNext=0,aiFlash=0,resistAcc=0,resistN=0;
+let hud=null;
+
+function aiRate(){return AI_BASE+AI_STEP*round}
+function aiPeriod(){return Math.max(AI_MS_MIN,AI_MS_MAX-round*AI_MS_STEP)}
+
+function startMatch(){
+  if(running)endMatch('abandoned');
+  running=true;
+  round=1;flag=0;reps=0;roundsWon=0;matchStart=performance.now();
+  repsSeen=0;repPeak=0;repT0=performance.now();
+  /* The session top opens at the mid-range line rather than zero, so the very
+     first rep of a set is not automatically "a new personal high" and the tier
+     lines on the gauge start somewhere honest. */
+  topN=dispTop=PROTO.midRangeFrac;
+  fullN=midN=weakN=0;tierNow='full';
+  resistAcc=0;resistN=0;aiNext=performance.now()+aiPeriod();
+  /* D-05: the watcher accumulates from PAGE LOAD unless a set start resets it,
+     so the peak reported for this match used to include the yank you gave the
+     bar to check the connection - and X3FCal.observe() then banked that as the
+     movement's ceiling for every other game. */
+  try{if(window.X3FSet)X3FSet.reset()}catch(e){}
+  if(hud){try{hud.destroy()}catch(e){}hud=null}
+  try{if(window.X3FHUD)hud=X3FHUD.create({host:document.body,name:EXNAME})}catch(e){hud=null}
+  $('hRound').textContent=round;$('startBtn').textContent='End Match';
+  toast('ROUND 1');beep(660,0.12);
+  /* If the shared reporter did not load, nothing can count a rep - and a game
+     that silently scores nothing is worse than one that says so. */
+  if(!window.X3FSet||!X3FSet.live)toast('Reps cannot be counted - reload');
+}
+
+/* One report site, and it only fires when a set actually happened.
+
+   D-12: the old code reported on the loss AND again on the next New Match, and
+   neither call cared whether a single rep had been performed. An empty entry in
+   x3f_history makes today a training day, extends the streak, advances the
+   12-week program (which flips whether tomorrow is Push or Pull) and counts
+   toward the session badges. A mis-tap must not do any of that. */
+function endMatch(reason){
+  if(!running)return;
+  running=false;
+  $('startBtn').textContent='New Match';
+  if(hud){try{hud.done()}catch(e){}}
+  if(reps>=1&&window.X3FSet){
+    /* reps is passed, so the engine files this as a SET, not a run - Duel now
+       genuinely counts reps against the three-tier model. full/mid/weak, the
+       tempo faults and time under tension all come from X3FSet's own trace, so
+       there is exactly one authority on them. */
+    try{X3FSet.report({g:'duel',reps:reps,score:roundsWon})}catch(e){}
+  }
+  if(reason==='lose'){toast('CPU wins - round '+round);beep(300,0.3)}
+  else if(reason==='band')toast('Band changed - match reset');
+  else if(reps>=1)toast('Match over - '+reps+' reps');
+}
+
+/* A rep's WORTH. The shared detector decides WHEN a rep happened; this decides
+   what it was worth, from the amplitude it reached and how long it took. */
+function creditRep(now){
+  const amp=repPeak/Math.max(1,ref());          // normalised, unclamped
+  const isHigh=amp>topN*1.02;
+  if(amp>topN)topN=amp;
+  if(topN>dispTop)dispTop=topN;
+  const tier=amp>=topN*PROTO.fullRangeFrac?'full':(amp>=topN*PROTO.midRangeFrac?'mid':'weak');
+  if(tier==='full')fullN++;else if(tier==='mid')midN++;else weakN++;
+  /* The set's tier only ever descends - full, then mid, then weak - which is the
+     shape of a real set and the shape x3f-hud.js announces. */
+  tierNow=weakN?'weak':(midN?'mid':'full');
+
+  const dur=Math.max(1,now-repT0);
+  let tf=dur/PROTO.repIdealMs;
+  const rushed=dur<PROTO.repMinMs;
+  if(rushed)tf*=Math.pow(dur/PROTO.repMinMs,RUSH_EXP);
+  tf=Math.min(TEMPO_CAP,tf);
+
+  let gain=PULL*TIER_MUL[tier]*tf;
+  if(isHigh&&!rushed)gain*=NEW_HIGH;
+  flag+=gain;
+  reps++;
+  repPeak=0;repT0=now;
+
+  beep(rushed?520:760,0.05);
+  if(navigator.vibrate)navigator.vibrate(rushed?12:25);
+  /* Say it only when the discount is actually costing them something, so the
+     coaching is not just noise on every rep that came in a shade under four
+     seconds. */
+  if(dur<PROTO.repMinMs*0.9)toast('TOO FAST');
+  else if(isHigh)toast('NEW HIGH');
+
+  if(flag>=1){
+    round++;roundsWon=round-1;flag=0;
+    if(roundsWon>bestRound){bestRound=roundsWon;xset('duelBest',bestRound);$('hBest').textContent=bestRound}
+    $('hRound').textContent=round;
+    aiNext=performance.now()+aiPeriod();resistAcc=0;resistN=0;
+    toast('ROUND '+round);beep(900,0.18);
+  }
+}
+
+/* Rep DETECTION is X3FSet's, not this file's. Its rep closes on a genuine range
+   reversal - the force falling halfway back from this rep's own peak toward
+   this rep's own turnaround - so it never asks you to release, and the
+   turnaround creeps up with fatigue instead of being measured from a stale
+   floor. All this does is notice the count went up. */
+function pollReps(now,nf){
+  if(!window.X3FSet||!X3FSet.live)return;
+  let lv;try{lv=X3FSet.live()}catch(e){return}
+  /* While the bar is sitting at the bottom between reps, the next rep has not
+     started yet - X3FSet times a rep from the last moment it was still down, and
+     this keeps our clock on the same definition. Without it the first rep of a
+     match is credited with however long you took to pick the bar up. */
+  if(!lv.inRep&&nf<0.08)repT0=now;
+  if(lv.reps>repsSeen){repsSeen=lv.reps;creditRep(now)}
+}
+
 function loop(now){
   if(!W)resize();
-  const R=ref(),hi=R*0.6,lo=R*0.2;
-  // rep detection
+  const nf=linear(force);
+  if(nf>dispTop)dispTop=nf;
   if(running){
-    if(force>peakF)peakF=force;
-    if(st==='down'&&force>hi){st='up'}
-    else if(st==='up'&&force<lo){ // rep complete
-      const qual=Math.max(0,Math.min(1,(peakF-hi)/(R-hi)));
-      flag+=0.07+0.07*qual;reps++;$('hReps').textContent=reps;peakF=0;st='down';beep(760,0.05);if(navigator.vibrate)navigator.vibrate(25);
-      if(flag>=1){round++;if(round-1>bestRound){bestRound=round-1;xset('duelBest',bestRound);$('hBest').textContent=bestRound;}duelRounds=round-1;toast('ROUND '+round);beep(900,0.18);newRound();}
+    if(force>repPeak)repPeak=force;
+    resistAcc+=Math.min(1,nf);resistN++;
+    pollReps(now,nf);
+    if(now>=aiNext){
+      /* Averaged over the whole interval, so pulling hard exactly on the beat
+         buys nothing that pulling hard throughout does not. */
+      const r=resistN?resistAcc/resistN:0;
+      flag-=aiRate()*(aiPeriod()/1000)*Math.max(1-RESIST,1-RESIST*r);
+      resistAcc=0;resistN=0;aiNext=now+aiPeriod();aiFlash=now+180;
+      if(flag<=-1){flag=-1;endMatch('lose')}
     }
-    if(now>=aiNext){flag-=aiPull();aiNext=now+aiPeriod();
-      if(flag<=-1){running=false;reason='lose';toast('CPU wins - round '+round);beep(300,0.3);$('startBtn').textContent='New Match';
-        // one log entry per MATCH, not per round
-        if(window.X3FSet){X3FSet.report({g:'duel',score:duelRounds});duelRounds=0;}}}
+    if(hud){
+      /* frac is the EASED display curve - it is for the meter and nothing else.
+         Every threshold above went through linear(). */
+      let fr=0;try{fr=window.X3FCal?X3FCal.frac(EXSLUG,band,force+calLo()):Math.min(1,nf)}catch(e){fr=Math.min(1,nf)}
+      hud.set({reps:reps,full:fullN,mid:midN,weak:weakN,tier:tierNow,frac:fr});
+    }
   }
-  // draw
+
+  // ---------- draw ----------
   ctx.clearRect(0,0,W,H);
-  const cy=H*0.52;
-  // side wash
-  const g1=ctx.createLinearGradient(0,0,W,0);g1.addColorStop(0,'rgba(255,93,120,.12)');g1.addColorStop(.5,'rgba(0,0,0,0)');g1.addColorStop(1,'rgba(47,240,176,.12)');
-  ctx.fillStyle=g1;ctx.fillRect(0,0,W,H);
+  if(wash){ctx.fillStyle=wash;ctx.fillRect(0,0,W,H)}
+  const gy=H-96,cy=Math.max(60,gy*0.62);
   // rope
   ctx.strokeStyle='rgba(255,255,255,.2)';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(W*0.08,cy);ctx.lineTo(W*0.92,cy);ctx.stroke();
-  // center + goal lines
   ctx.strokeStyle='rgba(255,255,255,.12)';ctx.lineWidth=1;
   [0.08,0.5,0.92].forEach(fx=>{ctx.beginPath();ctx.moveTo(W*fx,cy-40);ctx.lineTo(W*fx,cy+40);ctx.stroke()});
-  // flag knot
-  const fx=W*(0.5+flag*0.42);
-  ctx.fillStyle='#ffd35c';ctx.shadowColor='#ffd35c';ctx.shadowBlur=18;ctx.beginPath();ctx.arc(fx,cy,14,0,7);ctx.fill();ctx.shadowBlur=0;
-  ctx.fillStyle='#8593a9';ctx.font="600 13px 'Space Grotesk'";ctx.textAlign='left';ctx.fillText('CPU',W*0.08,cy-52);ctx.textAlign='right';ctx.fillText('YOU',W*0.92,cy-52);ctx.textAlign='left';
-  // your force gauge (bottom)
-  const gw=W-40,gx=20,gy=H-46,fr=Math.min(1.05,force/R);
+  // the flag knot
+  const kx=W*(0.5+Math.max(-1,Math.min(1,flag))*0.42);
+  ctx.fillStyle='#ffd35c';ctx.shadowColor='#ffd35c';ctx.shadowBlur=18;ctx.beginPath();ctx.arc(kx,cy,14,0,7);ctx.fill();ctx.shadowBlur=0;
+  ctx.fillStyle=now<aiFlash?'#ff5d78':'#8593a9';ctx.font="600 13px 'Space Grotesk'";
+  ctx.textAlign='left';ctx.fillText('CPU',W*0.08,cy-52);
+  ctx.fillStyle='#8593a9';ctx.textAlign='right';ctx.fillText('YOU',W*0.92,cy-52);ctx.textAlign='left';
+
+  /* The gauge rescales with your session top and always keeps HEADROOM above it,
+     so a bar that is already at your best still has visible room to climb into.
+     The two ticks are the full-range and mid-range lines of the three-tier
+     model - the same lines the log is graded on. */
+  const scaleN=Math.max(1,dispTop)*HEADROOM,gw=W-40,gx=20;
   ctx.fillStyle='rgba(255,255,255,.06)';ctx.fillRect(gx,gy,gw,14);
-  ctx.fillStyle=force>hi?'#2ff0b0':(force<lo?'#8593a9':'#ffd35c');ctx.fillRect(gx,gy,gw*Math.min(1,fr),14);
-  ctx.strokeStyle='#2ff0b0';ctx.lineWidth=2;const hx=gx+gw*(hi/R);ctx.beginPath();ctx.moveTo(hx,gy-4);ctx.lineTo(hx,gy+18);ctx.stroke();
-  ctx.fillStyle='#8593a9';ctx.font="11px 'Space Grotesk'";ctx.fillText('pull past the line, then release = 1 rep',gx,gy-8);
+  const full=topN*PROTO.fullRangeFrac,mid=topN*PROTO.midRangeFrac;
+  ctx.fillStyle=nf>=full?'#2ff0b0':(nf>=mid?'#ffd35c':'#8593a9');
+  ctx.fillRect(gx,gy,gw*Math.min(1,nf/scaleN),14);
+  [[mid,'rgba(255,211,92,.75)'],[full,'rgba(47,240,176,.9)'],[topN,'rgba(255,255,255,.5)']].forEach(t=>{
+    ctx.strokeStyle=t[1];ctx.lineWidth=2;const x=gx+gw*Math.min(1,t[0]/scaleN);
+    ctx.beginPath();ctx.moveTo(x,gy-4);ctx.lineTo(x,gy+18);ctx.stroke();});
+  ctx.fillStyle='#8593a9';ctx.font="11px 'Space Grotesk'";
+  ctx.fillText('a rep counts on the turnaround - never let it go slack, never rush it',gx,gy-8);
+
   if(toast.e&&now>toast.e){$('toast').classList.remove('show');toast.e=0}
   requestAnimationFrame(loop);
 }
-$('startBtn').onclick=startMatch;
+$('startBtn').onclick=()=>{if(running)endMatch('stopped');else startMatch()};
 resize();requestAnimationFrame(loop);
 </script>
 <script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
@@ -184,6 +487,7 @@ resize();requestAnimationFrame(loop);
 <script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
 <script src="x3f-progress.js"></script>
 <script src="x3f-set.js"></script>
+<script src="x3f-hud.js"></script>
 <script src="x3f-music.js"></script>
 <script>/* soundtrack: reacts to your pull where the page exposes one */
 addEventListener("load",function(){try{
@@ -191,6 +495,14 @@ addEventListener("load",function(){try{
   X3FMusic.attach({mood:"duel",getIntensity:f,
     buttonHost:document.querySelector(".topbar")||document.body,buttonClass:"mini"});
 }catch(e){}});</script>
-<script>/* let the reporter measure peak force and time under tension itself */
+<script>/* The reporter measures peak, time under tension, the three rep tiers and the
+   form faults itself, off one force getter. Nothing here re-derives any of it.
+
+   opts.abs is deliberately NOT supplied. It would make slack detection literal
+   in the browser, where raw-baseline is a real absolute signal - but on the TV
+   the shell drives this page through __x3fIngest and `baseline` is pinned to 0,
+   so an "absolute" getter built from raw would read 0 whenever the page has not
+   seen a sample, and every rep would be accused of going slack. One behaviour on
+   both paths beats a better behaviour on one of them. */
 addEventListener('load',function(){try{X3FSet.watch(function(){return force},function(){return ref()});}catch(e){}});</script>
 </body></html>

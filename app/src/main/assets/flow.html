@@ -1,16 +1,55 @@
 <!DOCTYPE html>
 <!-- X3F FLOW - controlled-rep trainer for the X3 Force bar (Web Bluetooth).
- Trace the moving target ribbon = dynamic reps through full range. Band-aware.
- Shares band setting with the other games via localStorage (x3f_band/x3f_bandMax). -->
+
+     WHAT THIS GAME NOW SCORES, AND WHY IT CHANGED
+
+     The audit's one-line verdict on Flow was that it "caps out at a fixed
+     amplitude" (docs/audit/games-b.md, summary table). The target ribbon peaked
+     at a hardcoded 0.78 of the calibrated span and accuracy was |force-target| <
+     tol, so going ABOVE the ribbon was scored exactly like falling below it.
+     A user grinding at 95% on the last reps of a set - the part the method
+     calls the entire workout - was marked wrong for it. There was, literally,
+     no reason to pull harder.
+
+     Three changes, all of them about WHAT is measured, none about how it looks:
+
+     1. THE RIBBON IS A FLOOR, NOT A CORRIDOR. On target now means at or above
+        the line. Above it is never a miss, because there is no version of this
+        method where more tension is the error. Only letting go is.
+
+     2. THE RIBBON CLIMBS. Beat its peak and the peak follows you up, and the
+        whole picture rescales so there is always visible room above your best.
+        Exceeding the target does something: it raises the target.
+
+     3. REPS ARE X3FSet's. Flow used to count a rep every time the metronome
+        wrapped around, so long as peak force had passed a fixed line - which
+        means a steady hold scored reps it never did, and a faster tempo setting
+        scored more reps per minute for less work. The ribbon is now purely a
+        PACER; a rep is a genuine range reversal, detected once, in the shared
+        module, the same way every other game detects one.
+
+     Plus D-12: a set with no reps in it is no longer written to history, where
+     it used to make today a training day, extend the streak and flip whether
+     tomorrow is a Push or a Pull day.
+
+     The tempo options moved too. They were 2 s / 1.5 s / 1 s per phase, i.e.
+     every one of them faster than the protocol's fastest legal tempo. They are
+     now 2 / 2.5 / 3 s each way, and a ?tempo= from an older Library link is
+     clamped up into that window rather than obeyed. -->
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>X3F Flow</title>
 <meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
-:root{--bg:#06080e;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--hot:#ff5d78;--cyan:#37d6ff;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+/* --font-display / --font-num / --amber / --mint are what x3f-hud.js reads. The
+   shared scoreboard is deliberately unstyled by the game beyond these tokens,
+   so the rep count is the same size, in the same place, in every game. */
+:root{--bg:#06080e;--panel:rgba(255,255,255,.05);--brd:rgba(255,255,255,.09);--brd2:rgba(255,255,255,.14);--txt:#eaf0fa;--dim:#8593a9;--accent:#2ff0b0;--accentD:#0fae82;--gold:#ffd35c;--amber:#ffb257;--mint:#2ff0b0;--hot:#ff5d78;--cyan:#37d6ff;--d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--font-display:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--font-num:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 body{font-family:var(--d);color:var(--txt);user-select:none;-webkit-user-select:none;background:var(--bg)}
@@ -24,12 +63,16 @@ body{font-family:var(--d);color:var(--txt);user-select:none;-webkit-user-select:
 select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(--panel);color:var(--txt);border:1px solid var(--brd2);border-radius:11px;padding:9px 11px;cursor:pointer}
 .stage{flex:1;min-height:0;position:relative;overflow:hidden}
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
-.hud{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
+/* The chips moved to the BOTTOM of the stage. The top of the screen now belongs
+   to the shared HUD - the one number that has to be readable from the plate, in
+   peripheral vision, in a fraction of a second. The Reps chip is gone from here
+   entirely; the HUD owns it. What is left is the game's own chrome. */
+.hud{position:absolute;left:10px;right:10px;bottom:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
 .chip{background:rgba(10,14,22,.66);backdrop-filter:blur(6px);border:1px solid var(--brd);border-radius:14px;padding:8px 13px;min-width:82px}
 .chip .k{font-family:var(--n);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
 .chip .v{font-family:var(--n);font-weight:700;font-size:21px;font-variant-numeric:tabular-nums}
 .v.accent{color:var(--accent)}.v.gold{color:var(--gold)}
-.toast{position:absolute;left:0;right:0;top:38%;text-align:center;font-family:var(--n);font-weight:700;font-size:clamp(1.6rem,7vw,2.6rem);opacity:0;transition:opacity .3s;pointer-events:none;text-shadow:0 4px 30px #000}
+.toast{position:absolute;left:0;right:0;top:44%;text-align:center;font-family:var(--n);font-weight:700;font-size:clamp(1.6rem,7vw,2.6rem);opacity:0;transition:opacity .3s;pointer-events:none;text-shadow:0 4px 30px #000}
 .toast.show{opacity:1}
 .ctrl{display:flex;gap:8px;align-items:center;padding:8px 12px calc(8px + var(--sab));border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(0,0,0,.4))}
 .cta{font-family:var(--d);font-weight:700;font-size:16px;border:none;border-radius:14px;padding:14px 18px;cursor:pointer;background:linear-gradient(180deg,var(--accent),var(--accentD));color:#04120c;transition:transform .07s,filter .15s}
@@ -40,7 +83,12 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 .card{width:100%;max-width:420px;text-align:center;display:flex;flex-direction:column;gap:14px}
 .card h1{font-size:28px;font-weight:800}.card h1 b{color:var(--accent)}
 .card p{color:var(--dim);font-size:14px;line-height:1.55}
-</style><script src="x3f-cal.js"></script>
+</style>
+<!-- All three define globals the inline script reads at first paint: the
+     protocol numbers, the one band-resolution owner, and the calibration. -->
+<script src="x3f-exercises.js"></script>
+<script src="x3f-band.js"></script>
+<script src="x3f-cal.js"></script>
 </head>
 <body>
 <div class="app">
@@ -55,8 +103,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <div class="stage" id="stage">
 <canvas id="cv"></canvas>
 <div class="hud">
-<div class="chip"><div class="k">Reps</div><div class="v accent" id="hReps">0</div></div>
-<div class="chip"><div class="k">Accuracy</div><div class="v" id="hAcc">-</div></div>
+<div class="chip"><div class="k">On target</div><div class="v accent" id="hAcc">-</div></div>
 <div class="chip"><div class="k">Best Set</div><div class="v gold" id="hBest">0</div></div>
 <div class="chip"><div class="k">Force</div><div class="v" id="hForce">0</div></div>
 </div>
@@ -64,14 +111,14 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 </div>
 <div class="ctrl">
 <button class="cta ghost" id="zeroBtn">Re-Zero</button>
-<select id="tempoSel" title="Tempo"><option value="4000">Controlled 4s</option><option value="3000" selected>Standard 3s</option><option value="2000">Brisk 2s</option></select>
+<select id="tempoSel" title="Tempo"><option value="4000">2s each way</option><option value="5000" selected>2.5s each way</option><option value="6000">3s each way</option></select>
 <div class="grow"></div>
 <button class="cta" id="startBtn">Start Set</button>
 </div>
 </div>
 <div class="scrim show" id="firstrun"><div class="card">
 <h1>X3F <b>FLOW</b></h1>
-<p>Controlled reps, the X3 way. Trace the moving ribbon - pull up into each peak, ease down into each trough. Reps count only when you reach the top. When you can't anymore, the set ends. That's your failure point.</p>
+<p>Controlled reps, the X3 way. The ribbon is your pacer - stay <b>on or above</b> it, two to three seconds each way. Above is never wrong: beat the ribbon's peak and the ribbon climbs to meet you. Keep going until the range is gone, then keep going in the range you have left. Put the bar down and the set ends itself.</p>
 <button class="cta" id="frConnect">Connect Bar</button>
 <button class="cta ghost" id="frDemo">Try Demo (hold to pull)</button>
 </div></div>
@@ -81,24 +128,60 @@ const SERVICE='e3458900-6ed5-40ff-aa3a-4e9a87ce1ad6',CH_FORCE='e3458901-6ed5-40f
 const $=id=>document.getElementById(id);
 function xget(k,d){try{return JSON.parse(localStorage.getItem('x3f_'+k))??d}catch(e){return d}}
 function xset(k,v){try{localStorage.setItem('x3f_'+k,JSON.stringify(v))}catch(e){}}
-const BAND_DEF={'White':130,'Light Gray':230,'Dark Gray':330,'Black':430,'Elite Black':600};
-const BANDS=['White','Light Gray','Dark Gray','Black','Elite Black'];
-let band=xget('band','White'), bandMax=Object.assign({},BAND_DEF,xget('bandMax',{}));
+
+/* The program's own numbers live in one place and are never restated here. The
+   literal object is a graceful-degradation floor for the case where the script
+   did not load at all, not a second opinion. */
+const PROTO=Object.assign({repMinMs:4000,repIdealMs:5000,fullRangeFrac:0.85,midRangeFrac:0.45},
+  (window.X3FEX&&X3FEX.protocol)||{});
+const BANDS=(window.X3FEX&&X3FEX.bands)||['White','Light Gray','Dark Gray','Black','Elite Black'];
 const EXSLUG=window.X3FCal?X3FCal.slug():null;
-/* The band this run is actually using. A ?band= override no longer writes the
-   global setting, so the set log has to ask the game, not localStorage. */
+const EXNAME=(function(){try{const e=window.X3FEX&&X3FEX.get(EXSLUG);return(e&&e.name)||'Flow'}catch(e){return'Flow'}})();
+
+/* X3FBand is the ONLY thing that answers "which band". Reading x3f_band here is
+   what produced the reported "can't reach the minimums and maximums" bug. */
+let band=window.X3FBand?X3FBand.forMovement(EXSLUG):xget('band','White');
+if(BANDS.indexOf(band)<0)band=BANDS[0];
+/* A ?band= override no longer writes the global setting, so the set log has to
+   ask the game, not localStorage. */
 window.__x3fBand=function(){return band};
 /* The span of THIS movement's calibrated range, not the raw band max: a chest
    press and an overhead press on one band are nowhere near the same scale. */
-function ref(){return window.X3FCal?X3FCal.span(EXSLUG,band):Math.max(60,bandMax[band]||130)}
+function ref(){return window.X3FCal?X3FCal.span(EXSLUG,band):130}
 /* The movement's own start position already carries load (an overhead press
    starts at chin height with the band loaded). That load is the zero. */
 function calLo(){return window.X3FCal?X3FCal.floor(EXSLUG,band):0}
+
+/* THE LINEAR VALUE, and the one every threshold in this file uses.
+
+   X3FCal.raw() is that value - X3FCal.frac() is the eased DISPLAY curve and must
+   never reach a threshold. The one thing raw() does that this game cannot live
+   with is clamp at 1, because the whole fix here is that the strong range has
+   somewhere to go: a set in which you out-pull your calibration would saturate
+   and the ribbon could never climb past the ceiling. Past 1 we continue with the
+   identical expression, unclamped. `force` is already floored by calLo(), so
+   adding it back is what makes this the number X3FCal.raw() is given. */
+function linear(f){
+  if(!window.X3FCal)return f/Math.max(1,ref());
+  const v=X3FCal.raw(EXSLUG,band,f+calLo());
+  return v<1?v:f/Math.max(1,ref());
+}
+
 let bestSet=xget('flowBest',0); $('hBest').textContent=bestSet;
 const bandSel=$('bandSel');
 BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textContent=b+' band';o.selected=b===band;bandSel.appendChild(o)});
-bandSel.onchange=()=>{band=bandSel.value;xset('band',band)};
-function logSession(o){try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push(Object.assign({t:Date.now(),b:band},o));while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}}
+bandSel.value=band;
+bandSel.onchange=()=>{
+  band=bandSel.value;
+  /* Per-movement when we know the movement, global when we do not. Writing the
+     global from a per-movement choice is the v1.4 bug ("starting a day on White
+     silently moved you to Dark Gray") and must not come back. */
+  if(window.X3FBand){ if(EXSLUG)X3FBand.set(EXSLUG,band); else X3FBand.setCurrent(band); }
+  else xset('band',band);
+  /* Every threshold on screen is band-relative, so a set already in progress is
+     being graded against a scale that no longer exists. */
+  if(running)endSet(false,'band');
+};
 let cues=xget('cues',true);const cueBtn=$('cueBtn');function syncCue(){cueBtn.textContent=cues?'Cues on':'Cues off'}syncCue();
 cueBtn.onclick=()=>{cues=!cues;xset('cues',cues);syncCue()};
 let actx=null;function beep(f,d){if(!cues)return;try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=f;o.connect(g);g.connect(actx.destination);g.gain.setValueAtTime(0.0008,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.22,actx.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.0008,actx.currentTime+d);o.start();o.stop(actx.currentTime+d+0.03)}catch(e){}}
@@ -117,19 +200,38 @@ async function connect(){
     setStatus('Connecting...','wait');
     const srv=await(await device.gatt.connect()).getPrimaryService(SERVICE);
     const fc=await srv.getCharacteristic(CH_FORCE);await fc.startNotifications();
-    fc.addEventListener('characteristicvaluechanged',e=>{raw=e.target.value.getFloat64(0,true);onSample()});
+    fc.addEventListener('characteristicvaluechanged',e=>{onSample(e.target.value.getFloat64(0,true))});
+    /* D-07: the demo interval was never cleared, so a user who pressed Try Demo
+       and then paired the bar had two writers on `raw` at ~37 Hz each. The live
+       reading collapsed to near-zero between notifications and only a page
+       reload fixed it. */
+    stopDemo();
     demo=false;connected=true;$('firstrun').classList.remove('show');startTare();
   }catch(e){console.error(e);if(e.name==='NotFoundError'){setStatus('No bar found','');alert('No device selected, or nothing advertising. Make sure the bar is awake and free from your phone.')}else{setStatus(e.name,'');alert('Bluetooth error: '+e.name)}}
 }
 function startTare(){taring=true;tSamp=[];tStart=performance.now()+400;tEnd=performance.now()+1900;setStatus('Zeroing - hold still','wait')}
-function onSample(){
+
+/* ONE CONDITIONING PATH FOR BOTH BUILDS.
+
+   The browser's Bluetooth handler calls this with a sample; the TV shell calls
+   the SAME function through window.__x3fIngest with the same argument, so the
+   tare and the movement floor exist exactly once. Three shipped bugs came from
+   the shell's bootstrap replacing onSample() and having to repeat this
+   arithmetic by hand (docs/OVERHAUL-PLAN.md invariant 1). */
+function onSample(v){
+  if(v!=null)raw=+v||0;
   if(taring){const n=performance.now();if(n>=tStart)tSamp.push(raw);if(n>=tEnd){baseline=tSamp.length?tSamp.reduce((a,b)=>a+b,0)/tSamp.length:raw;taring=false;setStatus(demo?'Demo':'Live','on')}return;}
   if(baseline==null)baseline=raw;
   force=Math.max(0,raw-baseline-calLo());
 }
+window.__x3fIngest=onSample;
+
 let demoF=0,pull=false;
+function stopDemo(){if(startDemo.l){clearInterval(startDemo.l);startDemo.l=null}}
 function startDemo(){demo=true;connected=false;baseline=0;$('firstrun').classList.remove('show');setStatus('Demo','on');
-  if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(ref()*1.05,demoF+ref()*0.06+2);else demoF=Math.max(0,demoF*0.88-2);raw=demoF;onSample()},27)}
+  /* Ceiling above ref() on purpose: the demo has to be able to exercise the
+     "you beat the ribbon" path, which is the whole point of the rescaling. */
+  if(!startDemo.l)startDemo.l=setInterval(()=>{if(pull)demoF=Math.min(ref()*1.35,demoF+ref()*0.045+2);else demoF=Math.max(0,demoF*0.9-2);onSample(demoF)},27)}
 $('stage').addEventListener('pointerdown',()=>{if(demo)pull=true});
 addEventListener('pointerup',()=>pull=false);
 addEventListener('keydown',e=>{if(e.code==='Space'){pull=true;e.preventDefault()}});
@@ -141,55 +243,210 @@ $('zeroBtn').onclick=()=>{if(demo){baseline=0}else startTare()};
 const cv=$('cv'),ctx=cv.getContext('2d');let W=0,H=0,DPR=1;
 function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0)}
 addEventListener('resize',resize);
-let running=false,setStart=0,period=3000,reps=0,hitF=0,totF=0;
-let phasePrev=0,repMax=0,repHit=0,repFrames=0,miss=0;
+/* The TV shell widens .app AFTER the document has laid out, and a CSS-only size
+   change fires no resize event - so the canvas kept its 820px backing store and
+   the WebView upscaled it to 1920. Watch the element itself, not the window. */
+try{if(window.ResizeObserver)new ResizeObserver(function(){resize()}).observe(cv)}catch(e){}
+
+/* ------------------------------------------------------------------ *
+ *  TUNING                                                             *
+ * ------------------------------------------------------------------ */
+const OPEN_AIM=0.78;   // where the ribbon's peak starts, as a fraction of the
+                       // calibrated span. It only ever goes up from here.
+const TROUGH=0.12;     // the ribbon's bottom, as a fraction of its own peak.
+                       // Deliberately NOT zero: the bottom of a rep is the start
+                       // position with the band still loaded, and coaching the
+                       // line all the way to the floor is coaching slack.
+const HEADROOM=1.18;   // the drawing always keeps this much room above the top,
+                       // so a rep at your best still has somewhere to go.
+const TOL=0.14;        // how far under the ribbon still counts as on it,
+                       // as a fraction of the span.
+const IDLE_MS=7000;    // bar quiet for this long after a real rep = set over.
+                       // Well past the slowest legal rep (6 s), and a rep only
+                       // spends a moment at the bottom, so this can only fire
+                       // when the bar has actually been put down.
+const IDLE_FRAC=0.10;
+
+let running=false,setStart=0,period=5000,reps=0,hitF=0,totF=0;
+let repsSeen=0,repPeak=0,idleSince=0;
+/* aimN is the RIBBON's peak - a pacing target that climbs when you beat it.
+   topN is the top this session's completed reps have established, which is what
+   the three tiers are graded against. They are different questions and used to
+   be the same hardcoded number. Both normalised and UNCLAMPED. */
+let aimN=OPEN_AIM,topN=0,scaleN=OPEN_AIM*HEADROOM;
+let fullN=0,midN=0,weakN=0,tierNow='full';
+let hud=null;
+
+/* Tempo is ms per FULL rep - the value the Library and Routine already pass.
+   The protocol asks for 2-3 s each way, so the legal window is repMinMs to
+   3x tempoDownMs. An older link carrying tempo=3000 (1.5 s each way) is clamped
+   into that window rather than obeyed: the game must not pace a user faster
+   than the method allows just because a query string said so. */
+const TEMPO_MIN=PROTO.repMinMs, TEMPO_MAX=Math.max(TEMPO_MIN,(PROTO.tempoDownMs||3000)*2.4);
+function applyTempo(ms){
+  const want=Math.max(TEMPO_MIN,Math.min(TEMPO_MAX,+ms||PROTO.repIdealMs));
+  const sel=$('tempoSel');let best=sel.options[0];
+  for(let i=0;i<sel.options.length;i++){
+    if(Math.abs(+sel.options[i].value-want)<Math.abs(+best.value-want))best=sel.options[i];
+  }
+  sel.value=best.value;period=+best.value;
+}
 $('tempoSel').onchange=()=>{period=+$('tempoSel').value};
-(function(){const p=new URLSearchParams(location.search);const bd=p.get('band');if(bd&&BAND_DEF[bd]){band=bd;bandSel.value=band;}const tp=p.get('tempo');if(tp){$('tempoSel').value=tp;period=+tp;}})();
-$('startBtn').onclick=()=>{ if(running){endSet(false);return;}
-  running=true;setStart=performance.now();reps=0;hitF=0;totF=0;phasePrev=0;repMax=0;repHit=0;repFrames=0;miss=0;
-  $('startBtn').textContent='Stop Set';toast('GO');beep(660,0.12); };
-function endSet(fail){ running=false;$('startBtn').textContent='Start Set';
-  if(reps>bestSet){bestSet=reps;xset('flowBest',bestSet);$('hBest').textContent=bestSet;}
-  if(window.X3FSet)X3FSet.report({g:'flow',reps:reps,acc:totF?Math.round(hitF/totF*100):0});
-  else logSession({g:'flow',reps:reps,acc:totF?Math.round(hitF/totF*100):0});cue(false);beep(400,0.18);
-  toast(fail?('Failure - '+reps+' reps'):('Set done - '+reps+' reps')); }
+(function(){const p=new URLSearchParams(location.search);const tp=p.get('tempo');applyTempo(tp?+tp:period);})();
+
 let toastT=0;
 function toast(t){$('toast').textContent=t;$('toast').classList.add('show');toastT=performance.now()+1400;}
+
+$('startBtn').onclick=()=>{ if(running){endSet(false);return;} startSet(); };
+
+function startSet(){
+  running=true;                 // FIRST, so a throw below cannot strand a live set
+  setStart=performance.now();
+  reps=0;hitF=0;totF=0;repsSeen=0;repPeak=0;idleSince=0;
+  aimN=OPEN_AIM;topN=0;scaleN=OPEN_AIM*HEADROOM;
+  fullN=midN=weakN=0;tierNow='full';
+  /* D-05: the watcher accumulates from PAGE LOAD unless a set start resets it,
+     so the peak reported here used to include the yank you gave the bar to check
+     the connection - and X3FCal.observe() then banked that as the movement's
+     ceiling for every other game in the suite. */
+  try{if(window.X3FSet)X3FSet.reset()}catch(e){}
+  if(hud){try{hud.destroy()}catch(e){}hud=null}
+  try{if(window.X3FHUD)hud=X3FHUD.create({host:document.body,name:EXNAME})}catch(e){hud=null}
+  $('startBtn').textContent='Stop Set';$('hAcc').textContent='-';
+  toast('GO');beep(660,0.12);
+  /* If the shared reporter did not load, nothing can count a rep - and a game
+     that silently scores nothing is worse than one that says so. */
+  if(!window.X3FSet||!X3FSet.live)toast('Reps cannot be counted - reload');
+}
+
+/* One report site, and it only fires when a set actually happened.
+
+   D-12: Start Set / Stop Set with no bar connected used to write an entry to
+   x3f_history. That entry made today a training day, extended the streak,
+   advanced the 12-week program's count - which flips whether tomorrow is Push
+   or Pull - and counted toward the session badges. A mis-tap must not do any
+   of that, so zero reps is not a set. */
+function endSet(fail,why){
+  if(!running)return;
+  running=false;
+  $('startBtn').textContent='Start Set';
+  if(hud){try{hud.done()}catch(e){}}
+  if(reps>bestSet){bestSet=reps;xset('flowBest',bestSet);$('hBest').textContent=bestSet;}
+  if(reps>=1&&window.X3FSet){
+    /* reps is ours because it is the number the user watched happen; every other
+       field - the tier split, tempo, faults, peak, time under tension - comes
+       from X3FSet's own trace of the same signal, so there is one authority on
+       each of them and nothing is measured twice.
+
+       There is deliberately no logSession() fallback any more. It capped
+       x3f_history at 250 entries with `while(h.length>250)h.shift()`, while the
+       engine keeps 56 days and rolls the rest up; one call would have silently
+       destroyed real history (D-14). Losing a single set is the lesser harm. */
+    try{X3FSet.report({g:'flow',reps:reps,acc:totF?Math.round(hitF/totF*100):0})}catch(e){}
+  }
+  cue(false);beep(400,0.18);
+  if(why==='band')toast('Band changed - set ended');
+  else if(reps<1)toast('No reps - nothing logged');
+  else toast(fail?('Failure - '+reps+' reps'):('Set done - '+reps+' reps'));
+}
+
 const NOWX=()=>W*0.3;
-function targetAt(t){const R=ref(),lo=R*0.12,hi=R*0.78;const ph=((t)/period)%1;return lo+(hi-lo)*(0.5-0.5*Math.cos(2*Math.PI*ph));}
-function mapY(f){const top=54,bot=H-70,R=ref();const fr=Math.max(0,Math.min(1.02,f/(R*1.0)));return bot-(bot-top)*fr;}
+/* The pacer. Its peak is aimN, which climbs; its trough is a fraction of its own
+   peak rather than of the calibrated span, so the whole curve grows together. */
+function targetAt(t){
+  const hi=aimN*ref(),lo=hi*TROUGH,ph=(t/period)%1;
+  return lo+(hi-lo)*(0.5-0.5*Math.cos(2*Math.PI*ph));
+}
+/* Force to screen. The scale is your own top plus HEADROOM, eased, so beating
+   the ribbon rescales the picture smoothly instead of snapping - and there is
+   always visible room above the ribbon's peak to climb into. */
+function mapY(f){
+  const top=H*0.24,bot=H-96;
+  const fr=Math.max(0,Math.min(1,f/(scaleN*Math.max(1,ref()))));
+  return bot-(bot-top)*fr;
+}
+
+/* Rep DETECTION is X3FSet's, not this file's. Its rep closes on a genuine range
+   reversal, so a steady hold is not a rep, the metronome wrapping around is not
+   a rep, and a faster tempo setting cannot manufacture one. All Flow does is
+   notice the count went up and grade the excursion it just saw. */
+function pollReps(now,nf){
+  if(!window.X3FSet||!X3FSet.live)return;
+  let lv;try{lv=X3FSet.live()}catch(e){return}
+  if(lv.reps<=repsSeen)return;
+  repsSeen=lv.reps;
+  const amp=repPeak/Math.max(1,ref());
+  repPeak=0;
+  if(amp>topN)topN=amp;
+  const tier=amp>=topN*PROTO.fullRangeFrac?'full':(amp>=topN*PROTO.midRangeFrac?'mid':'weak');
+  if(tier==='full')fullN++;else if(tier==='mid')midN++;else weakN++;
+  /* The set's tier only ever descends - full, then mid, then weak - which is the
+     shape of a real set and the shape x3f-hud.js announces. */
+  tierNow=weakN?'weak':(midN?'mid':'full');
+  reps++;idleSince=now;
+  cue(tier==='full');
+  if(reps%5===0)toast(reps+' reps');
+}
+
 function loop(now){
   if(!W)resize();
   ctx.clearRect(0,0,W,H);
-  const R=ref(),tol=R*0.14,pps=(W-NOWX())/(period/1000*1.7);
-  // guide lines
+  const R=ref(),tol=R*TOL,pps=(W-NOWX())/(period/1000*1.7);
+  const nf=linear(force);
+
+  /* Beat the ribbon and the ribbon comes up to you, over about a quarter of a
+     second so it reads as the target moving rather than a jump cut. This is the
+     whole answer to "exceeding the target does nothing". */
+  if(nf>aimN)aimN+=(nf-aimN)*0.15;
+  const want=Math.max(aimN,topN,nf)*HEADROOM;
+  scaleN+=(want-scaleN)*(want>scaleN?0.12:0.02);
+
+  // guide lines: the ribbon's floor, the mid-range line, and your session top
   ctx.strokeStyle='rgba(255,255,255,.06)';ctx.lineWidth=1;
-  [0.12,0.45,0.78].forEach(fr=>{const y=mapY(R*fr);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();});
-  // ribbon
+  [aimN*TROUGH,aimN*PROTO.midRangeFrac,aimN].forEach(fr=>{const y=mapY(R*fr);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();});
+  if(topN>0){
+    ctx.strokeStyle='rgba(255,211,92,.35)';ctx.beginPath();
+    const ty=mapY(R*topN);ctx.moveTo(0,ty);ctx.lineTo(W,ty);ctx.stroke();
+  }
+
+  // the ribbon
   const tNow=running?now-setStart:now;
   ctx.beginPath();for(let x=0;x<=W;x+=6){const t=tNow+(x-NOWX())/pps*1000;const y=mapY(targetAt(t));if(x===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
   ctx.lineWidth=Math.max(16,Math.min(60,(mapY(0)-mapY(tol))*2));
   ctx.strokeStyle='rgba(55,214,255,.16)';ctx.lineCap='round';ctx.stroke();
   ctx.lineWidth=2.5;ctx.strokeStyle='rgba(55,214,255,.8)';ctx.stroke();
+
   // now line
   ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(NOWX(),0);ctx.lineTo(NOWX(),H);ctx.stroke();
-  // marker
-  const my=mapY(force),ty=mapY(targetAt(tNow)),onT=Math.abs(force-targetAt(tNow))<tol;
-  ctx.fillStyle=onT?'#2ff0b0':'#ff5d78';ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=18;
+
+  /* ON TARGET IS AT OR ABOVE THE LINE. There is no version of this method where
+     more tension is the error, and the old |force - target| < tol scored a user
+     grinding at 95% exactly like one who had let go. Only falling below counts
+     against you. */
+  const tgt=targetAt(tNow),onT=force>=tgt-tol;
+  const my=mapY(force);
+  ctx.fillStyle=onT?(force>tgt+tol?'#37d6ff':'#2ff0b0'):'#ff5d78';
+  ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=18;
   ctx.beginPath();ctx.arc(NOWX(),my,11,0,7);ctx.fill();ctx.shadowBlur=0;
-  // trail of recent force to the left
-  // scoring
+
   if(running){
-    totF++;if(onT)hitF++;repFrames++;if(onT)repHit++;if(force>repMax)repMax=force;
-    const ph=(tNow/period)%1;
-    if(ph<phasePrev){ // rep boundary
-      const R2=ref(),reached=repMax>=R2*0.78*0.72;
-      if(reached){reps++;miss=0;$('hReps').textContent=reps;cue(true);if(reps%5===0)toast(reps+' reps');}
-      else{miss++;if(miss>=2){endSet(true);}}
-      repMax=0;repHit=0;repFrames=0;
+    totF++;if(onT)hitF++;
+    if(force>repPeak)repPeak=force;
+    pollReps(now,nf);
+    /* Infer the end rather than demand a press: your hands are on the bar. Only
+       armed once a real rep has happened, so the seconds spent picking the bar
+       up at the start are not mistaken for putting it down. */
+    if(reps>=1){
+      if(nf>=IDLE_FRAC)idleSince=now;
+      else if(idleSince&&now-idleSince>IDLE_MS){endSet(true);}
     }
-    phasePrev=ph;
     $('hAcc').textContent=totF?Math.round(hitF/totF*100)+'%':'-';
+    if(hud){
+      /* frac is the EASED display curve - for the meter and nothing else. Every
+         threshold above went through linear(). */
+      let fr=0;try{fr=window.X3FCal?X3FCal.frac(EXSLUG,band,force+calLo()):Math.min(1,nf)}catch(e){fr=Math.min(1,nf)}
+      hud.set({reps:reps,full:fullN,mid:midN,weak:weakN,tier:tierNow,frac:fr});
+    }
   }
   $('hForce').textContent=Math.round(force);
   if(toastT&&now>toastT){$('toast').classList.remove('show');toastT=0;}
@@ -199,8 +456,10 @@ resize();requestAnimationFrame(loop);
 </script>
 <script>function x3tv(){try{if(document.fullscreenElement||document.webkitFullscreenElement){(document.exitFullscreen||document.webkitExitFullscreen).call(document);return}var el=document.documentElement,rf=el.requestFullscreen||el.webkitRequestFullscreen;var r=rf.call(el);Promise.resolve(r).then(function(){if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock("landscape")}).catch(function(){})}catch(e){}}</script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
+
 <script src="x3f-progress.js"></script>
 <script src="x3f-set.js"></script>
+<script src="x3f-hud.js"></script>
 <script src="x3f-music.js"></script>
 <script>/* soundtrack: reacts to your pull where the page exposes one */
 addEventListener("load",function(){try{
@@ -208,6 +467,14 @@ addEventListener("load",function(){try{
   X3FMusic.attach({mood:"flow",getIntensity:f,
     buttonHost:document.querySelector(".topbar")||document.body,buttonClass:"mini"});
 }catch(e){}});</script>
-<script>/* let the reporter measure peak force and time under tension itself */
+<script>/* The reporter measures peak, time under tension, the three rep tiers and the
+   form faults itself, off one force getter. Nothing here re-derives any of it.
+
+   opts.abs is deliberately NOT supplied. It would make slack detection literal
+   in the browser, where raw-baseline is a real absolute signal - but on the TV
+   the shell drives this page through __x3fIngest and `baseline` is pinned to 0,
+   so an "absolute" getter built from raw would read 0 before the first sample
+   and every rep would be accused of going slack. One behaviour on both paths
+   beats a better behaviour on one of them. */
 addEventListener('load',function(){try{X3FSet.watch(function(){return force},function(){return ref()});}catch(e){}});</script>
 </body></html>

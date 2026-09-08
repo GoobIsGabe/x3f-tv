@@ -1,7 +1,21 @@
 <!DOCTYPE html>
 <!-- X3F SPLASH - a bright, jubilant, richly-animated underwater arcade game for the X3 Force bar.
- Force = swim height. Rest low to cruise the deep for bubbles/pearls; pull to rise through fish;
- pull hard to BREACH the surface and grab gold stars for combo bonuses. Endless run, score+combo.
+ Force = swim height: pull to rise through the pearls and fish, pull HARD to breach the surface
+ and take the gold stars. Score + combo, and the art and the feel are unchanged.
+
+ WHAT IT SCORES CHANGED, and it had to. The old loop said "rest low to cruise the deep for
+ bubbles & pearls" and put 42% of its spawns in a band that reached 2% of the calibrated span -
+ a fully slack band. That is the one thing the program forbids outright ("Never let the band go
+ slack at the bottom"), and it was the single most rewarded behaviour in the game. The old combo
+ also decayed on a 1.7 s wall clock, so it measured how FAST you collected, and both the spawn
+ rate and the scroll speed scaled with elapsed seconds, so a long lazy run outscored a short
+ brutal one. Every one of those pointed the fun away from the training.
+
+ Now: nothing spawns in the slack zone at all, the combo is a TENSION chain that breaks only
+ when you let the band go (never on a clock), value rises with height so force is the thing
+ worth chasing, the waterline sits on the full-range line the set reporter actually grades
+ against, and neither spawn rate nor scroll speed knows what time it is.
+
  Shares band/history with the app (x3f_*). ART SLOTS from assets/splash/ (dolphin,star,pearl,bubble,fish)
  layer over the procedural art if present; missing files fall back so it's fully playable + offline. -->
 <html lang="en"><head>
@@ -9,8 +23,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>X3F Splash</title>
 <meta name="theme-color" content="#02243a"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
+     <link>, so a TV with no network yet painted nothing at all until the
+     request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
 :root{
   --bg:#02243a;--panel:rgba(3,34,54,.5);--brd:rgba(255,255,255,.16);--brd2:rgba(255,255,255,.28);
@@ -34,14 +50,27 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #flash{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 45%,rgba(255,240,180,.55),rgba(255,210,120,0) 60%);transition:opacity .5s;mix-blend-mode:screen}
 .vig{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 120px rgba(2,20,40,.5)}
-.hud{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap}
+/* The score chips live at the BOTTOM now. The top of the screen belongs to the
+   shared in-set scoreboard (x3f-hud.js), which is the one thing you have to be
+   able to read from four feet away, side-on, in peripheral vision. Score and
+   combo are the things you look at between sets, so they go where a glance
+   costs nothing. */
+.hud{position:absolute;bottom:10px;left:10px;right:10px;display:flex;gap:8px;pointer-events:none;flex-wrap:wrap;align-items:flex-end}
 .chip{background:rgba(2,28,46,.5);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);border:1px solid var(--brd);border-radius:15px;padding:8px 13px;min-width:78px}
 .chip .k{font-family:var(--n);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
 .chip .v{font-family:var(--n);font-weight:700;font-size:21px;font-variant-numeric:tabular-nums}
 .v.accent{color:var(--accent)}.v.aqua{color:var(--aqua)}.v.coral{color:var(--coral)}
-.cbar{position:absolute;top:58px;left:10px;height:6px;width:120px;border-radius:6px;background:rgba(2,28,46,.5);border:1px solid var(--brd);overflow:hidden;pointer-events:none;opacity:0;transition:opacity .3s}
+/* The tension meter. It used to be an absolutely-positioned bar at top:58px,
+   which is exactly where the four chips landed when they wrapped onto a second
+   row - they overlapped at any width under ~400px. It is a child of the chip it
+   describes now, so that collision is not expressible. It also shows something
+   real: how much of the slack allowance you have spent, draining toward the
+   moment the chain breaks. The old one showed combo SIZE, which the "x7" above
+   it already said. */
+.cbar{display:block;height:5px;width:100%;margin-top:5px;border-radius:5px;background:rgba(2,28,46,.6);border:1px solid var(--brd);overflow:hidden;pointer-events:none;opacity:.35;transition:opacity .3s}
 .cbar.on{opacity:1}
-.cbar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--coral),var(--accent));transition:width .12s}
+.cbar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--mint),var(--accent));transition:width .12s}
+.cbar.slack i{background:linear-gradient(90deg,var(--hot),var(--coral))}
 .toast{position:absolute;left:0;right:0;top:28%;text-align:center;font-family:var(--d);font-weight:700;font-size:clamp(1.8rem,7.5vw,3rem);opacity:0;transform:scale(.8);transition:opacity .2s,transform .2s;pointer-events:none;text-shadow:0 4px 30px rgba(2,20,40,.9),0 0 22px rgba(255,210,63,.6)}
 .toast.show{opacity:1;transform:scale(1)}
 .ctrl{display:flex;gap:8px;align-items:center;padding:8px 12px calc(8px + var(--sab));border-top:1px solid var(--brd);background:linear-gradient(180deg,transparent,rgba(2,20,36,.6));position:relative;z-index:5}
@@ -74,11 +103,10 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <div id="flash"></div>
 <div class="hud">
 <div class="chip"><div class="k">Score</div><div class="v accent" id="hScore">0</div></div>
-<div class="chip"><div class="k">Combo</div><div class="v coral" id="hCombo">x1</div></div>
+<div class="chip"><div class="k">Tension chain</div><div class="v coral" id="hCombo">x1</div><div class="cbar" id="cbar"><i id="cbarFill"></i></div></div>
 <div class="chip"><div class="k">Best</div><div class="v aqua" id="hBest">0</div></div>
 <div class="chip"><div class="k">Force</div><div class="v" id="hForce">0</div></div>
 </div>
-<div class="cbar" id="cbar"><i id="cbarFill"></i></div>
 <div class="toast" id="toast"></div>
 </div>
 <div class="ctrl">
@@ -88,9 +116,9 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 </div>
 </div>
 <div class="scrim show" id="firstrun"><div class="card">
-<div class="tag">Sunlit Reef · collect &amp; breach</div>
+<div class="tag">Sunlit Reef · hold the tension</div>
 <h1>X3F <b>SPLASH</b></h1>
-<p>Your pull is your swim power. Rest low to cruise the deep for bubbles &amp; pearls, pull to rise through the fish, and pull <b>hard</b> to breach the surface and grab gold stars. Catch treasure at every depth to build your combo. Keep it flowing!</p>
+<p>Your pull is your swim power. The higher you swim the richer the water gets — pearls above the shallows, fish near the light, and gold stars for every <b>breach</b> of the surface. The deep is empty, so <b>never let the band go slack</b>: that is the one thing that breaks your chain. Nothing here is on a clock. Slow and strong wins.</p>
 <button class="cta" id="frConnect">Connect Bar</button>
 <button class="cta ghost" id="frDemo">Try Demo (hold to swim up)</button>
 </div></div>
@@ -99,6 +127,7 @@ select,.mini{font-family:var(--n);font-weight:700;font-size:12px;background:var(
 <script src="x3f-hype.js"></script>
 <script src="x3f-progress.js"></script>
 <script src="x3f-set.js"></script>
+<script src="x3f-hud.js"></script>
 <script src="x3f-music.js"></script>
 <script>
 "use strict";
@@ -125,6 +154,16 @@ BANDS.forEach(b=>{const o=document.createElement('option');o.value=b;o.textConte
 bandSel.onchange=()=>{band=bandSel.value;xset('band',band)};
 function logSession(o){try{const h=JSON.parse(localStorage.getItem('x3f_history')||'[]');h.push(Object.assign({t:Date.now(),b:band},o));while(h.length>250)h.shift();localStorage.setItem('x3f_history',JSON.stringify(h))}catch(e){}}
 let cues=xget('cues',true);const cueBtn=$('cueBtn');function syncCue(){cueBtn.textContent=cues?'Cues on':'Cues off'}syncCue();
+/* Cues off means ALL of them, and the whole job is done by writing the setting.
+
+   This used to be a real bug - x3f-hype.js cached x3f_cues at create(), so
+   turning cues off mid-set silenced beep() and left the four-tone fanfare and
+   the confetti haptics running at full volume for the rest of the session. The
+   module's rewrite made cuesOn() read the key live on every call (x3f-hype.js
+   cuesOn), so writing it here is now sufficient. Deliberately NOT also calling
+   hype.mute(): that is the instance-level OVERRIDE, it would do exactly the same
+   thing by a second route, and a redundant call is how the next person concludes
+   the setting alone does not work. */
 cueBtn.onclick=()=>{cues=!cues;xset('cues',cues);syncCue()};
 let actx=null;function beep(f,d,type){if(!cues)return;try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),g=actx.createGain();o.type=type||'sine';o.frequency.value=f;o.connect(g);g.connect(actx.destination);g.gain.setValueAtTime(0.0008,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.2,actx.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.0008,actx.currentTime+d);o.start();o.stop(actx.currentTime+d+0.03)}catch(e){}}
 function collectSfx(v){if(!cues)return;if(navigator.vibrate)navigator.vibrate(9);beep(540+Math.min(700,v*30),0.05);setTimeout(()=>beep(820+Math.min(800,v*30),0.06),40)}
@@ -174,43 +213,256 @@ $('zeroBtn').onclick=()=>{if(demo){baseline=0}else startTare()};
 const cv=$('cv'),ctx=cv.getContext('2d');let W=0,H=0,DPR=1;
 function resize(){DPR=Math.min(devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0)}
 addEventListener('resize',resize);
-const WL=()=>H*0.46;
+
+// ---------- the force model: what a height on this screen MEANS ----------
+/* Two different numbers live here and mixing them up is a real bug, so they are
+   named apart.
+
+   LINEAR - force/ref(). The game's `force` is already floored by the movement's
+   calibrated lo and ref() is X3FCal.span(), so this is arithmetically exactly
+   X3FCal.raw(). It is the honest proportion of the measured range, and every
+   threshold, spawn band and decision below is stated in it.
+
+   EASED - X3FCal.frac(). "There's actually a rather aggressive curve to your
+   strength": mapped linearly, the strong range - where the entire program lives
+   - is squashed into a sliver at the top of the screen and the middle of the
+   movement looks weaker than it feels. Only DRAWING uses this, and it must never
+   reach a threshold, because 0.85 eased is 0.90 linear and a classifier that
+   drifts with a drawing decision is a bug waiting to happen.
+
+   yLin() is the bridge: it pushes a LINEAR threshold through the same easing the
+   dolphin gets, which is the only way the waterline can honestly sit on the line
+   the set reporter is grading against. */
+const PROTO=(window.X3FEX&&X3FEX.protocol)||{fullRangeFrac:0.85,midRangeFrac:0.45,curveExp:0.65,repIdealMs:5000,repsMin:15,repsMax:40};
+function easeOf(x){
+  x=Math.max(0,Math.min(1.12,x));
+  if(window.X3FCal)return X3FCal.frac(EXSLUG,band,calLo()+x*ref());
+  return Math.pow(Math.min(1,x),PROTO.curveExp||0.65);
+}
 const DOLX=()=>W*0.3;
-function forceY(n){const top=H*0.08,bot=H*0.92;return bot-(bot-top)*Math.max(0,Math.min(1.12,n));}
+function forceY(e){const top=H*0.08,bot=H*0.92;return bot-(bot-top)*Math.max(0,Math.min(1.12,e));}
+function yLin(x){return forceY(easeOf(x));}
+
+/* SLACK. "Never let the band go slack at the bottom" is not a preference, and it
+   is the rule the old version of this game rewarded breaking. These two numbers
+   MIRROR x3f-set.js's own SLACK_FRAC and SLACK_MS so the game and the coach mean
+   the same thing by the word - the game just waits a little longer before it
+   costs anything, because a mechanic that punishes you before the reporter would
+   even call it a fault is a mechanic that is lying. (They are detector
+   heuristics x3f-set owns and does not export; if it ever exports them, ask it
+   rather than restating them here.) */
+const SLACK_LINE=0.04, SLACK_MS=800;
+/* "Under tension" starts here, not at zero - the same 0.15 x3f-set.js counts
+   time-under-tension from, "holding a real fraction of the band, not merely
+   touching it". Nothing in the water spawns below it. */
+const TUT_LINE=0.15;
+
+/* THE WATERLINE IS THE FULL-RANGE LINE.
+
+   It used to be a decorative H*0.46, and "breach" meant "get 55% of the way up
+   the screen". It is now the boundary x3f-set.js actually grades a full-range
+   rep at - fullRangeFrac of the top established THIS SESSION, exactly the way
+   the reporter does it, because "if you came in tired and never reached your
+   best, the reps you did manage are still your full range". So breaching is not
+   a screen-height stunt any more: it is a full-range rep, and the horizon rises
+   to meet a strong day. It is smoothed and it never drops during a run, so the
+   sea is a fact rather than a jitter. */
+let liveTop=0,wlY=0,wlAim=0;
+function topLin(){return liveTop>0.25?liveTop:1;}
+function fullLin(){return topLin()*(PROTO.fullRangeFrac||0.85);}
+function midLin(){return topLin()*(PROTO.midRangeFrac||0.45);}
+const WL=()=>wlY;
+function wlTarget(){return Math.max(H*0.14,Math.min(H*0.66,yLin(fullLin())));}
 
 // ---------- game state ----------
-let running=false,runStart=0,score=0,combo=1,comboT=0,elapsed=0,comboMaxT=1.7;
+let running=false,runStart=0,score=0,combo=1,comboBest=1,elapsed=0;
+let slackMs=0,slackBroke=false,reported=true,lastBreach=0,rushT=0,lastTw=-1;
 let dolY=0,dolVY=0,inAir=false,wasAir=false,blinkT=0,tailPh=0;
-let shake=0,flashT=0;
+let shake=0;                                   // flashT was assigned and never read
 const cols=[],parts=[],bubbles=[],fishBg=[],motes=[];
 let spawnT=0;
 for(let i=0;i<28;i++)bubbles.push({x:Math.random(),y:Math.random(),r:1+Math.random()*3.5,sp:.03+Math.random()*.08,ph:Math.random()*7});
 for(let i=0;i<7;i++)fishBg.push({x:Math.random(),y:.55+Math.random()*.4,sp:.02+Math.random()*.03,s:8+Math.random()*10,hue:[20,45,190,320,160][i%5],ph:Math.random()*7});
 for(let i=0;i<40;i++)motes.push({x:Math.random(),y:Math.random(),r:.6+Math.random()*1.6,sp:.004+Math.random()*.02,ph:Math.random()*7});
 
+/* WHERE THE TREASURE IS, and why every band moved.
+
+   The old table used four hard-coded "zones" in a unit nobody defined, placed
+   with forceY(1-ny) - which put 22% of bubbles and 19% of pearls in the SKY, so
+   you had to breach the surface to collect an air bubble. Worse, bubble's zone
+   reached 2% of span: the most common pickup in the game, 42% of spawns, lived
+   in a fully slack band. The most rewarded behaviour in the game was the one
+   behaviour the program forbids.
+
+   Every band is now stated in LINEAR fractions of the range established today,
+   stacked in the order the method cares about, and NOTHING spawns below the
+   under-tension line. The deep is empty water. There is no longer any way to be
+   paid for letting the band go.
+
+   Value rises with height, which is the whole point: force is what is worth
+   chasing, not pickups per second. */
 const TYPES={
-  bubble:{r:13,val:1,col:'#7fe9ff',zone:[0.30,0.98]},
-  pearl :{r:15,val:3,col:'#ffe3f1',zone:[0.35,0.9]},
-  fish  :{r:17,val:2,col:'#ff9a4d',zone:[0.45,0.95]},
-  star  :{r:20,val:5,col:'#ffd23f',zone:[-0.05,0.42]}
+  bubble:{r:13,val:1,col:'#7fe9ff',lo:()=>TUT_LINE,               hi:()=>midLin()},
+  pearl :{r:15,val:2,col:'#ffe3f1',lo:()=>midLin(),               hi:()=>midLin()+(fullLin()-midLin())*0.62},
+  fish  :{r:17,val:3,col:'#ff9a4d',lo:()=>midLin()+(fullLin()-midLin())*0.5, hi:()=>fullLin()*0.99},
+  star  :{r:20,val:6,col:'#ffd23f',lo:()=>fullLin(),              hi:()=>Math.min(1.06,fullLin()*1.18)}
 };
-function spawnCol(now){
-  const roll=Math.random();
-  const t=roll<0.42?'bubble':roll<0.66?'fish':roll<0.84?'pearl':'star';
-  const z=TYPES[t].zone, ny=z[0]+Math.random()*(z[1]-z[0]);
-  cols.push({t,x:W+40,y:forceY(1-ny),r:TYPES[t].r,val:TYPES[t].val,col:TYPES[t].col,ph:Math.random()*7,glint:Math.random()*2});
+let cid=0;
+function spawnCol(t,id){
+  const T=TYPES[t],lo=T.lo(),hi=Math.max(lo+0.01,T.hi());
+  /* A star WAITS. It coasts in over one prescribed rep and then hovers in the
+     dolphin's own column for a beat, because the program prescribes a RANGE -
+     2-3 s each way, so 4-6 s a rep - and a jackpot that only lands for one exact
+     tempo would be a coincidence rather than a reward. The hover is what turns a
+     +/-0.35 s catch window into one that covers the whole prescribed range. */
+  cols.push({t,cid:(id==null?++cid:id),x:W+40,y:yLin(lo+(0.3+Math.random()*0.4)*(hi-lo)),
+             r:T.r,val:T.val,col:T.col,ph:Math.random()*7,glint:Math.random()*2,
+             hold:(t==='star'?1.6:0)});
 }
+
+/* TREASURE ARRIVES AS A COLUMN, AND YOU MAY TAKE ONE THING FROM IT.
+
+   This is the change that finally stopped the game rewarding speed, and it took
+   a measurement to find. The first attempt kept the old scattered field and only
+   moved the bands; driven with synthetic traces, 2 s reps still outscored 5 s
+   reps by 60%, because a scattered field pays for CROSSINGS - a fast oscillation
+   sweeps through every band twice as often and hoovers up whatever happens to be
+   there. That is precisely "increase the repetition speed to break a personal
+   record", rebuilt.
+
+   A column carries one of each depth and passes you once. Whatever height you
+   are holding when it arrives is what you take, and the rest of the column goes
+   by. So the score stops counting how often you move and starts measuring where
+   you LIVE - which is the whole method: "you move to full extension without
+   lockout until you can no longer reach that stronger range."
+
+   A cosine spends the same fraction of its time at each height whatever its
+   period, so a rushed rep and a controlled rep now earn the same from the
+   columns - and only the controlled one earns the stars, because only the
+   controlled one has them arriving in phase. Slow is never worse and is usually
+   much better. */
+function spawnColumn(){
+  const id=++cid;
+  spawnCol('bubble',id);spawnCol('pearl',id);spawnCol('fish',id);
+}
+/* THE STAR IS PAID FOR A REP, AND IT ARRIVES ON THE NEXT ONE.
+
+   A star is minted at the moment you BREACH - i.e. when you reach full range -
+   and it enters from the right edge. Scroll speed is set so that the journey
+   from the edge to the dolphin's own column takes exactly one prescribed
+   repetition (X3FEX.protocol.repIdealMs, 5 s), which means the star you earned
+   at the top of THIS rep arrives at the top of the NEXT one. Do the reps at the
+   tempo the program asks for and the jackpot lands in your hands; rush them and
+   it sails past while you are down at the bottom. The game pays for the tempo
+   instead of for the rate, which is the whole argument: "sometimes individuals
+   will start to increase the repetition speed so they can break a personal
+   record. Don't do that."
+
+   Note it is measured to DOLX(), not to the far edge - the dolphin sits 30% in,
+   so timing it across the full width would deliver every star a rep and a half
+   early, which is exactly the bug this replaced. */
+function SCROLL(){return Math.max(40,(W+40-DOLX())/Math.max(2,(PROTO.repIdealMs||5000)/1000));}
+/* THE SHARED IN-SET SCOREBOARD.
+
+   Splash never had a rep counter at all, which is the whole problem with it as a
+   training tool: you could not tell from the screen what you had actually done.
+   x3f-hud.js is the one number you can read from four to eight feet away, side-on
+   to the television, in peripheral vision, for a fraction of a second between
+   reps - and it is the same number, the same size, in the same place in every
+   game. It does not replace the art or the score chrome; it lays over them.
+
+   Its reps come from X3FSet.live(), the same detector that will write the log, so
+   what the screen says during the set and what the history says afterwards can
+   never disagree. Splash counts nothing itself. */
+const EXNAME=(function(){try{const e=window.X3FEX&&EXSLUG?X3FEX.get(EXSLUG):null;return e?e.name:'Splash'}catch(e){return 'Splash'}})();
+/* done() latches the instance shut on purpose - the final number must not be
+   overwritten - so a second run gets a second scoreboard rather than a silent
+   one. */
+let hud=null;
+function newHud(){
+  try{if(hud)hud.destroy()}catch(e){}
+  hud=window.X3FHUD?X3FHUD.create({host:document.body,name:EXNAME}):null;
+  if(hud)hud.el.style.display='none';
+}
+newHud();
+
 let toastT=0;
 function toast(t){$('toast').textContent=t;$('toast').classList.add('show');toastT=performance.now()+1300;}
-function startRun(){running=true;runStart=performance.now();score=0;combo=1;comboT=0;elapsed=0;cols.length=0;spawnT=0;
+function startRun(){running=true;runStart=performance.now();score=0;combo=1;comboBest=1;elapsed=0;cols.length=0;spawnT=0;
+  slackMs=0;slackBroke=false;lastBreach=0;rushT=0;reported=false;liveTop=0;cid=0;lastTw=-1;
+  /* Reset the WATCHER, not just the game. X3FSet.watch() starts sampling at page
+     load and only clears itself inside report(), so the first run of a session
+     used to report a time-under-tension that spanned everything since the page
+     opened - four minutes of warming up and reading the screen unlocked "Under
+     Tension 3" on the spot. Bloom already did this; these two never did. */
+  try{if(window.X3FSet)X3FSet.reset()}catch(e){}
   if(hype)hype.reset();
-  $('startBtn').textContent='Surface';$('hScore').textContent='0';$('hCombo').textContent='x1';toast('Dive in!');beep(620,0.12);}
-function endRun(){running=false;$('startBtn').textContent='Dive In';$('cbar').classList.remove('on');
+  newHud();
+  if(hud){hud.el.style.display='';hud.set({reps:0,full:0,mid:0,weak:0,tier:'full',frac:0});}
+  $('startBtn').textContent='Surface';$('hScore').textContent='0';$('hCombo').textContent='x1';
+  $('cbar').classList.add('on');$('cbarFill').style.width='100%';
+  toast('Dive in!');beep(620,0.12);}
+
+/* END OF RUN, and it now has more than one way in.
+
+   Pressing "Surface" was the ONLY path that logged anything. Pressing Back,
+   closing the tab, or the TV's Back key threw the whole run away - real training,
+   under tension, gone. endRun() is idempotent (`reported`) so the button, the
+   pagehide handler and a backgrounded tab can all call it and exactly one entry
+   is written.
+
+   A run in which literally nothing happened - no score, no rep, no tension - is
+   not written at all. That is a floor, not the answer to "three quick attempts
+   read as three sessions": the answer to that is upstream and is why this report
+   carries a score and NO rep count. That combination is what marks the entry
+   `run`, and x3f-progress.js folds same-day runs of the same game, movement and
+   band into a single session. Passing a rep count here would silently reclassify
+   every run as a set and undo it. The watcher still fills in the reps, tiers,
+   peak and time under tension it measured itself, so the entry is completely
+   honest - it is just honestly a run. */
+function endRun(quiet){
+  if(!running&&reported)return;
+  running=false;reported=true;
+  $('startBtn').textContent='Dive In';$('cbar').classList.remove('on');
+  /* The counter stays put for a few seconds - the last number is the one you
+     want to read, and replacing it the moment you stop is how a rep count gets
+     missed - then it gets out of the way of the topbar. */
+  if(hud){const h=hud;h.done();
+    setTimeout(function(){if(!running&&hud===h)h.el.style.display='none'},6000);}
   if(score>bestScore){bestScore=score;xset('splashBest',bestScore);$('hBest').textContent=bestScore;}
-  if(combo>bestCombo){bestCombo=combo;xset('splashCombo',bestCombo);}
-  if(window.X3FSet)X3FSet.report({g:'splash',score:Math.round(score),hype:hype});
-  else logSession({g:'splash',score:Math.round(score),combo:combo});beep(430,0.16);toast('Nice run · '+Math.round(score));}
+  /* The best combo of the RUN, not the combo you happened to be holding when you
+     quit. It used to read `combo` at this instant, and the chain resets, so a 40x
+     chain followed by two seconds of coasting recorded a 1. */
+  if(comboBest>bestCombo){bestCombo=comboBest;xset('splashCombo',bestCombo);}
+  const secs=Math.max(0,Math.round(elapsed));
+  const seen=(window.X3FSet&&X3FSet.seen)?X3FSet.seen():{reps:0,tut:0};
+  const worth=Math.round(score)>0||(seen.reps||0)>0||(seen.tut||0)>2;
+  if(!worth){toast('Nothing logged');beep(300,0.12);return;}
+  if(window.X3FSet)X3FSet.report({g:'splash',score:Math.round(score),secs:secs,hype:hype,announce:!quiet});
+  else logSession({g:'splash',score:Math.round(score),combo:comboBest,secs:secs});
+  beep(430,0.16);if(!quiet)toast('Nice run · '+Math.round(score));}
 $('startBtn').onclick=()=>{running?endRun():startRun();};
+/* Leaving the page is not a reason to lose a set. There is no beforeunload here
+   on purpose - a confirm dialog mid-workout is worse than the bug - so the run is
+   banked on the way out instead. pagehide fires on the TV's Back key and on a
+   tab close; visibilitychange covers switching apps, where the rAF loop stops and
+   the run cannot continue anyway. */
+addEventListener('pagehide',function(){if(running)endRun(true)});
+/* "Back during a set is pause, not exit" - but only up to a point. A glance away
+   is not the end of a set; twenty seconds of not looking at the screen while
+   holding a loaded bar is. Under the grace period the hidden time is simply
+   subtracted, so the logged duration stays honest; over it, the run is banked
+   rather than left to be resumed, because one entry spanning a two-second
+   notification and a twenty-minute absence is not an honest set. */
+const RESUME_GRACE_MS=20000;
+let hiddenAt=0;
+addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='hidden'){if(running)hiddenAt=performance.now();return;}
+  if(!running||!hiddenAt)return;
+  const gap=performance.now()-hiddenAt;hiddenAt=0;
+  if(gap>RESUME_GRACE_MS){endRun(true);return;}
+  runStart+=gap;lastT+=gap;if(toastT)toastT+=gap;if(lastBreach)lastBreach+=gap;if(rushT)rushT+=gap;
+});
 
 // ---------- particle engine ----------
 function P(o){o.life=0;o.max=o.max||1;parts.push(o);if(parts.length>320)parts.shift();}
@@ -234,21 +486,47 @@ function drawParts(dt,now){
 }
 
 // ---------- environment ----------
+/* THE SKY, THE SUN, THE CLOUDS, THE WATER AND THE CORAL ARE NOT ANIMATED, so
+   they are painted once into an offscreen canvas and blitted.
+
+   They used to be rebuilt from scratch sixty times a second - three gradient
+   allocations, four arcs for the sun, twenty-seven for the clouds and nine
+   quadratics for the reef, every frame, forever - on a television SoC that also
+   has to run the audio scheduler without a dropout. Bloom already showed how
+   (its bgC), and this is the same move. The only thing that invalidates the
+   cache is a resize or the waterline settling somewhere new, and the waterline
+   settles once per set.
+
+   What stays live is only what actually moves: the god rays, the caustics, the
+   plankton, the coral polyps, the ambient bubbles, the background fish and the
+   foam. Their step sizes are coarser too - a caustic sampled every 22px instead
+   of every 12 is indistinguishable at any viewing distance and is half the path. */
+const envC=document.createElement('canvas'),ectx=envC.getContext('2d');
+let envW=-1,envH=-1,envWl=-1;
+function buildEnv(){
+  const wl=WL();envW=W;envH=H;envWl=wl;
+  envC.width=Math.max(1,Math.round(W*DPR));envC.height=Math.max(1,Math.round(H*DPR));
+  ectx.setTransform(DPR,0,0,DPR,0,0);ectx.clearRect(0,0,W,H);
+  const sx=W*0.76,sy=Math.max(18,wl*0.42),sr=Math.min(W,H)*0.075;
+  let sky=ectx.createLinearGradient(0,0,0,Math.max(1,wl));sky.addColorStop(0,'#8fe3ff');sky.addColorStop(1,'#e7fbff');
+  ectx.fillStyle=sky;ectx.fillRect(0,0,W,wl);
+  let sg=ectx.createRadialGradient(sx,sy,0,sx,sy,sr*4);sg.addColorStop(0,'rgba(255,246,190,.9)');sg.addColorStop(.3,'rgba(255,240,170,.35)');sg.addColorStop(1,'rgba(255,240,170,0)');
+  ectx.fillStyle=sg;ectx.fillRect(0,0,W,wl);
+  ectx.fillStyle='#fff6c8';ectx.beginPath();ectx.arc(sx,sy,sr,0,7);ectx.fill();
+  ectx.fillStyle='rgba(255,255,255,.78)';
+  [[0.15,0.2,1],[0.5,0.13,.7],[0.86,0.26,.8]].forEach(([cx,cy,cs])=>{const x=cx*W,y=cy*wl,r=sr*cs;ectx.beginPath();ectx.arc(x,y,r,0,7);ectx.arc(x+r,y+r*.2,r*.8,0,7);ectx.arc(x-r,y+r*.2,r*.7,0,7);ectx.fill();});
+  let wat=ectx.createLinearGradient(0,wl,0,H);wat.addColorStop(0,'#25c6e6');wat.addColorStop(.4,'#0f9fc9');wat.addColorStop(1,'#053f66');
+  ectx.fillStyle=wat;ectx.fillRect(0,wl,W,H-wl);
+  const cbase=H;ectx.fillStyle='rgba(3,40,66,.9)';
+  for(let i=0;i<9;i++){const x=(i/8)*W;const h=(H-wl)*(0.15+0.12*Math.sin(i*1.7));ectx.beginPath();ectx.moveTo(x-26,cbase);ectx.quadraticCurveTo(x-8,cbase-h,x,cbase-h*0.7);ectx.quadraticCurveTo(x+8,cbase-h,x+26,cbase);ectx.closePath();ectx.fill();}
+}
 function drawEnv(now){
   const wl=WL();
-  let sky=ctx.createLinearGradient(0,0,0,wl);sky.addColorStop(0,'#8fe3ff');sky.addColorStop(1,'#e7fbff');
-  ctx.fillStyle=sky;ctx.fillRect(0,0,W,wl);
-  const sx=W*0.76,sy=wl*0.42,sr=Math.min(W,H)*0.075;
-  let sg=ctx.createRadialGradient(sx,sy,0,sx,sy,sr*4);sg.addColorStop(0,'rgba(255,246,190,.9)');sg.addColorStop(.3,'rgba(255,240,170,.35)');sg.addColorStop(1,'rgba(255,240,170,0)');
-  ctx.fillStyle=sg;ctx.fillRect(0,0,W,wl);
-  ctx.fillStyle='#fff6c8';ctx.beginPath();ctx.arc(sx,sy,sr,0,7);ctx.fill();
+  if(envW!==W||envH!==H||Math.abs(envWl-wl)>3)buildEnv();
+  ctx.drawImage(envC,0,0,W,H);
+  const sx=W*0.76,sy=Math.max(18,wl*0.42),sr=Math.min(W,H)*0.075;
   // sun glints
   ctx.save();ctx.globalCompositeOperation='screen';for(let i=0;i<3;i++){const t=now*0.001+i*2;const gx=sx+Math.cos(t)*sr*1.3,gy=sy+Math.sin(t*1.3)*sr*1.3;ctx.fillStyle='rgba(255,255,255,'+(0.15+0.1*Math.sin(t*3))+')';ctx.beginPath();ctx.arc(gx,gy,2+1.5*Math.sin(t*2),0,7);ctx.fill();}ctx.restore();
-  ctx.fillStyle='rgba(255,255,255,.78)';
-  [[0.15,0.2,1],[0.5,0.13,.7],[0.86,0.26,.8]].forEach(([cx,cy,cs])=>{const x=cx*W,y=cy*wl,r=sr*cs;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.arc(x+r,y+r*.2,r*.8,0,7);ctx.arc(x-r,y+r*.2,r*.7,0,7);ctx.fill();});
-  // water
-  let wat=ctx.createLinearGradient(0,wl,0,H);wat.addColorStop(0,'#25c6e6');wat.addColorStop(.4,'#0f9fc9');wat.addColorStop(1,'#053f66');
-  ctx.fillStyle=wat;ctx.fillRect(0,wl,W,H-wl);
   ctx.save();ctx.beginPath();ctx.rect(0,wl,W,H-wl);ctx.clip();
   // god rays
   ctx.globalCompositeOperation='screen';
@@ -258,22 +536,21 @@ function drawEnv(now){
   // caustic network
   for(let i=0;i<4;i++){const y=wl+50+i*((H-wl)/4.2);const t=now*0.0005+i;
     ctx.strokeStyle='rgba(180,255,255,.05)';ctx.lineWidth=9;ctx.beginPath();
-    for(let x=-10;x<=W;x+=12)ctx.lineTo(x,y+Math.sin(x*0.02+t)*9+Math.cos(x*0.05-t)*4);ctx.stroke();}
+    for(let x=-10;x<=W+22;x+=22)ctx.lineTo(x,y+Math.sin(x*0.02+t)*9+Math.cos(x*0.05-t)*4);ctx.stroke();}
   // plankton motes
   ctx.globalCompositeOperation='source-over';
   motes.forEach(m=>{m.x-=m.sp*dtGlobal*0.4;m.y-=m.sp*dtGlobal*0.15;if(m.x<0)m.x=1;if(m.y<0)m.y=1;m.ph+=dtGlobal;
     const x=m.x*W,y=wl+((m.y*(H-wl)));const tw=0.15+0.2*Math.abs(Math.sin(m.ph));ctx.fillStyle='rgba(220,250,255,'+tw+')';ctx.beginPath();ctx.arc(x,y,m.r,0,7);ctx.fill();});
   ctx.restore();
-  // coral bottom
-  const cbase=H;ctx.fillStyle='rgba(3,40,66,.9)';
-  for(let i=0;i<9;i++){const x=(i/8)*W;const h=(H-wl)*(0.15+0.12*Math.sin(i*1.7));ctx.beginPath();ctx.moveTo(x-26,cbase);ctx.quadraticCurveTo(x-8,cbase-h,x,cbase-h*0.7);ctx.quadraticCurveTo(x+8,cbase-h,x+26,cbase);ctx.closePath();ctx.fill();}
+  // coral polyps (the reef itself is in the cached layer)
+  const cbase=H;
   [['#ff7a9c',0.12],['#ffb04d',0.4],['#8f7dff',0.66],['#39f5c4',0.88]].forEach(([c,fx],i)=>{const x=fx*W,y=cbase-6;ctx.fillStyle=c;ctx.globalAlpha=.5;for(let b=0;b<4;b++){ctx.beginPath();ctx.arc(x+(b-1.5)*10,y-Math.abs(Math.sin(b+i+now*0.001))*22,7,0,7);ctx.fill();}ctx.globalAlpha=1;});
   // ambient bubbles + bg fish
   bubbles.forEach(b=>{b.y-=b.sp*dtGlobal;if(b.y<-0.02){b.y=1.02;b.x=Math.random();}b.ph+=dtGlobal*2;const x=(b.x*W)+Math.sin(b.ph)*7,y=wl+b.y*(H-wl);ctx.strokeStyle='rgba(220,250,255,.32)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(x,y,b.r,0,7);ctx.stroke();});
-  fishBg.forEach(f=>{f.x-=f.sp*dtGlobal;if(f.x<-0.05)f.x=1.05;f.ph+=dtGlobal*3;const x=f.x*W,y=f.y*H+Math.sin(f.ph)*4;ctx.fillStyle='hsla('+f.hue+',80%,65%,.5)';ctx.beginPath();ctx.ellipse(x,y,f.s,f.s*0.6,0,0,7);ctx.moveTo(x+f.s,y);ctx.lineTo(x+f.s*1.6,y-f.s*0.5);ctx.lineTo(x+f.s*1.6,y+f.s*0.5);ctx.fill();});
+  fishBg.forEach(f=>{f.x-=f.sp*dtGlobal;if(f.x<-0.05)f.x=1.05;f.ph+=dtGlobal*3;const x=f.x*W,y=Math.max(wl+10,f.y*H)+Math.sin(f.ph)*4;ctx.fillStyle='hsla('+f.hue+',80%,65%,.5)';ctx.beginPath();ctx.ellipse(x,y,f.s,f.s*0.6,0,0,7);ctx.moveTo(x+f.s,y);ctx.lineTo(x+f.s*1.6,y-f.s*0.5);ctx.lineTo(x+f.s*1.6,y+f.s*0.5);ctx.fill();});
   // animated foam waterline
-  ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=2.5;ctx.beginPath();for(let x=0;x<=W;x+=8)ctx.lineTo(x,wl+Math.sin(x*0.03+now*0.002)*3);ctx.stroke();
-  ctx.fillStyle='rgba(255,255,255,.16)';for(let x=0;x<=W;x+=26){const fx=x+Math.sin(now*0.002+x)*4,fy=wl+Math.sin(x*0.03+now*0.002)*3;ctx.beginPath();ctx.arc(fx,fy,2.4+1.4*Math.sin(now*0.004+x),0,7);ctx.fill();}
+  ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=2.5;ctx.beginPath();for(let x=0;x<=W+14;x+=14)ctx.lineTo(x,wl+Math.sin(x*0.03+now*0.002)*3);ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.16)';for(let x=0;x<=W;x+=34){const fx=x+Math.sin(now*0.002+x)*4,fy=wl+Math.sin(x*0.03+now*0.002)*3;ctx.beginPath();ctx.arc(fx,fy,2.4+1.4*Math.sin(now*0.004+x),0,7);ctx.fill();}
 }
 
 // ---------- collectibles ----------
@@ -349,38 +626,111 @@ function bubbleTrail(x,y){const u=Math.min(W,H)*0.052;P({ty:'bub',x:x-u*2.4,y:y+
 let lastT=performance.now(),dtGlobal=0.016;
 function loop(now){
   if(!W)resize();
-  const dt=Math.min(0.05,(now-lastT)/1000);lastT=now;dtGlobal=dt;
-  const R=ref(), n=force/R;
+  /* dt is floored at zero as well as capped. A rAF timestamp is the START of the
+     frame, so the very first one can predate the `lastT` captured during script
+     evaluation - and a negative dt runs the whole simulation backwards for one
+     frame: particle lifetimes go negative, and the ring particles then ask the
+     canvas for a negative radius, which throws out of the render loop. */
+  const dt=Math.max(0,Math.min(0.05,(now-lastT)/1000));lastT=now;dtGlobal=dt;
+  const R=ref(), n=force/R;                    // LINEAR - every decision below
+  const e=easeOf(n);                           // EASED - drawing only
+
+  /* Ask the reporter what the set looks like so far. It is the same detector
+     that will write the log, so the scoreboard and the history cannot disagree,
+     and the game does not re-implement a single thing it already does. */
+  let L=null;
+  if(window.X3FSet&&X3FSet.live){L=X3FSet.live();if(L.top>liveTop)liveTop=L.top;}
+  // The horizon eases toward the full-range line and never snaps.
+  wlAim=wlTarget();if(!wlY)wlY=wlAim;wlY+=(wlAim-wlY)*Math.min(1,dt*1.2);
+
   // screen shake
   ctx.save();
   if(shake>0.1){const sxk=(Math.random()-0.5)*shake,syk=(Math.random()-0.5)*shake;ctx.translate(sxk,syk);shake*=0.86;}
   ctx.clearRect(-30,-30,W+60,H+60);
   drawEnv(now);
-  // dolphin physics
-  const targetY=forceY(n);dolVY+=(targetY-dolY)*10*dt;dolVY*=0.86;dolY+=dolVY*dt;
-  if(dolY<40)dolY=40;if(dolY>H-24)dolY=H-24;
+  /* DOLPHIN HEIGHT IS A FORCE READOUT, so it has to be honest.
+
+     It used to be a heavy critically-damped spring - dolVY += (target-dolY)*10*dt,
+     damped 0.86 - which lagged the force by about a second. On a 2.5 s pull that
+     is a 25% undershoot, so with the waterline sitting on the real full-range
+     line the dolphin could not breach it no matter how hard you pulled: the
+     picture and the threshold disagreed, which is exactly the defect that taught
+     Bloom's players to under-pull.
+
+     Now it is an exponential tracker with a ~0.14 s time constant, and it is
+     frame-rate independent (the old one behaved differently at 30 fps than at
+     60). The velocity that drives the tilt, the squash and the tail wag is
+     derived from the motion that actually happened, so all of the character
+     survives - it just cannot lie about your force any more. */
+  const targetY=forceY(e);
+  const prevY=dolY;
+  dolY+=(targetY-dolY)*(1-Math.pow(0.0008,dt));
+  if(dolY<H*0.04)dolY=H*0.04;if(dolY>H-H*0.03)dolY=H-H*0.03;
+  dolVY=(dolY-prevY)/Math.max(dt,1e-4);
   inAir=dolY<WL();
-  if(inAir&&!wasAir){spray(DOLX(),WL(),-1,20,'rgba(210,248,255,');foamRing(DOLX(),WL());beep(720,0.05);shake=Math.max(shake,7);}
+  if(inAir&&!wasAir){
+    spray(DOLX(),WL(),-1,20,'rgba(210,248,255,');foamRing(DOLX(),WL());beep(720,0.05);shake=Math.max(shake,7);
+    /* A BREACH IS A FULL-RANGE REP, and this is where the jackpot is minted -
+       but ONLY if the rep that produced it was not rushed.
+
+       X3FEX.protocol.repMinMs is the program's own line: "a rep faster than this
+       is being rushed", 4 s, from "a controlled 2-3 second tempo up and down".
+       So the game simply does not pay for a rep taken faster than that, and says
+       so. This is the most direct answer available to "sometimes individuals will
+       start to increase the repetition speed so they can break a personal
+       record. Don't do that." A cooldown also falls out of it for free: a wobble
+       on the surface cannot mint a shoal. */
+    if(running){
+      const gap=now-lastBreach;
+      if(gap>=(PROTO.repMinMs||4000)){spawnCol('star');}
+      else if(lastBreach&&now>rushT){rushT=now+2500;toast('Too fast · slow it down');beep(240,0.14);}
+      lastBreach=now;
+    }
+  }
   if(!inAir&&wasAir){spray(DOLX(),WL(),1,22,'rgba(210,248,255,');foamRing(DOLX(),WL());beep(360,0.06);shake=Math.max(shake,9);}
   wasAir=inAir;
   if(running){
     elapsed=(now-runStart)/1000;
-    spawnT-=dt;const rate=Math.max(0.4,0.9-elapsed*0.006);
-    if(spawnT<=0){spawnCol(now);spawnT=rate;}
-    comboT-=dt;if(comboT<=0&&combo>1){combo=1;$('hCombo').textContent='x1';$('hCombo').style.color='';$('cbar').classList.remove('on');}
+    // A fixed cadence. No elapsed term: duration is not an achievement.
+    spawnT-=dt;
+    if(spawnT<=0){spawnColumn();spawnT=1.2;}
+    /* THE TENSION CHAIN. There is no clock on it. The only thing that breaks it
+       is letting the band go slack, which is the one rule the program states
+       without qualification. */
+    if(n<SLACK_LINE)slackMs+=dt*1000;else{slackMs=0;slackBroke=false;}
+    // Only touch the DOM when the bar would actually look different.
+    const tw=Math.round(Math.max(0,100-slackMs/SLACK_MS*100));
+    if(tw!==lastTw){lastTw=tw;$('cbarFill').style.width=tw+'%';$('cbar').classList.toggle('slack',tw<100);}
+    if(slackMs>=SLACK_MS&&!slackBroke){
+      slackBroke=true;
+      if(combo>1){combo=1;$('hCombo').textContent='x1';$('hCombo').style.color='';
+        toast('Tension lost');beep(190,0.2);if(hype)hype.say('SLACK','keep the band loaded',false);}
+    }
   }
-  const dx=DOLX(),dolR=Math.min(W,H)*0.06,spd=W*0.16*(1+(running?elapsed*0.01:0));
-  for(let i=cols.length-1;i>=0;i--){const c=cols[i];c.x-=spd*dt;
+  const dx=DOLX(),dolR=Math.min(W,H)*0.06,spd=SCROLL();
+  for(let i=cols.length-1;i>=0;i--){const c=cols[i];
+    if(c.dead){cols.splice(i,1);continue;}          // a column already spent
+    if(c.hold>0&&c.x<=dx+2)c.hold-=dt; else c.x-=spd*dt;
     const ddx=c.x-dx,ddy=c.y-dolY,rr=c.r+dolR;
-    if(ddx*ddx+ddy*ddy<rr*rr){
-      combo=Math.min(99,combo+1);comboT=comboMaxT;const gained=c.val*combo;score+=gained;
+    /* Scoring only happens while the run is live. It used to be outside the
+       `running` gate and endRun() did not clear the field, so pressing Surface
+       at 1,200 points banked 1,200 and then let the dolphin drift through six
+       more pickups while the HUD climbed to 1,340 - a number the player would
+       reasonably believe was recorded, and never was. */
+    if(running&&ddx*ddx+ddy*ddy<rr*rr){
+      combo=Math.min(99,combo+1);if(combo>comboBest)comboBest=combo;
+      const gained=c.val*combo;score+=gained;
       const col=c.t==='star'?'rgba(255,225,120,':'rgba(255,255,255,';
       sparkle(c.x,c.y,col,14);foamRing(c.x,c.y);plus(c.x,c.y-c.r,'+'+gained,c.t==='star'?'#ffe27a':'#eafcff');
       collectSfx(c.val);$('hScore').textContent=Math.round(score);$('hCombo').textContent='x'+combo;$('hCombo').style.color=combo>=5?'#ffd23f':'';
-      $('cbar').classList.add('on');$('cbarFill').style.width=Math.min(100,combo/12*100)+'%';
       if(hype)hype.set(score);
       if(c.t==='star'){shake=Math.max(shake,6);}
-      if(combo>0&&combo%10===0){toast('COMBO x'+combo+'!');if(hype)hype.say('x'+combo+' COMBO','keep it flowing',combo>=20);if(music)music.duck(.7);shockwave(dx,dolY,'rgba(255,220,120,');shake=Math.max(shake,12);flashT=now+120;$('flash').style.opacity='0.7';setTimeout(()=>$('flash').style.opacity='0',60);}
+      /* The rest of that column sails past. One thing per wave is what makes the
+         score a measure of altitude rather than of activity. Marked rather than
+         spliced: this loop walks downward, and removing entries BELOW the cursor
+         mid-walk makes the cursor point at a different object. */
+      for(let j=0;j<cols.length;j++)if(cols[j].cid===c.cid)cols[j].dead=1;
+      if(combo>0&&combo%10===0){toast('CHAIN x'+combo+'!');if(hype)hype.say('x'+combo+' UNBROKEN','tension never dropped',combo>=20);if(music)music.duck(.7);shockwave(dx,dolY,'rgba(255,220,120,');shake=Math.max(shake,12);$('flash').style.opacity='0.7';setTimeout(()=>$('flash').style.opacity='0',60);}
       cols.splice(i,1);continue;
     }
     if(c.x<-50){cols.splice(i,1);continue;}
@@ -389,11 +739,14 @@ function loop(now){
   drawParts(dt,now);
   drawDolphin(dx,dolY,dolVY,inAir,now);
   $('hForce').textContent=Math.round(force);
+  /* The scoreboard. `frac` is the EASED value because it is a picture of where
+     you are, and the tier and the counts are the reporter's, not ours. */
+  if(hud&&running&&L)hud.set({reps:L.reps,full:L.full,mid:L.mid,weak:L.weak,tier:L.tier||'full',frac:e});
   if(toastT&&now>toastT){$('toast').classList.remove('show');toastT=0;}
   ctx.restore();
   requestAnimationFrame(loop);
 }
-resize();dolY=forceY(0);requestAnimationFrame(loop);
+resize();wlY=wlTarget();dolY=forceY(0);requestAnimationFrame(loop);
 
 // ---------- milestone moments + soundtrack ----------
 // Score climbs fast here, so the ladder is coarse; the combo gets its own
@@ -402,8 +755,14 @@ const hype=window.X3FHype?X3FHype.create({host:$('stage'),unit:'points',
   theme:{hot:'#ffd23f',cool:'#31e8ff',text:'#eafcff'},
   ladder:[100,250,500,750,1000,1500,2000,3000,5000,7500,10000],
   best:()=>bestScore}):null;
+/* Intensity is FORCE, and only force. It used to be
+   max(force/ref()*0.8, (combo-1)/12), so a held combo kept the arrangement wide
+   open while the player was resting at zero - the soundtrack literally rewarded
+   not pulling. Now that the chain survives until the band goes slack, that term
+   would have kept the music up for the whole set no matter what was happening on
+   the bar. The room should sound like the effort. */
 const music=window.X3FMusic?X3FMusic.create({mood:'splash',
-  getIntensity:()=>Math.min(1,Math.max(force/ref()*0.8,(combo-1)/12))}):null;
+  getIntensity:()=>Math.min(1,(force/ref())*1.05)}):null;
 (function(){const b=$('musicBtn');if(!b)return;
   const sync=()=>{b.textContent=(music&&music.isOn())?'Music on':'Music off';};
   sync();b.onclick=()=>{if(music)music.toggle();sync();};})();

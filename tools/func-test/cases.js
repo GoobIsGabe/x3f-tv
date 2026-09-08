@@ -3,6 +3,10 @@
   var F = window.__func, P = window.X3FProg;
   var page = (location.pathname.split('/').pop() || '');
   var ok = F.ok, txt = F.txt, has = F.has, click = F.click;
+  /* needId/needSel/nth report a FAIL and hand back an inert stand-in instead of
+     throwing, so one renamed id costs one assertion rather than the whole
+     report. See the comment on them in func.js. */
+  var needId = F.needId, needSel = F.needSel, nth = F.nth, callShell = F.callShell;
 
   // the pages under test were already parsed and ran their own boot with whatever
   // localStorage held, so seed and then force a re-render where one is exposed
@@ -52,7 +56,7 @@
         localStorage.setItem('x3f_history', '[]');
         rerender();
         ok('cleared log empties the PB table', document.querySelectorAll('#pbs .pbrow').length === 0);
-        var box = document.getElementById('impBox');
+        var box = needId('impBox');
         box.style.display = 'block'; box.value = payload;
         var oldAlert = window.alert; window.alert = function () {};
         click('impBtn');
@@ -65,7 +69,7 @@
         ok('each recent row offers a delete', !!document.querySelector('#recent [data-del]'));
         var setsBefore = P.sets().length;
         var oldConfirm = window.confirm; window.confirm = function () { return true; };
-        document.querySelector('#recent [data-del]').click();
+        needSel('#recent [data-del]').click();
         window.confirm = oldConfirm;
         ok('deleting a set removes it (' + P.sets().length + ' of ' + setsBefore + ')',
            P.sets().length === setsBefore - 1);
@@ -105,10 +109,10 @@
         var before = P.sets().length;
         click('startSession');
         wait(function () {
-          ok('guided coach opens', document.getElementById('coach').classList.contains('show'));
+          ok('guided coach opens', needId('coach').classList.contains('show'));
           var lift1 = txt('cName');
           ok('coach names a lift', lift1.length > 2, lift1);
-          ok('form canvas is sized', document.getElementById('demoCv').width > 0);
+          ok('form canvas is sized', needId('demoCv').width > 0);
           var oldAlert = window.alert; window.alert = function () {};
           click('cLog');
           wait(function () {
@@ -118,16 +122,16 @@
             ok('the logged set names the band', !!(last.band || last.b), last.band || last.b);
             ok('with one set per lift, logging advances the lift', txt('cName') !== lift1,
                lift1 + ' -> ' + txt('cName'));
-            ok('rest timer runs between lifts', document.getElementById('rest').classList.contains('show'));
+            ok('rest timer runs between lifts', needId('rest').classList.contains('show'));
             click('restSkip');
-            ok('skipping rest closes it', !document.getElementById('rest').classList.contains('show'));
+            ok('skipping rest closes it', !needId('rest').classList.contains('show'));
             click('cSkip');
-            ok('skip lift keeps the coach open', document.getElementById('coach').classList.contains('show'));
+            ok('skip lift keeps the coach open', needId('coach').classList.contains('show'));
             // undo must remove the set AND the progress mark
             var afterLog = P.sets().length;
             click('cClose');
             wait(function () {
-              ok('ending the session shows the summary', document.getElementById('done').classList.contains('show'));
+              ok('ending the session shows the summary', needId('done').classList.contains('show'));
               ok('summary counts sets', /\d/.test(txt('dSets')), 'sets=' + txt('dSets'));
               ok('undo button exists', has('dUndo'));
               click('dUndo');
@@ -151,9 +155,9 @@
           sel.value = 'Black';
           sel.dispatchEvent(new Event('change', { bubbles: true }));
           wait(function () {
-            var again = document.querySelector('#lib select');
+            var again = needSel('#lib select');
             ok('band choice sticks after re-render', again.value === 'Black', again.value);
-            var link = document.querySelector('#lib .gm');
+            var link = needSel('#lib .gm');
             ok('launch links carry the band', /band=Black/.test(link.getAttribute('href')), link.getAttribute('href'));
             ok('launch links carry the movement', /ex=[a-z-]+/.test(link.getAttribute('href')));
             ok('setup and cue are shown', document.querySelectorAll('.detail').length >= 22);
@@ -213,8 +217,26 @@
         ok('a pull is still called a pull', window.X3FForm && X3FForm.verb('deadlift') === 'PULL');
         if (window.X3FCal) {
           X3FCal.clear('overhead-press', 'White');
-          ok('an uncalibrated movement falls back to the band, floor 0',
-             X3FCal.range('overhead-press', 'White').lo === 0 && X3FCal.range('overhead-press', 'White').auto);
+          /* An uncalibrated movement no longer starts at "floor 0, ceiling =
+             whatever this band's number is". Both ends are estimated per
+             movement, because lo:0 is wrong for every movement and worst for the
+             overhead press: it starts at chin height with the band already under
+             the midfoot, so it is carrying roughly HALF its peak force before a
+             rep has been done ("holding 75 pounds here... then it might go to
+             150"). With a floor of 0 the bottom of that movement drew near the
+             top of the screen.
+
+             The numbers are the spec, not the implementation: White band = 130,
+             overhead press produces 0.60 of the strongest movement on a band and
+             carries 0.50 of its peak at the start, so 130 x 0.60 = 78 and
+             78 x 0.50 = 39. The one real capture in this project's history is a
+             White-band overhead press measured 52-78 - the ceiling is exact and
+             the floor errs low, which is the safe direction. A floor that is too
+             HIGH reads zero for the whole set. */
+          var est = X3FCal.range('overhead-press', 'White');
+          ok('an uncalibrated overhead press is estimated per movement, not floored at 0',
+             est.lo === 39 && est.hi === 78 && est.auto === true,
+             est.lo + '-' + est.hi + (est.auto ? ' auto' : ' REAL'));
           X3FCal.save('overhead-press', 'White', 96, 214);
           var r = X3FCal.range('overhead-press', 'White');
           ok('a calibrated movement keeps its floor and ceiling', r.lo === 96 && r.hi === 214 && !r.auto,
@@ -235,8 +257,18 @@
              refused honest calibrations as "too narrow to be real". */
           ok('a light band\'s narrow but real range is accepted',
              X3FCal.save('drag-curl', 'White', 100, 120) === true);
+          /* A refusal has to say what it measured. "Too narrow to be real" with
+             no numbers was a dead end on the sofa - you could not tell whether
+             the capture was bad, the bar was unzeroed, or the app was wrong. So
+             save() returns true, or {error, message} naming both figures, and
+             the error code is what Calibrate branches on. */
+          var refused = X3FCal.save('upright-row', 'White', 100, 100);
           ok('a max no higher than the hold is still refused',
-             X3FCal.save('upright-row', 'White', 100, 100) === false);
+             refused !== true && refused && refused.error === 'max-below-hold',
+             refused === true ? 'accepted it' : (refused && refused.error));
+          ok('and the refusal says what it measured',
+             !!(refused && /100/.test(refused.message || '')),
+             refused && refused.message);
           ['overhead-press', 'bent-row', 'drag-curl'].forEach(function (s) { X3FCal.clear(s, 'White'); });
         }
         ok('hype module loaded', !!window.X3FHype);
@@ -316,29 +348,29 @@
         ok('strip shows a streak', /streak/.test(txt('prog')));
         ok('strip shows the challenge', /Challenge|🎯|✅/.test(txt('prog')));
         ok('11 cards', document.querySelectorAll('.card').length === 11);
-        ok('workout is the hero card', document.querySelectorAll('.card')[0].classList.contains('hero'));
-        ok('music toggle exists', !!document.getElementById('musicBtn'));
-        ok('device picker is closed while all is well', !document.getElementById('finder').classList.contains('show'));
+        ok('workout is the hero card', nth('.card', 0).classList.contains('hero'));
+        ok('music toggle exists', has('musicBtn'));
+        ok('device picker is closed while all is well', !needId('finder').classList.contains('show'));
         // It used to open itself after 9s as a block in this column, stealing
         // height from .grid (flex:1) and squashing every card. It is a modal off
         // the bar chip now, so nothing else may move when it opens.
-        var gridH = document.getElementById('grid').getBoundingClientRect().height;
-        window.__x3fDevices([{ a: 'AA:BB:CC:DD:EE:01', n: 'X3 Force' }]);
-        document.getElementById('barChip').click();
-        ok('the bar chip opens the picker', document.getElementById('finder').classList.contains('show'));
+        var gridH = needId('grid').getBoundingClientRect().height;
+        callShell('__x3fDevices', [{ a: 'AA:BB:CC:DD:EE:01', n: 'X3 Force' }]);
+        needId('barChip').click();
+        ok('the bar chip opens the picker', needId('finder').classList.contains('show'));
         ok('picker lists what the scan saw', document.querySelectorAll('#findList .dev').length === 1);
-        var gridH2 = document.getElementById('grid').getBoundingClientRect().height;
+        var gridH2 = needId('grid').getBoundingClientRect().height;
         ok('picker does not squash the card grid', Math.abs(gridH2 - gridH) < 1, gridH + ' -> ' + gridH2);
-        document.getElementById('closeFind').click();
-        ok('close puts the picker away', !document.getElementById('finder').classList.contains('show'));
+        needId('closeFind').click();
+        ok('close puts the picker away', !needId('finder').classList.contains('show'));
 
         // battery: the bar reports cell millivolts, the chip shows a percentage
-        window.__x3fSetBar('on', 'Bar: LIVE');
-        window.__x3fSetBattery(4020);
+        callShell('__x3fSetBar', 'on', 'Bar: LIVE');
+        callShell('__x3fSetBattery', 4020);
         ok('battery shows as a percentage', /80%/.test(txt('battTxt')), txt('battTxt'));
-        window.__x3fSetBattery(3350);
-        ok('a flat cell reads low', document.getElementById('battTxt').classList.contains('low'), txt('battTxt'));
-        window.__x3fSetBattery(-1);
+        callShell('__x3fSetBattery', 3350);
+        ok('a flat cell reads low', needId('battTxt').classList.contains('low'), txt('battTxt'));
+        callShell('__x3fSetBattery', -1);
         ok('no battery shown when the bar is not reporting one', txt('battTxt') === '');
         return F.report(page);
       }

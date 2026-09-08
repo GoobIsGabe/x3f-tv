@@ -1,0 +1,139 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "userIndex": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.isString() && newData.val().length >= 16 && newData.val().length <= 64"
+      }
+    },
+    "households": {
+      "$hid": {
+        ".read": "auth != null && data.child('members').child(auth.uid).exists()",
+        ".write": "auth != null && ( data.child('members').child(auth.uid).exists() || (!data.exists() && newData.child('members').child(auth.uid).child('role').val() === 'owner') )",
+        "meta": {
+          "createdAt": {
+            ".validate": "newData.val() === now"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "members": {
+          "$uid": {
+            ".validate": "newData.hasChildren(['role','addedAt'])",
+            "role": {
+              ".validate": "newData.isString() && (newData.val() === 'owner' || newData.val() === 'member')"
+            },
+            "addedAt": {
+              ".validate": "newData.val() === now"
+            },
+            "name": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "profiles": {
+          "$pid": {
+            ".validate": "newData.hasChildren(['name'])",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40"
+            },
+            "color": {
+              ".validate": "newData.isString() && newData.val().length <= 16"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "sets": {
+          "$bucket": {
+            ".validate": "$bucket.matches(/^[0-9]{6}$/)",
+            "$setId": {
+              ".validate": "newData.hasChildren(['profileId','exercise','reps','ts','by'])",
+              "profileId": {
+                ".validate": "newData.isString() && newData.val().length <= 32"
+              },
+              "exercise": {
+                ".validate": "newData.isString() && newData.val().length <= 48"
+              },
+              "band": {
+                ".validate": "newData.isString() && newData.val().length <= 16"
+              },
+              "reps": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500"
+              },
+              "full": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500"
+              },
+              "mid": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500"
+              },
+              "weak": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500"
+              },
+              "peak": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000"
+              },
+              "tut": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000"
+              },
+              "strong": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000"
+              },
+              "ecc": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 600"
+              },
+              "game": {
+                ".validate": "newData.isString() && newData.val().length <= 24"
+              },
+              "note": {
+                ".validate": "newData.isString() && newData.val().length <= 240"
+              },
+              "ts": {
+                ".validate": "newData.val() === now || (newData.isNumber() && newData.val() > 0 && newData.val() <= now)"
+              },
+              "by": {
+                ".validate": "newData.val() === auth.uid"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "invites": {
+      "$code": {
+        ".read": "auth != null && (data.child('invitedBy').val() === auth.uid || data.child('claimedBy').val() === auth.uid)",
+        ".write": "auth != null && ( (!data.exists() && newData.exists() && newData.child('invitedBy').val() === auth.uid && !newData.hasChild('claimedBy') && root.child('households').child(newData.child('householdId').val()).child('members').child(auth.uid).exists()) || (data.exists() && newData.exists() && !data.hasChild('claimedBy') && data.child('createdAt').val() + 300000 > now && newData.child('claimedBy').val() === auth.uid && newData.child('householdId').val() === data.child('householdId').val() && newData.child('invitedBy').val() === data.child('invitedBy').val() && newData.child('createdAt').val() === data.child('createdAt').val()) || (data.child('invitedBy').val() === auth.uid && !newData.exists()) )",
+        ".validate": "newData.hasChildren(['householdId','invitedBy','createdAt'])",
+        "householdId": {
+          ".validate": "newData.isString() && newData.val().length >= 16 && newData.val().length <= 64"
+        },
+        "invitedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        },
+        "claimedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        },
+        "createdAt": {
+          ".validate": "newData.val() === now"
+        },
+        "claimedAt": {
+          ".validate": "newData.val() === now"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}
