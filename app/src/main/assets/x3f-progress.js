@@ -811,6 +811,21 @@
         perWeek: perWeek, workouts: keys.length, thisWeek: thisWeekDone, doneToday: doneToday,
         todayType: doneToday ? 'Done' : nextType,
         nextType: nextType,
+        /* `day` IS PART OF THIS FUNCTION'S CONTRACT, and dropping it broke the
+           screen most people look at.
+
+           The rework replaced it with todayType/nextType, which are capitalised
+           display strings ('Push' / 'Pull' / 'Rest' / 'Done'). Everything INSIDE
+           this file moved with them, and the func-test for the Progress page went
+           on passing - but app.html's hero reads `p.day || 'push'` and the phone
+           hub now does too, so with the key gone both fell to the fallback and
+           said PUSH DAY every single day, including on a pull day and a rest day.
+           A silent wrong answer on the first line of the home screen.
+
+           So the lowercase slug stays, derived from the same nextType rather than
+           computed twice: it is what callers key movements off (X3FEX.forDay
+           takes 'push'), and it is the shape they have always been given. */
+        day: (nextType || '').toLowerCase() || null,
         weekProgress: Math.min(1, perWeek ? thisWeekDone / perWeek : 0),
         /* You have finished the twelve weeks once you have rolled out of them,
            or on the day you complete the twelfth week's target. This used to

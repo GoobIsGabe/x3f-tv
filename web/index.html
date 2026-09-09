@@ -3,54 +3,145 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>X3F Games</title>
+<title>X3F</title>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#06080e"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="X3F"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <!-- Type is bundled: fonts/fonts.css. This was a render-blocking Google Fonts
      <link>, so a TV with no network yet painted nothing at all until the
      request gave up. Why, and what is in it: docs/audit/shell.md D-36. -->
 <link rel="stylesheet" href="fonts/fonts.css">
+<!--
+  THE PHONE HUB.
+
+  Rebuilt because it read as a wall: eleven identical full-width cards, each with
+  a three-line paragraph in 13px grey, an emoji standing in for art, and no first
+  action. Nothing on it was wrong; there was just no shape to it, and on a phone
+  you scan rather than read.
+
+  THREE DECISIONS DO MOST OF THE WORK.
+
+  1. ONE PRIMARY ACTION. The page now opens on what today actually is - the same
+     Push/Pull the television derives, from the same x3f-progress.js - so the
+     first thing under your thumb is the thing you came to do. It degrades to a
+     plain "Start a workout" if the program modules do not load, because a hub
+     that fails to a blank hero is worse than one that never had a hero.
+
+  2. TOOLS AND GAMES LOOK DIFFERENT. Tools are flat tinted tiles with a glyph:
+     four of them, scannable at a glance, all the same weight because none of
+     them is more important than another. Games carry the generated art, because
+     a game is chosen by how it looks and the art was sitting in assets/cards/
+     unused on this page while the TV home had been showing it all along.
+
+  3. NO PARAGRAPHS. Every description is one short line or nothing. The long
+     copy was written for a desktop page and nobody reads it on a phone.
+
+  This file is NOT the TV launcher and is not synced into the bundle - see
+  UNMANAGED in tools/sync-from-web.py. app/src/main/assets/index.html is a
+  separate hand-maintained twin. Editing this only ever changes the phone.
+-->
 <style>
-  :root{--bg:#06080e;--panel:#141824;--brd:#2a3346;--txt:#eaf2ff;--dim:#8b97ad;--accent:#2ee6a6;--gold:#ffd35c;--navring:#2ee6a6;
-    --d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;--n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
-    --sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);--e:cubic-bezier(.2,.9,.25,1)}
+  :root{
+    --bg:#06080e; --panel:#141824; --brd:#2a3346; --txt:#eaf2ff; --dim:#8b97ad;
+    --accent:#2ee6a6; --violet:#8f7dff; --gold:#ffd35c;
+    --navring:#2ee6a6;
+    --d:'Sora',system-ui,-apple-system,'Segoe UI',sans-serif;
+    --n:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
+    --sat:env(safe-area-inset-top); --sab:env(safe-area-inset-bottom);
+    --e:cubic-bezier(.2,.9,.25,1);
+    --r:20px;
+  }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   html{scroll-behavior:smooth}
   html,body{min-height:100%}
-  body{font-family:var(--d);background:radial-gradient(1100px 640px at 60% -10%,#161d2e,#080a10) ,var(--bg);color:var(--txt);
-    padding:calc(26px + var(--sat)) 20px calc(34px + var(--sab));-webkit-user-select:none;user-select:none}
-  .wrap{max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
-  header{text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center}
-  h1{font-size:clamp(26px,7vw,36px);letter-spacing:3px;font-weight:800}
+  body{font-family:var(--d);color:var(--txt);
+    background:radial-gradient(1200px 700px at 70% -15%,#1a2136,#080a10),var(--bg);
+    padding:calc(20px + var(--sat)) 18px calc(40px + var(--sab));
+    -webkit-user-select:none;user-select:none;
+    /* 16px is the floor that stops iOS zooming a tapped control, and it is also
+       simply the smallest thing worth reading one-handed. */
+    font-size:16px}
+  .wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:26px}
+
+  /* ── header ─────────────────────────────────────────────────────────── */
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  h1{font-size:22px;letter-spacing:3px;font-weight:800;line-height:1}
   h1 b{color:var(--accent)}
-  .lede{color:var(--dim);max-width:520px;line-height:1.55;font-family:var(--n);font-size:14px}
-  .lede b{color:var(--txt)}
-  .sect{font-family:var(--n);font-size:11.5px;font-weight:700;letter-spacing:2.6px;text-transform:uppercase;color:var(--dim);
-    margin:8px 2px -6px;display:flex;align-items:center;gap:10px}
+  .barhint{font-family:var(--n);font-size:12.5px;color:var(--dim);text-align:right;line-height:1.35}
+
+  /* ── the one thing you probably came to do ──────────────────────────── */
+  a.today{position:relative;display:block;text-decoration:none;color:inherit;
+    border-radius:var(--r);overflow:hidden;border:1px solid rgba(143,125,255,.45);
+    background:#11141f;min-height:168px;
+    box-shadow:0 18px 40px rgba(0,0,0,.45)}
+  a.today .art{position:absolute;inset:0;background-size:cover;background-position:center 35%;
+    opacity:.85}
+  /* A scrim, not a blur: x3f-ui.css bans backdrop-filter outright and this page
+     has no reason to be the exception. A gradient costs one paint. */
+  a.today .scrim{position:absolute;inset:0;
+    background:linear-gradient(100deg,#0b0e18 6%,rgba(11,14,24,.90) 40%,rgba(11,14,24,.42) 78%,rgba(11,14,24,.15) 100%)}
+  a.today .inner{position:relative;padding:22px 20px 20px;display:flex;flex-direction:column;gap:6px}
+  .kicker{font-family:var(--n);font-size:11.5px;font-weight:700;letter-spacing:2.4px;
+    text-transform:uppercase;color:var(--violet)}
+  .todayName{font-size:34px;font-weight:800;line-height:1.05;letter-spacing:-.5px}
+  .todaySub{font-family:var(--n);font-size:14px;color:var(--dim);line-height:1.5}
+  .go{margin-top:12px;align-self:flex-start;font-family:var(--d);font-weight:800;font-size:15px;
+    background:var(--violet);color:#0b0813;border-radius:999px;padding:12px 22px;
+    box-shadow:0 8px 22px rgba(143,125,255,.35)}
+
+  /* ── section labels ─────────────────────────────────────────────────── */
+  .sect{font-family:var(--n);font-size:11.5px;font-weight:700;letter-spacing:2.6px;
+    text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:10px;
+    margin-bottom:-12px}
   .sect:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--brd),transparent)}
-  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:14px}
-  a.card{position:relative;display:flex;flex-direction:column;gap:6px;text-decoration:none;color:inherit;
-    background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));border:1px solid var(--brd);
-    border-radius:18px;padding:20px;overflow:hidden;
-    transform:translateZ(0);will-change:transform;
-    transition:transform .18s var(--e),border-color .18s,box-shadow .24s var(--e),background .24s}
-  a.card:before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;
-    background:radial-gradient(120% 90% at 15% 0%,rgba(46,230,166,.13),transparent 60%);transition:opacity .28s}
-  a.card:hover,a.card:focus-visible{transform:translateY(-4px);border-color:var(--accent);box-shadow:0 16px 40px rgba(0,0,0,.45)}
-  a.card:hover:before,a.card:focus-visible:before{opacity:1}
-  a.card:active{transform:translateY(-1px) scale(.994)}
-  .emoji{font-size:34px;line-height:1}
-  .title{font-size:20px;font-weight:800}
-  .desc{color:var(--dim);font-size:13px;line-height:1.5;font-family:var(--n);flex:1}
-  .badge{align-self:flex-start;font-family:var(--n);font-size:10.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;
-    color:var(--accent);border:1px solid var(--brd);border-radius:999px;padding:4px 10px;margin-top:4px}
-  .card.hero{background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02))}
-  .card.hero .badge{color:var(--gold);border-color:rgba(255,211,92,.35)}
-  .note{font-size:12.5px;color:#6f7c92;text-align:center;line-height:1.6;font-family:var(--n);margin-top:6px}
+
+  /* ── tools: flat, even, scannable ───────────────────────────────────── */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  a.tool{display:flex;flex-direction:column;gap:2px;text-decoration:none;color:inherit;
+    background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.02));
+    border:1px solid var(--brd);border-radius:16px;padding:16px 14px;min-height:104px;
+    justify-content:flex-end;
+    transition:transform .16s var(--e),border-color .16s,background .2s}
+  a.tool .ico{font-size:22px;line-height:1;margin-bottom:6px}
+  a.tool .nm{font-size:17px;font-weight:800;letter-spacing:-.2px}
+  a.tool .sub{font-family:var(--n);font-size:12.5px;color:var(--dim);line-height:1.35}
+  a.tool:active{transform:scale(.985)}
+
+  /* ── games: the art earns its place here ────────────────────────────── */
+  a.game{position:relative;display:block;text-decoration:none;color:inherit;
+    border-radius:16px;overflow:hidden;border:1px solid var(--brd);
+    background:#10131d;aspect-ratio:16/10;
+    transition:transform .16s var(--e),border-color .16s}
+  a.game .art{position:absolute;inset:0;background-size:cover;background-position:center;opacity:.9}
+  a.game .scrim{position:absolute;inset:0;
+    background:linear-gradient(180deg,rgba(8,10,16,0) 30%,rgba(8,10,16,.88) 100%)}
+  a.game .inner{position:absolute;left:0;right:0;bottom:0;padding:12px 13px;display:flex;
+    flex-direction:column;gap:1px}
+  a.game .nm{font-size:16px;font-weight:800;letter-spacing:-.2px}
+  a.game .sub{font-family:var(--n);font-size:11.5px;color:#b9c4d6;line-height:1.3}
+  a.game:active{transform:scale(.985)}
+  /* Ascent has no generated card, and inventing one for a page that already has
+     nine is not worth $0.08 - a tinted ground reads as deliberate. */
+  a.game.noart{background:linear-gradient(150deg,#1b2440,#0d1220)}
+
+  /* Focus is a real ring, on every interactive thing, because this page is also
+     driven by a D-pad and a keyboard. */
+  a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+  a.card-foc,a.x3f-nav-cur{outline:3px solid var(--accent);outline-offset:3px}
+
+  .note{font-family:var(--n);font-size:12.5px;color:#77839a;line-height:1.6;
+    border-top:1px solid var(--brd);padding-top:18px}
   .note b{color:var(--dim)}
-  .hint{font-family:var(--n);font-size:11.5px;color:#5d6a80;text-align:center;letter-spacing:.4px}
-  /* staggered entrance - cheap, transform+opacity only */
-  @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-  a.card{animation:rise .42s var(--e) both;animation-delay:calc(var(--i,0) * 22ms)}
+  .hint{font-family:var(--n);font-size:11.5px;color:#5d6a80;letter-spacing:.3px}
+
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  a.today,a.tool,a.game{animation:rise .38s var(--e) both;animation-delay:calc(var(--i,0) * 26ms)}
+  @media (prefers-reduced-motion:reduce){a.today,a.tool,a.game{animation:none}}
+
+  /* Roomier once there is width for it, rather than stretching two columns. */
+  @media (min-width:560px){
+    .grid{grid-template-columns:repeat(4,1fr)}
+    .grid.games{grid-template-columns:repeat(3,1fr)}
+    .todayName{font-size:40px}
+  }
 </style>
 <script>
 /* The television prints a URL with the code in its FRAGMENT and no path, because
@@ -67,104 +158,159 @@
 </head>
 <body>
 <div class="wrap">
+
   <header>
-    <h1>X3F <b>GAMES</b></h1>
-    <p class="lede">Turn your X3 Force bar into a game controller. Open a game, tap <b>Connect Bar</b>, pick <b>X3F</b> — or hit Demo to play with just your screen.</p>
+    <h1>X3<b>F</b></h1>
+    <div class="barhint">Open a game, tap <b>Connect Bar</b><br>&mdash; or Demo with just the screen</div>
   </header>
 
-  <div class="sect">Train the program</div>
-  <div class="cards">
-    <a class="card" href="X3F_Routine.html" style="--i:0;border-color:rgba(46,230,166,.4)" data-nav data-nav-first>
-      <div class="emoji">📋</div>
-      <div class="title">Routines</div>
-      <div class="desc">Guided workout mode. Run a Push or Pull day: setup + cue + a live form guide for every lift, the game skinned to it, then the rest timer.</div>
-      <span class="badge">Guided · Pull / Push</span>
-    </a>
-    <a class="card" href="X3F_Library.html" style="--i:1" data-nav>
-      <div class="emoji">📚</div>
-      <div class="title">Library</div>
-      <div class="desc">Every X3 movement — push, pull, legs, core — with its setup, coaching cue, strength curve and the games that train it best.</div>
-      <span class="badge">By exercise</span>
-    </a>
-    <a class="card" href="X3F_Calibrate.html" style="--i:2" data-nav>
-      <div class="emoji">🎯</div>
-      <div class="title">Calibrate</div>
-      <div class="desc">Dial in each band's true max with a guided all-out pull, so every game scales to you.</div>
-      <span class="badge">Setup</span>
-    </a>
-    <a class="card" href="X3F_Progress.html" style="--i:3" data-nav>
-      <div class="emoji">📈</div>
-      <div class="title">Progress</div>
-      <div class="desc">Your logged sessions charted over time — best reps, peak force, and boss stages by band.</div>
-      <span class="badge">Tracking</span>
-    </a>
-    <a class="card" href="X3F_Pair.html" style="--i:4" data-nav>
-      <div class="emoji">📱</div>
-      <div class="title">Sync with TV</div>
-      <div class="desc">Pair this phone with your X3F television, so sets logged on the couch show up here and anything you log here goes back.</div>
-      <span class="badge">Optional</span>
-    </a>
+  <!-- Filled in by the script below from the same program brain the TV uses. The
+       markup carries a working fallback so the page is never blank if the modules
+       are missing: a hub whose hero fails is worse than one that never had a hero. -->
+  <a class="today" id="today" href="X3F_Routine.html" style="--i:0" data-nav data-nav-first>
+    <div class="art" id="todayArt"></div>
+    <div class="scrim"></div>
+    <div class="inner">
+      <div class="kicker" id="todayKicker">Today</div>
+      <div class="todayName" id="todayName">Start a workout</div>
+      <div class="todaySub" id="todaySub">Guided sets, one movement at a time.</div>
+      <span class="go" id="todayGo">Start</span>
+    </div>
+  </a>
+
+  <div>
+    <div class="sect">Your training</div>
+    <div class="grid" style="margin-top:20px">
+      <a class="tool" href="X3F_Progress.html" style="--i:1" data-nav>
+        <div class="ico">📈</div><div class="nm">Progress</div>
+        <div class="sub">Streak, PBs, badges</div>
+      </a>
+      <a class="tool" href="X3F_Library.html" style="--i:2" data-nav>
+        <div class="ico">📚</div><div class="nm">Library</div>
+        <div class="sub">Every movement</div>
+      </a>
+      <a class="tool" href="X3F_Calibrate.html" style="--i:3" data-nav>
+        <div class="ico">🎯</div><div class="nm">Calibrate</div>
+        <div class="sub">Set your range</div>
+      </a>
+      <a class="tool" href="X3F_Pair.html" style="--i:4" data-nav>
+        <div class="ico">📱</div><div class="nm">Sync with TV</div>
+        <div class="sub">Share your history</div>
+      </a>
+    </div>
   </div>
 
-  <div class="sect">Showcase games</div>
-  <div class="cards">
-    <a class="card hero" href="X3F_Nova.html" style="--i:0;border-color:rgba(143,125,255,.5)" data-nav>
-      <div class="emoji">🚀</div>
-      <div class="title">Nova</div>
-      <div class="desc">Space-defense arcade-RPG. Your pull powers an auto-aiming energy beam — survive waves, break bosses, grab power-ups, and upgrade your core between sectors.</div>
-      <span class="badge">RPG · Offline</span>
-    </a>
-    <a class="card hero" href="X3F_Splash.html" style="--i:1;border-color:rgba(255,210,63,.45)" data-nav>
-      <div class="emoji">🐬</div>
-      <div class="title">Splash</div>
-      <div class="desc">Bright underwater arcade. Your pull is your swim power — cruise the deep for treasure, breach the surface for gold stars, stack combos.</div>
-      <span class="badge">Arcade · Offline</span>
-    </a>
-    <a class="card hero" href="X3F_Bloom.html" style="--i:2;border-color:rgba(89,245,196,.4)" data-nav>
-      <div class="emoji">🌸</div>
-      <div class="title">Bloom</div>
-      <div class="desc">Controlled reps as a twilight dream garden. Ride the vine, pull into each bloom, ease into each bud — never to rest. Burnout partials built in.</div>
-      <span class="badge">Reps · Offline</span>
-    </a>
+  <div>
+    <div class="sect">Play</div>
+    <div class="grid games" style="margin-top:20px">
+      <a class="game" href="X3F_Bloom.html" style="--i:5" data-nav>
+        <div class="art" style="background-image:url(assets/cards/bloom.webp)"></div>
+        <div class="scrim"></div>
+        <div class="inner"><div class="nm">Bloom</div><div class="sub">Controlled reps, twilight garden</div></div>
+      </a>
+      <a class="game" href="X3F_Nova.html" style="--i:6" data-nav>
+        <div class="art" style="background-image:url(assets/cards/nova.webp)"></div>
+        <div class="scrim"></div>
+        <div class="inner"><div class="nm">Nova</div><div class="sub">Space defence, upgrades</div></div>
+      </a>
+      <a class="game" href="X3F_Splash.html" style="--i:7" data-nav>
+        <div class="art" style="background-image:url(assets/cards/splash.webp)"></div>
+        <div class="scrim"></div>
+        <div class="inner"><div class="nm">Splash</div><div class="sub">Dive deep, breach high</div></div>
+      </a>
+      <a class="game" href="X3F_Flow.html" style="--i:8" data-nav>
+        <div class="art" style="background-image:url(assets/cards/flow.webp)"></div>
+        <div class="scrim"></div>
+        <div class="inner"><div class="nm">Flow</div><div class="sub">Trace the ribbon to failure</div></div>
+      </a>
+      <a class="game" href="X3F_Arena.html" style="--i:9" data-nav>
+        <div class="art" style="background-image:url(assets/cards/boss.webp)"></div>
+        <div class="scrim"></div>
+        <div class="inner"><div class="nm">Arena</div><div class="sub">Meter, zone, max, bosses</div></div>
+      </a>
+      <a class="game" href="X3F_Duel.html" style="--i:10" data-nav>
+        <div class="art" style="background-image:url(assets/cards/duel.webp)"></div>
+        <div class="scrim"></div>
+        <div class="inner"><div class="nm">Duel</div><div class="sub">Tug of war vs the CPU</div></div>
+      </a>
+      <a class="game" href="X3F_Rhythm.html" style="--i:11" data-nav>
+        <div class="art" style="background-image:url(assets/cards/rhythm.webp)"></div>
+        <div class="scrim"></div>
+        <div class="inner"><div class="nm">Rhythm</div><div class="sub">Reps on the beat</div></div>
+      </a>
+      <a class="game noart" href="X3F_Ascent.html" style="--i:12" data-nav>
+        <div class="scrim"></div>
+        <div class="inner"><div class="nm">Ascent</div><div class="sub">3D flight &middot; needs internet</div></div>
+      </a>
+    </div>
   </div>
 
-  <div class="sect">Arcade &amp; drills</div>
-  <div class="cards">
-    <a class="card" href="X3F_Arena.html" style="--i:0" data-nav>
-      <div class="emoji">⚡</div>
-      <div class="title">Arena</div>
-      <div class="desc">2D training suite: live meter, Hold-the-Zone, Max Effort, and Boss Fights. Works fully offline.</div>
-      <span class="badge">2D · Offline</span>
-    </a>
-    <a class="card" href="X3F_Flow.html" style="--i:1" data-nav>
-      <div class="emoji">🌊</div>
-      <div class="title">Flow</div>
-      <div class="desc">Controlled-rep trainer. Trace the moving ribbon through the full range and push to failure — the X3 way.</div>
-      <span class="badge">Reps · Offline</span>
-    </a>
-    <a class="card" href="X3F_Duel.html" style="--i:2" data-nav>
-      <div class="emoji">🤺</div>
-      <div class="title">Duel</div>
-      <div class="desc">Tug-of-war against the CPU. Out-rep it to drag the rope your way and climb the rounds.</div>
-      <span class="badge">Vs CPU</span>
-    </a>
-    <a class="card" href="X3F_Rhythm.html" style="--i:3" data-nav>
-      <div class="emoji">🎵</div>
-      <div class="title">Rhythm</div>
-      <div class="desc">Reps on the beat. Hit the falling notes in time to build a combo — musical time-under-tension.</div>
-      <span class="badge">On beat</span>
-    </a>
-    <a class="card" href="X3F_Ascent.html" style="--i:4" data-nav>
-      <div class="emoji">🛸</div>
-      <div class="title">Ascent</div>
-      <div class="desc">3D flight game — your pull is thrust. Climb against gravity and fly through energy rings.</div>
-      <span class="badge">3D · Needs Internet</span>
-    </a>
-  </div>
-
-  <p class="note">Tip: use <b>Chrome on Android</b> (Web Bluetooth is on by default). Close nRF Connect and the official X3 app first — the bar only talks to one thing at a time.</p>
-  <p class="hint">Arrow keys, a TV remote D-pad or a gamepad move between cards · Enter opens · Esc goes back</p>
+  <p class="note">Use <b>Chrome on Android</b> — Web Bluetooth is on by default. Close nRF Connect
+    and the official X3 app first: the bar only talks to one thing at a time.<br><br>
+    <span class="hint">Arrow keys, a TV remote D-pad or a gamepad move between cards · Enter opens · Esc goes back</span></p>
 </div>
+
+<!-- The same two modules the television's home uses, so "today" is one answer
+     rather than two that can drift. Both are already in the service worker's
+     precache, so this costs no extra round trip on a warm start. -->
+<script src="x3f-exercises.js"></script>
+<script src="x3f-progress.js"></script>
+<script>
+"use strict";
+/* Everything below is optional and guarded, exactly like the other pages. If the
+   program brain is missing the markup's own fallback stands and the hero is still
+   a working link to the guided session. */
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var day = null, week = null, moves = [];
+
+  try {
+    var P = window.X3FProg;
+    if (P && P.program) {
+      var p = P.program();
+      if (p) { day = p.day || null; week = p.week || null; }
+    }
+  } catch (e) {}
+
+  try {
+    var EX = window.X3FEX;
+    /* week || 1, never || 99. A brand-new user has week 0, and forDay treats a
+       falsy week as "no ceiling" - which unlocks the optional week-5 movements
+       (Pec Crossover, Split Squat) on somebody's very first day. The TV home
+       defaults the same way. */
+    if (EX && EX.forDay && day) moves = EX.forDay(day, week || 1) || [];
+  } catch (e) {}
+
+  if (!day) return;                       /* keep the markup's fallback */
+
+  var label = day === 'push' ? 'Push Day' : day === 'pull' ? 'Pull Day' : 'Rest Day';
+  $('todayName').textContent = label;
+  $('todayKicker').textContent = week ? ('Week ' + week + ' · Today') : 'Today';
+
+  if (day === 'rest') {
+    $('todaySub').textContent = 'A rest day is part of the program. Growth happens now.';
+    $('todayGo').textContent = 'Train anyway';
+  } else if (moves.length) {
+    /* Name the movements rather than counting them: "Chest Press, Tricep Press
+       and 2 more" tells you what you are walking into, "4 movements" does not. */
+    var names = moves.map(function (m) { return m.name; });
+    var shown = names.slice(0, 2).join(', ');
+    var rest = names.length - 2;
+    $('todaySub').textContent = shown + (rest > 0 ? ' and ' + rest + ' more' : '')
+                              + ' · one all-out set each';
+    $('todayGo').textContent = 'Start ' + label;
+  } else {
+    $('todaySub').textContent = 'Guided sets, one movement at a time.';
+    $('todayGo').textContent = 'Start ' + label;
+  }
+
+  /* The card art the TV home uses for a workout. Set here rather than in the
+     markup so a missing file leaves the tinted ground rather than a broken box. */
+  var img = new Image();
+  img.onload = function () { $('todayArt').style.backgroundImage = 'url(assets/cards/workout.webp)'; };
+  img.src = 'assets/cards/workout.webp';
+})();
+</script>
 <script src="x3f-nav.js"></script>
 <script>(function(){var wl=null;function req(){if(wl||!('wakeLock'in navigator)||document.visibilityState!=='visible')return;navigator.wakeLock.request('screen').then(function(s){wl=s;s.addEventListener&&s.addEventListener('release',function(){wl=null;});}).catch(function(){});}document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')req();});window.addEventListener('pointerdown',req,{passive:true});req();})();</script>
 <script>if('serviceWorker'in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
